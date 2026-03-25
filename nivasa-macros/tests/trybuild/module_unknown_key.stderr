@@ -1,0 +1,5 @@
+error: unknown `#[module]` key `middlwares`; expected one of `imports`, `controllers`, `providers`, `exports`, or `middlewares`
+  --> tests/trybuild/module_unknown_key.rs:13:5
+   |
+13 |     middlwares: [AppController],
+   |     ^^^^^^^^^^

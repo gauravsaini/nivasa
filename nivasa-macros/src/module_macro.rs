@@ -1,40 +1,77 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use std::collections::HashMap;
 use syn::{
     parse::{Parse, ParseStream},
-    parse_macro_input, ItemStruct, Token, Type,
+    parse_macro_input, Error, Ident, ItemStruct, Result, Token, Type,
 };
 
+#[derive(Default)]
 struct ModuleArgs {
-    pub properties: HashMap<String, Vec<Type>>,
+    imports: Vec<Type>,
+    controllers: Vec<Type>,
+    providers: Vec<Type>,
+    exports: Vec<Type>,
+    middlewares: Vec<Type>,
+}
+
+impl ModuleArgs {
+    fn insert_unique(target: &mut Vec<Type>, values: Vec<Type>, key: &Ident) -> Result<()> {
+        if !target.is_empty() {
+            return Err(Error::new(
+                key.span(),
+                format!("duplicate `{}` entry in `#[module]`", key),
+            ));
+        }
+
+        *target = values;
+        Ok(())
+    }
 }
 
 impl Parse for ModuleArgs {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> Result<Self> {
         let content;
         syn::braced!(content in input);
 
-        let mut properties = HashMap::new();
+        let mut args = ModuleArgs::default();
 
         while !content.is_empty() {
-            let key: syn::Ident = content.parse()?;
+            let key: Ident = content.parse()?;
             content.parse::<Token![:]>()?;
 
             let bracketed_content;
             syn::bracketed!(bracketed_content in content);
 
-            let types = syn::punctuated::Punctuated::<Type, Token![,]>::parse_terminated(
+            let values = syn::punctuated::Punctuated::<Type, Token![,]>::parse_terminated(
                 &bracketed_content,
-            )?;
-            properties.insert(key.to_string(), types.into_iter().collect());
+            )?
+            .into_iter()
+            .collect::<Vec<_>>();
 
-            if !content.is_empty() {
-                content.parse::<Token![,]>()?;
+            match key.to_string().as_str() {
+                "imports" => Self::insert_unique(&mut args.imports, values, &key)?,
+                "controllers" => Self::insert_unique(&mut args.controllers, values, &key)?,
+                "providers" => Self::insert_unique(&mut args.providers, values, &key)?,
+                "exports" => Self::insert_unique(&mut args.exports, values, &key)?,
+                "middlewares" => Self::insert_unique(&mut args.middlewares, values, &key)?,
+                other => {
+                    return Err(Error::new(
+                        key.span(),
+                        format!(
+                            "unknown `#[module]` key `{other}`; expected one of `imports`, `controllers`, `providers`, `exports`, or `middlewares`"
+                        ),
+                    ));
+                }
             }
+
+            if content.is_empty() {
+                break;
+            }
+
+            content.parse::<Token![,]>()?;
         }
 
-        Ok(ModuleArgs { properties })
+        Ok(args)
     }
 }
 
@@ -43,21 +80,20 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemStruct);
     let name = &input.ident;
 
-    let imports = args.properties.get("imports").cloned().unwrap_or_default();
-    let providers = args
-        .properties
-        .get("providers")
-        .cloned()
-        .unwrap_or_default();
-    let controllers = args
-        .properties
-        .get("controllers")
-        .cloned()
-        .unwrap_or_default();
-    let exports = args.properties.get("exports").cloned().unwrap_or_default();
+    let imports = args.imports;
+    let providers = args.providers;
+    let controllers = args.controllers;
+    let exports = args.exports;
+    let middlewares = args.middlewares;
 
     let expanded = quote! {
         #input
+
+        impl #name {
+            pub fn __nivasa_module_middlewares() -> Vec<std::any::TypeId> {
+                vec![#(std::any::TypeId::of::<#middlewares>()),*]
+            }
+        }
 
         #[async_trait::async_trait]
         impl nivasa_core::module::Module for #name {
