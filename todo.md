@@ -379,9 +379,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 2.1.8 — Controller System Tests
 - [x] Test basic GET route registration and invocation
-- [ ] Test POST route with JSON body extraction
+- [x] Test POST route with JSON body extraction
 - [ ] Test path parameter extraction and type coercion
-- [ ] Test query parameter extraction (single + struct)
+- [x] Test query parameter extraction (single + struct)
 - [x] Test multiple routes on one controller
 - [x] Test controller prefix concatenation
 - [x] Test 404 for unmatched routes
