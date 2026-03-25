@@ -403,7 +403,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 2.2.2 — Request / Response Wrappers
 - [x] Implement `NivasaRequest` wrapping `http::Request<Body>` with convenience methods
 - [x] Implement `NivasaResponse` wrapping `http::Response<Body>` with builder
-- [ ] Implement `FromRequest` trait for custom extractors
+- [x] Implement `FromRequest` trait for custom extractors
 - [x] Implement `IntoResponse` trait for custom response types
 - [x] Implement `Body` abstraction (streaming, collected, empty)
 
