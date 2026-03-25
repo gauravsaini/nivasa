@@ -321,10 +321,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `#[post("/path")]` attribute macro
 - [x] Implement `#[put("/path")]` attribute macro
 - [x] Implement `#[delete("/path")]` attribute macro
-- [ ] Implement `#[patch("/path")]` attribute macro
-- [ ] Implement `#[head("/path")]` attribute macro
-- [ ] Implement `#[options("/path")]` attribute macro
-- [ ] Implement `#[all("/path")]` (match any HTTP method)
+- [x] Implement `#[patch("/path")]` attribute macro
+- [x] Implement `#[head("/path")]` attribute macro
+- [x] Implement `#[options("/path")]` attribute macro
+- [x] Implement `#[all("/path")]` (match any HTTP method)
 
 #### 2.1.3 — `#[impl_controller]` Macro
 - [x] Parse `impl` block annotated with `#[impl_controller]`
