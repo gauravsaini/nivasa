@@ -50,7 +50,7 @@
 - [x] Set up `cargo doc` generation in CI
 - [x] **Add SCXML CI step:** `nivasa statechart validate --all` — validates all `.scxml` files are well-formed
 - [x] **Add SCXML CI step:** `nivasa statechart parity` — verifies generated Rust code matches current `.scxml` files
-- [ ] **Add CI step:** `git diff --exit-code src/generated/` — fails if codegen output is stale
+- [x] **Add CI step:** verify generated SCXML artifacts in CI with `cargo test -p nivasa-statechart --test generated_statecharts` plus `cargo run -p nivasa-cli -- statechart parity` — the repo does not check in `src/generated/`; build.rs emits generated files into `OUT_DIR`
 - [x] Create `examples/` directory with placeholder READMEs for `basic/`, `auth/`, `websocket/`
 - [x] Create `tests/` directory for workspace-level integration tests
 - [x] Create `docs/` directory for book-style documentation
