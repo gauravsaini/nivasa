@@ -96,7 +96,12 @@ fn response_wrapper_contract_matrix_matches_public_wire_shape() {
 
         match case.body {
             BodyExpectation::Bytes(expected) => {
-                assert_eq!(case.response.body().as_bytes(), expected, "case {}", case.name);
+                assert_eq!(
+                    case.response.body().as_bytes(),
+                    expected,
+                    "case {}",
+                    case.name
+                );
             }
             BodyExpectation::Json(expected) => {
                 let actual: serde_json::Value =
@@ -149,13 +154,11 @@ fn result_http_exception_propagates_success_and_json_error_contracts() {
     );
 
     let err = Result::<Text<&str>, HttpException>::Err(
-        HttpException::unprocessable_entity("Validation failed").with_details(
-            serde_json::json!({
-                "fields": {
-                    "email": "must be a valid email"
-                }
-            }),
-        ),
+        HttpException::unprocessable_entity("Validation failed").with_details(serde_json::json!({
+            "fields": {
+                "email": "must be a valid email"
+            }
+        })),
     )
     .into_response();
 

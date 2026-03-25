@@ -1,8 +1,8 @@
 use http::header::HeaderMap;
 use http::{Method, Request, StatusCode};
 use nivasa_http::{
-    Body, FromRequest, Html, IntoResponse, Json, NivasaRequest, NivasaResponse, Query,
-    Redirect, RequestExtractError, Text,
+    Body, FromRequest, Html, IntoResponse, Json, NivasaRequest, NivasaResponse, Query, Redirect,
+    RequestExtractError, Text,
 };
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod, RoutePathCaptures};
 use serde::Deserialize;
@@ -40,10 +40,16 @@ fn request_extraction_supports_query_headers_and_json() {
 
     assert_eq!(request.query("page"), Some("2"));
     assert_eq!(request.query("missing"), None);
-    assert_eq!(request.header("x-request-id").unwrap().to_str().unwrap(), "abc123");
+    assert_eq!(
+        request.header("x-request-id").unwrap().to_str().unwrap(),
+        "abc123"
+    );
 
     let headers = HeaderMap::from_request(&request).unwrap();
-    assert_eq!(headers.get("x-request-id").unwrap().to_str().unwrap(), "abc123");
+    assert_eq!(
+        headers.get("x-request-id").unwrap().to_str().unwrap(),
+        "abc123"
+    );
 
     let query = Query::<SearchQuery>::from_request(&request).unwrap();
     assert_eq!(
@@ -196,7 +202,9 @@ fn into_response_supports_text_json_and_status_tuples() {
         json.headers().get(http::header::CONTENT_TYPE).unwrap(),
         "application/json"
     );
-    assert!(String::from_utf8(json.body().as_bytes()).unwrap().contains("\"ok\":true"));
+    assert!(String::from_utf8(json.body().as_bytes())
+        .unwrap()
+        .contains("\"ok\":true"));
 
     assert_eq!(tuple.status(), StatusCode::ACCEPTED);
     assert_eq!(tuple.body().as_bytes(), b"queued");
