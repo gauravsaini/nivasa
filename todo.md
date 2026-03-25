@@ -430,11 +430,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement configurable allowed MIME types
 
 #### 2.2.5 — HTTP Server Tests
-- [ ] Test server starts and responds to GET /
+- [x] Test server starts and responds to GET /
 - [ ] Test graceful shutdown completes in-flight requests
 - [ ] Test request body parsing (JSON)
-- [ ] Test response serialization (JSON, text, HTML)
-- [ ] Test 404 for unknown routes
+- [x] Test response serialization (JSON, text, HTML)
+- [x] Test 404 for unknown routes
 - [x] Test request body size limit enforcement
 - [ ] Test file upload via multipart
 
