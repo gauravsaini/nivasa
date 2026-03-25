@@ -114,6 +114,18 @@ impl ControllerMetadata {
     pub fn version(&self) -> Option<&str> {
         self.version.as_deref()
     }
+
+    /// The controller route prefix with an optional URI version prefix.
+    ///
+    /// Versions are normalized to a `v{version}` segment so `1` becomes `v1`.
+    pub fn versioned_path(&self) -> String {
+        match self.version.as_deref() {
+            Some(version) => {
+                merge_route_paths(format!("/{}", version_segment(version)), self.path.clone())
+            }
+            None => self.path.clone(),
+        }
+    }
 }
 
 impl RoutePattern {
@@ -464,6 +476,17 @@ impl<T> RouteDispatchRegistry<T> {
         self.register_pattern(method, merged, value)
     }
 
+    pub fn register_versioned_controller_route(
+        &mut self,
+        method: impl Into<RouteMethod>,
+        metadata: &ControllerMetadata,
+        path: impl Into<String>,
+        value: T,
+    ) -> Result<(), RouteDispatchError> {
+        let merged = merge_route_paths(metadata.versioned_path(), path.into());
+        self.register_pattern(method, merged, value)
+    }
+
     pub fn dispatch(&self, method: impl AsRef<str>, path: &str) -> RouteDispatchOutcome<'_, T> {
         let method = method.as_ref().trim().to_ascii_uppercase();
         let normalized_path = normalize_path(path.to_string());
@@ -691,6 +714,19 @@ fn merge_route_paths(prefix: String, path: String) -> String {
         (true, false) => format!("/{}", normalized_path),
         (false, true) => normalized_prefix.to_string(),
         (false, false) => format!("{}/{}", normalized_prefix, normalized_path),
+    }
+}
+
+fn version_segment(version: &str) -> String {
+    let trimmed = version.trim().trim_matches('/');
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    if trimmed.starts_with('v') || trimmed.starts_with('V') {
+        trimmed.to_string()
+    } else {
+        format!("v{}", trimmed)
     }
 }
 
@@ -952,6 +988,52 @@ mod tests {
 
         assert_eq!(registry.resolve("GET", "/users/list"), Some(&"list"));
         assert_eq!(registry.resolve("POST", "/users/create"), Some(&"create"));
+    }
+
+    #[test]
+    fn metadata_versioned_path_normalizes_numeric_versions() {
+        let metadata = ControllerMetadata::new("/users").with_version("1");
+
+        assert_eq!(metadata.versioned_path(), "/v1/users");
+    }
+
+    #[test]
+    fn route_dispatch_registry_registers_versioned_controller_routes() {
+        let metadata = ControllerMetadata::new("/users").with_version("1");
+        let mut registry = RouteDispatchRegistry::new();
+
+        registry
+            .register_versioned_controller_route("GET", &metadata, "/list", "v1-list")
+            .unwrap();
+        registry
+            .register_versioned_controller_route("GET", &ControllerMetadata::new("/users").with_version("2"), "/list", "v2-list")
+            .unwrap();
+
+        assert_eq!(registry.resolve("GET", "/v1/users/list"), Some(&"v1-list"));
+        assert_eq!(registry.resolve("GET", "/v2/users/list"), Some(&"v2-list"));
+        assert_eq!(registry.resolve("GET", "/users/list"), None);
+    }
+
+    #[test]
+    fn route_dispatch_registry_rejects_duplicate_versioned_routes() {
+        let metadata = ControllerMetadata::new("/users").with_version("1");
+        let mut registry = RouteDispatchRegistry::new();
+
+        registry
+            .register_versioned_controller_route("GET", &metadata, "/list", "first")
+            .unwrap();
+
+        let err = registry
+            .register_versioned_controller_route("GET", &metadata, "list/", "second")
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            RouteDispatchError::DuplicateRoute {
+                method: "GET".to_string(),
+                path: "/v1/users/list".to_string()
+            }
+        );
     }
 
     #[test]

@@ -371,11 +371,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[header("key", "value")]` to set response headers
 
 #### 2.1.7 — API Versioning
-- [ ] Support URI versioning: `/v1/users`, `/v2/users`
+- [x] Support URI versioning: `/v1/users`, `/v2/users`
 - [ ] Support header versioning: `X-API-Version: 1`
 - [ ] Support media type versioning: `Accept: application/vnd.app.v1+json`
 - [ ] Implement `VersioningOptions` config on `NestApplication`
-- [ ] Test versioned routes resolve correctly
+- [x] Test versioned routes resolve correctly
 
 #### 2.1.8 — Controller System Tests
 - [x] Test basic GET route registration and invocation
@@ -387,7 +387,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test 404 for unmatched routes
 - [x] Test 405 for wrong HTTP method on existing path
 - [x] Test route conflict detection at startup
-- [ ] Test versioned routes
+- [x] Test versioned routes
 
 ### 2.2 — HTTP Server Integration (`nivasa-http`)
 
