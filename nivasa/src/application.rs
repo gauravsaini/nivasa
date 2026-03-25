@@ -134,7 +134,7 @@ impl ServerOptions {
         self
     }
 
-    /// Enable CORS for the eventual server integration.
+    /// Enable the minimal transport-side CORS bridge.
     pub fn enable_cors(mut self) -> Self {
         self.cors = true;
         self
@@ -220,13 +220,13 @@ impl ServerOptionsBuilder {
         self
     }
 
-    /// Enable CORS for the eventual server integration.
+    /// Enable the minimal transport-side CORS bridge.
     pub fn enable_cors(mut self) -> Self {
         self.cors = true;
         self
     }
 
-    /// Toggle CORS explicitly.
+    /// Toggle the minimal transport-side CORS bridge explicitly.
     pub fn cors(mut self, cors: bool) -> Self {
         self.cors = cors;
         self

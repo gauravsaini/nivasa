@@ -538,7 +538,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.3.4 — Tower Compatibility Layer
 - [ ] Implement adapter: `Tower Service<Request> → NivasaMiddleware`
 - [ ] Implement adapter: `NivasaMiddleware → Tower Layer`
-- [ ] Test wrapping a Tower middleware (e.g., `tower-http::cors`) for use in Nivasa
+- [ ] Test wrapping a Tower middleware (e.g., `tower-http::cors`) for future Nivasa middleware support
 - [ ] Document how to use existing Tower ecosystem middleware
 
 #### 3.3.5 — Built-in Middleware
@@ -552,7 +552,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test global middleware runs on every request
 - [ ] Test module-level middleware runs only for that module's routes
 - [ ] Test middleware ordering (global before module before route)
-- [ ] Test CORS middleware adds correct headers
+- [ ] Test richer CORS middleware/CorsOptions integration adds correct headers
 - [ ] Test middleware exclusion (`.exclude()`)
 - [ ] Test Tower middleware adapter works
 
@@ -975,7 +975,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `.use_global_interceptor(Interceptor)` — apply interceptor globally
 - [ ] Implement `.use_global_pipe(Pipe)` — apply pipe globally (e.g., ValidationPipe)
 - [ ] Implement `.use_global_filter(Filter)` — apply exception filter globally
-- [ ] Implement `.enable_cors()` — CORS config-only toggle on `ServerOptions`
+- [x] Implement `.enable_cors()` — minimal transport-side CORS bridge on `ServerOptions`; richer middleware/CorsOptions work remains future
 - [ ] Implement `.enable_versioning(VersioningOptions)` — API versioning config
 - [ ] Implement `.use_(Middleware)` — apply global middleware
 - [ ] Implement startup banner with ASCII art + version

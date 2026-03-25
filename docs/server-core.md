@@ -1,6 +1,6 @@
 # Server Core
 
-This page describes the current `nivasa-http` transport shell, the app-facing bootstrap config boundary that now sits in front of it, and the runtime boundaries we are keeping explicit. `global_prefix` is part of that config surface today, and `AppBootstrapConfig::global_prefix()` exposes it for bootstrap-time route setup, but it is still not wired into runtime route registration yet.
+This page describes the current `nivasa-http` transport shell, the app-facing bootstrap config boundary that now sits in front of it, and the runtime boundaries we are keeping explicit. `global_prefix` is part of that config surface today, and `AppBootstrapConfig::global_prefix()` exposes it for bootstrap-time route setup, but it is still not wired into runtime route registration yet. The same shell now includes a minimal CORS bridge, but it stays transport-side and intentionally narrower than the future middleware/CorsOptions story.
 
 ## SCXML Rule
 
@@ -13,6 +13,7 @@ The current server-core surface provides:
 1. `NivasaServer` and `NivasaServerBuilder` as the transport entry points.
 1. `ServerOptions` and `AppBootstrapConfig` as pure app-facing configuration surfaces, including `AppBootstrapConfig::global_prefix()` as the bootstrap-time accessor for route setup.
 1. App-facing route registration for static, header-versioned, and media-type-versioned dispatch. This registration path does not consume `global_prefix` yet.
+1. A minimal transport-side CORS bridge that answers preflight requests and decorates enabled responses with permissive headers.
 1. Transport policy knobs for request timeouts, request body size limits, and custom shutdown signals.
 1. A Hyper-to-framework adapter that turns accepted connections into `NivasaRequest` values.
 1. Request handoff into `RequestPipeline` so lifecycle progression stays SCXML-gated.
@@ -26,6 +27,7 @@ These are the important boundaries to keep in mind while the transport shell rem
 1. The server shell is still a transport adapter, not a full application runtime.
 1. `AppBootstrapConfig` is a configuration boundary, not a `NestApplication` runtime surface.
 1. `global_prefix` remains a configuration/bootstrap concern until runtime route registration is wired to read it through the transport/server path.
+1. The CORS bridge is intentionally narrow and transport-scoped; richer middleware/CorsOptions policy remains future work.
 1. TLS is feature-gated and transport-scoped; it does not imply broader runtime integration.
 1. The SCXML request pipeline remains the only legal place for lifecycle decisions.
 1. Any request-path behavior that would bypass `RequestPipeline` is still out of bounds.
@@ -34,4 +36,5 @@ These are the important boundaries to keep in mind while the transport shell rem
 
 1. Keep transport code focused on I/O, request construction, and builder-level policy.
 1. Keep lifecycle decisions in the SCXML pipeline.
+1. Keep CORS bridge behavior separate from the future middleware/CorsOptions layer.
 1. Treat the server shell as an adapter, not a second request engine.
