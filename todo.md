@@ -311,9 +311,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 2.1 — Controller System (`nivasa-routing` + `nivasa-macros`)
 
 #### 2.1.1 — `#[controller]` Attribute Macro
-- [ ] Parse `#[controller("/path")]` on struct
-- [ ] Store route prefix metadata on the struct
-- [ ] Support versioned controller: `#[controller({ path: "/users", version: "1" })]`
+- [x] Parse `#[controller("/path")]` on struct
+- [x] Store route prefix metadata on the struct
+- [x] Support versioned controller: `#[controller({ path: "/users", version: "1" })]`
 - [ ] Generate controller trait impl with prefix accessor
 
 #### 2.1.2 — HTTP Method Attributes
