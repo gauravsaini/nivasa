@@ -1,0 +1,5 @@
+error: controller metadata requires an HTTP method attribute
+ --> tests/trybuild/controller_parameter_extractors_headers_no_route.rs:8:8
+  |
+8 |     fn create(#[nivasa_macros::headers("headers")] headers: String) {
+  |        ^^^^^^

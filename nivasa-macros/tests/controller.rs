@@ -8,6 +8,7 @@ fn controller_macro_validation() {
     t.pass("tests/trybuild/controller_impl_pass.rs");
     t.pass("tests/trybuild/controller_parameter_extractors_pass.rs");
     t.pass("tests/trybuild/controller_response_metadata_pass.rs");
+    t.compile_fail("tests/trybuild/controller_parameter_extractors_headers_no_route.rs");
     t.compile_fail("tests/trybuild/controller_invalid_key.rs");
     t.compile_fail("tests/trybuild/controller_missing_path.rs");
     t.compile_fail("tests/trybuild/controller_parameter_extractors_invalid.rs");
