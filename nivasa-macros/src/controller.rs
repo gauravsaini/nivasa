@@ -703,6 +703,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
 
         method.attrs = retained_attrs;
         let parameters = collect_parameter_bindings(method)?;
+        let has_controller_metadata = !response_bindings.is_empty() || !parameters.is_empty();
         let response = if response_bindings.is_empty() {
             None
         } else {
@@ -726,6 +727,13 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
 
             Some(merged)
         };
+
+        if method_route.is_none() && has_controller_metadata {
+            return Err(Error::new(
+                method.sig.ident.span(),
+                "controller metadata requires an HTTP method attribute",
+            ));
+        }
 
         if let Some(binding) = method_route {
             let route_path = binding.path.value();
