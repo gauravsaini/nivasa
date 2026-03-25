@@ -1,0 +1,5 @@
+error: invalid injectable scope `gigantic`; expected `singleton`, `scoped`, or `transient`
+ --> tests/trybuild/injectable_invalid_scope.rs:5:22
+  |
+5 | #[injectable(scope = "gigantic")]
+  |                      ^^^^^^^^^^

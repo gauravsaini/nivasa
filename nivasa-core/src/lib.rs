@@ -13,4 +13,8 @@ pub mod lifecycle;
 pub mod module;
 
 // Re-exports
-pub use di::{DependencyContainer, Provider, ProviderScope, DiError};
+pub use di::{DependencyContainer, DiError, Provider, ProviderScope};
+pub use module::{
+    Module, ModuleEntry, ModuleMetadata, ModuleRegistry, ModuleRegistryError,
+    OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy, OnModuleInit,
+};

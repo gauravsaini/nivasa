@@ -1,0 +1,5 @@
+error: `#[inject]` fields must use `Arc<T>` or `Option<Arc<T>>`
+ --> tests/trybuild/injectable_non_arc.rs:7:5
+  |
+7 |     #[inject]
+  |     ^

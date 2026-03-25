@@ -1,0 +1,5 @@
+error: state `definitely_missing` was not found in `$WORKSPACE/statecharts/nivasa.request.scxml`; available states: done, error_handling, guard_chain, handler_execution, interceptor_post, interceptor_pre, middleware_chain, pipe_transform, received, route_matching, sending_response
+ --> tests/trybuild/scxml_handler_missing_state.rs:3:49
+  |
+3 | #[scxml_handler(statechart = "request", state = "definitely_missing")]
+  |                                                 ^^^^^^^^^^^^^^^^^^^^

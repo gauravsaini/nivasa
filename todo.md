@@ -21,8 +21,8 @@
 - [x] Define workspace-level dependency versions (`[workspace.dependencies]`) for: `tokio`, `serde`, `hyper`, `tower`, `tracing`, `thiserror`, `uuid`, `bytes`, `http`, `quick-xml`
 - [x] Decide and document Minimum Supported Rust Version (MSRV) — recommend 1.75+
 - [x] Set up `rustfmt.toml` with project formatting rules
-- [ ] Set up `clippy.toml` / `.clippy.toml` with lint policy
-- [ ] Set up `deny.toml` (cargo-deny) for license and vulnerability auditing
+- [x] Set up `clippy.toml` / `.clippy.toml` with lint policy
+- [x] Set up `deny.toml` (cargo-deny) for license and vulnerability auditing
 
 ### 0.2 — Crate Scaffolding
 - [x] Create `nivasa/` — main umbrella re-export crate
@@ -42,18 +42,18 @@
 - [x] Create `nivasa-cli/` — CLI scaffolding tool
 - [x] Create `statecharts/` directory — all `.scxml` definitions live here (the source of truth)
 - [x] Each crate: add `lib.rs` with module doc comment and basic exports
-- [ ] Verify `cargo check --workspace` passes on empty crates
+- [x] Verify `cargo check --workspace` passes on empty crates
 
 ### 0.3 — CI / Tooling
-- [ ] Set up GitHub Actions CI: `cargo check`, `cargo test`, `cargo clippy`, `cargo fmt --check`
-- [ ] Set up code coverage reporting (tarpaulin or llvm-cov)
-- [ ] Set up `cargo doc` generation in CI
-- [ ] **Add SCXML CI step:** `nivasa statechart validate --all` — validates all `.scxml` files are well-formed
-- [ ] **Add SCXML CI step:** `nivasa statechart parity` — verifies generated Rust code matches current `.scxml` files
+- [x] Set up GitHub Actions CI: `cargo check`, `cargo test`, `cargo clippy`, `cargo fmt --check`
+- [x] Set up code coverage reporting (tarpaulin or llvm-cov)
+- [x] Set up `cargo doc` generation in CI
+- [x] **Add SCXML CI step:** `nivasa statechart validate --all` — validates all `.scxml` files are well-formed
+- [x] **Add SCXML CI step:** `nivasa statechart parity` — verifies generated Rust code matches current `.scxml` files
 - [ ] **Add CI step:** `git diff --exit-code src/generated/` — fails if codegen output is stale
-- [ ] Create `examples/` directory with placeholder READMEs for `basic/`, `auth/`, `websocket/`
-- [ ] Create `tests/` directory for workspace-level integration tests
-- [ ] Create `docs/` directory for book-style documentation
+- [x] Create `examples/` directory with placeholder READMEs for `basic/`, `auth/`, `websocket/`
+- [x] Create `tests/` directory for workspace-level integration tests
+- [x] Create `docs/` directory for book-style documentation
 
 ### 0.4 — Umbrella Crate Re-export Strategy
 - [ ] Design `nivasa::prelude::*` — users should only need one import
@@ -116,9 +116,9 @@ This is the **primary enforcement mechanism.** The `.scxml` files are read at bu
 - [x] **Generate valid_events_for():** returns the set of valid events for each state (for error messages and introspection)
 - [x] **Generate `StatechartSpec` trait impl:** ties State enum, Event enum, Handler trait, and transition fn together
 - [x] Embed SCXML content hash in generated code (`const SCXML_HASH: &str = "sha256:..."`) for parity checking
-- [ ] Write generated files to `OUT_DIR` and include via `include!(concat!(env!("OUT_DIR"), "/request.rs"))`
-- [ ] Implement `build.rs` that scans `statecharts/` directory and triggers codegen for each `.scxml` file
-- [ ] Add `cargo:rerun-if-changed=statecharts/` to rebuild on any SCXML change
+- [x] Write generated files to `OUT_DIR` and include via `include!(concat!(env!("OUT_DIR"), "/request.rs"))`
+- [x] Implement `build.rs` that scans `statecharts/` directory and triggers codegen for each `.scxml` file
+- [x] Add `cargo:rerun-if-changed=statecharts/` to rebuild on any SCXML change
 - [x] Unit tests: given a known SCXML, verify the generated Rust code compiles and has the correct enums/variants
 
 ### 0.5.5 — Statechart Runtime Engine (`nivasa-statechart::engine`)
@@ -141,40 +141,41 @@ The engine is the **only way to transition state at runtime.** There is no `set_
 
 Compile-time validation that user-annotated handlers correspond to real SCXML states.
 
-- [ ] Implement `#[scxml_handler(statechart = "request", state = "guard_chain")]` attribute macro
-- [ ] At macro expansion time: load the referenced SCXML file, verify `state` exists
-- [ ] Emit compile error if the referenced state does not exist in the SCXML
-- [ ] Emit compile error if the referenced statechart file does not exist
-- [ ] Write trybuild tests: valid annotation compiles, invalid state name fails
+- [x] Implement `#[scxml_handler(statechart = "request", state = "guard_chain")]` attribute macro
+- [x] At macro expansion time: load the referenced SCXML file, verify `state` exists
+- [x] Emit compile error if the referenced state does not exist in the SCXML
+- [x] Emit compile error if the referenced statechart file does not exist
+- [x] Write trybuild tests: valid annotation compiles, invalid state name fails
 
 ### 0.5.7 — Statechart Introspection (Debug Mode)
-- [ ] Implement `StatechartTracer` trait: `fn on_transition(from, event, to)`
-- [ ] Implement `LoggingTracer` — logs every transition via `tracing`
+- [x] Implement `StatechartTracer` trait: `fn on_transition(from, event, to)`
+- [x] Implement `LoggingTracer` — logs every transition via `tracing`
+- [x] Build serializable debug snapshot helpers for current state, raw SCXML, and recent transitions
 - [ ] Implement debug endpoint: `GET /_nivasa/statechart` — returns current state config as JSON
 - [ ] Implement debug endpoint: `GET /_nivasa/statechart/scxml` — returns raw SCXML document
 - [ ] Implement debug endpoint: `GET /_nivasa/statechart/transitions` — returns recent transition log
 - [ ] All introspection endpoints gated behind `#[cfg(debug_assertions)]` — zero cost in release
 
 ### 0.5.8 — CLI: `nivasa statechart` Commands (`nivasa-cli`)
-- [ ] Implement `nivasa statechart validate --all` — validate all SCXML files
-- [ ] Implement `nivasa statechart validate <file>` — validate one SCXML file
-- [ ] Implement `nivasa statechart parity` — verify generated Rust matches current SCXML
+- [x] Implement `nivasa statechart validate --all` — validate all SCXML files
+- [x] Implement `nivasa statechart validate <file>` — validate one SCXML file
+- [x] Implement `nivasa statechart parity` — verify generated Rust matches current SCXML
 - [ ] Implement `nivasa statechart visualize --format svg` — generate SVG diagrams from SCXML
 - [ ] Implement `nivasa statechart diff HEAD~1` — show statechart changes between commits
 - [ ] Implement `nivasa statechart inspect --port 3000` — query running app's statechart state
 
 ### 0.5.9 — SCXML Engine Tests
-- [ ] Test: Application lifecycle — Created → Bootstrapping → Running → ShuttingDown → Terminated
-- [ ] Test: Invalid event in Created state → panic (debug) / Err (release)
-- [ ] Test: Module lifecycle — full happy path
-- [ ] Test: Module lifecycle — load failure transitions to FailedState
-- [ ] Test: Provider lifecycle — full happy path
-- [ ] Test: Request pipeline — happy path through all states
-- [ ] Test: Request pipeline — guard denied → ErrorHandling → Response
-- [ ] Test: Request pipeline — validation error → ErrorHandling → Response
-- [ ] Test: Request pipeline — handler error → ErrorHandling → Response
-- [ ] Test: StatechartTracer receives all transition events
-- [ ] Test: Generated code parity — round-trip: parse SCXML → generate Rust → compile → validate transitions match
+- [x] Test: Application lifecycle — Created → Bootstrapping → Running → ShuttingDown → Terminated
+- [x] Test: Invalid event in Created state → panic (debug) / Err (release)
+- [x] Test: Module lifecycle — full happy path
+- [x] Test: Module lifecycle — load failure transitions to FailedState
+- [x] Test: Provider lifecycle — full happy path
+- [x] Test: Request pipeline — happy path through all states
+- [x] Test: Request pipeline — guard denied → ErrorHandling → Response
+- [x] Test: Request pipeline — validation error → ErrorHandling → Response
+- [x] Test: Request pipeline — handler error → ErrorHandling → Response
+- [x] Test: StatechartTracer receives all transition events
+- [x] Test: Generated code parity — round-trip: parse SCXML → generate Rust → compile → validate transitions match
 
 ---
 
@@ -198,11 +199,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `register_factory<T>(factory: F)` — register a factory closure
 - [x] Implement `resolve<T>() -> Result<Arc<T>, DiError>` — resolve a provider
 - [x] Implement singleton caching (resolve once, return `Arc` clone)
-- [ ] Implement scoped provider support (per-request `ScopeGuard`)
-- [ ] Implement transient provider support (new instance per `resolve`)
+- [x] Implement scoped provider support (per-request `ScopeGuard`)
+- [x] Implement transient provider support (new instance per `resolve`)
 - [x] Implement `has<T>() -> bool` — check if provider is registered
-- [ ] Implement `remove<T>()` — deregister a provider
-- [ ] Implement `Container::create_scope()` — create child scope for request-scoped DI
+- [x] Implement `remove<T>()` — deregister a provider
+- [x] Implement `Container::create_scope()` — create child scope for request-scoped DI
 
 #### 1.1.3 — Circular Dependency Detection
 - [x] Build dependency graph from provider registrations (adjacency list)
@@ -218,19 +219,19 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Write tests for lazy dependency resolution
 
 #### 1.1.5 — `#[injectable]` Attribute Macro (in `nivasa-macros`)
-- [ ] Parse struct definition annotated with `#[injectable]`
-- [ ] Parse optional scope: `#[injectable(scope = "transient")]`
-- [ ] Extract `#[inject]` fields and their types
-- [ ] Generate `impl Injectable for T` with `fn build(container: &Container) -> Result<Self>`
+- [x] Parse struct definition annotated with `#[injectable]`
+- [x] Parse optional scope: `#[injectable(scope = "transient")]`
+- [x] Extract `#[inject]` fields and their types
+- [x] Generate `impl Injectable for T` with `fn build(container: &Container) -> Result<Self>`
 - [ ] Generate provider registration code (auto-register with container)
 - [ ] Handle generics in injectable structs (bounded or monomorphized)
-- [ ] Emit clear compile error if `#[inject]` is used on non-Arc field
-- [ ] Write macro expansion tests using `trybuild`
+- [x] Emit clear compile error if `#[inject]` is used on non-Arc field
+- [x] Write macro expansion tests using `trybuild`
 
 #### 1.1.6 — DI Container Unit Tests
-- [ ] Test basic singleton registration and resolution
-- [ ] Test scoped provider — same instance within scope, different across scopes
-- [ ] Test transient provider — new instance every resolve
+- [x] Test basic singleton registration and resolution
+- [x] Test scoped provider — same instance within scope, different across scopes
+- [x] Test transient provider — new instance every resolve
 - [ ] Test resolution failure with clear error when provider not registered
 - [ ] Test optional dependency resolves `None` when missing, `Some` when present
 - [ ] Test multiple providers depending on shared singleton (diamond pattern)
@@ -245,21 +246,21 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 1.2.1 — Module Trait
 - [ ] Define `Module` trait with `fn configure(&self, container: &mut DependencyContainer)`
-- [ ] Define `ModuleMetadata` struct: `imports`, `controllers`, `providers`, `exports`
+- [x] Define `ModuleMetadata` struct: `imports`, `controllers`, `providers`, `exports`
 - [ ] Define `OnModuleInit` trait with `async fn on_module_init(&self)`
 - [ ] Define `OnModuleDestroy` trait with `async fn on_module_destroy(&self)`
 - [ ] Define `OnApplicationBootstrap` trait (fires after all modules init)
 - [ ] Define `OnApplicationShutdown` trait (fires before modules destroy)
 
 #### 1.2.2 — `#[module]` Attribute Macro (in `nivasa-macros`)
-- [ ] Parse `#[module({ imports: [...], controllers: [...], providers: [...], exports: [...] })]`
-- [ ] Validate attribute syntax and emit helpful errors on typos
-- [ ] Generate `impl Module for T` with metadata accessor methods
-- [ ] Generate provider registration calls for listed providers
+- [x] Parse `#[module({ imports: [...], controllers: [...], providers: [...], exports: [...] })]`
+- [x] Validate attribute syntax and emit helpful errors on typos
+- [x] Generate `impl Module for T` with metadata accessor methods
+- [x] Generate provider registration calls for listed providers
 - [ ] Generate controller registration calls
 - [ ] Generate import resolution (pull in imported module's exported providers)
 - [ ] Generate export filtering (only exports are visible to importing modules)
-- [ ] Support `middlewares: [...]` in module config
+- [x] Support `middlewares: [...]` in module config
 
 #### 1.2.3 — Dynamic Modules (NestJS `forRoot` / `forFeature`)
 - [ ] Define `DynamicModule` struct (metadata + extra providers)
@@ -270,10 +271,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test `for_feature` creates isolated instance per importing module
 
 #### 1.2.4 — Module Registry & Dependency Graph
-- [ ] Implement `ModuleRegistry` to track all registered modules
-- [ ] Build module dependency graph from `imports` lists
-- [ ] Resolve initialization order via topological sort
-- [ ] Detect circular module imports and emit clear error
+- [x] Implement `ModuleRegistry` to track all registered modules
+- [x] Build module dependency graph from `imports` lists
+- [x] Resolve initialization order via topological sort
+- [x] Detect circular module imports and emit clear error
 - [ ] Support `@Global()` equivalent — module's exports available everywhere
 
 #### 1.2.5 — Module Initialization Lifecycle (driven by `nivasa.module.scxml`)
@@ -299,7 +300,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test module with imports and exports
 - [ ] Test nested modules (A imports B imports C)
 - [ ] Test lifecycle hooks fire in correct order
-- [ ] Test circular module import detection
+- [x] Test circular module import detection
 - [ ] Test global module (available everywhere without explicit import)
 - [ ] Test dynamic module via `for_root`
 

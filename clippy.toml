@@ -1,0 +1,7 @@
+# Starter lint policy for the workspace.
+# Keep thresholds conservative enough to catch complexity regressions
+# without fighting the current codebase.
+
+too-many-arguments-threshold = 8
+cognitive-complexity-threshold = 25
+type-complexity-threshold = 250

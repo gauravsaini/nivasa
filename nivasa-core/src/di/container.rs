@@ -4,16 +4,27 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::di::error::DiError;
-use crate::di::provider::{Provider, ProviderScope};
 use crate::di::graph::DependencyGraph;
+use crate::di::provider::{
+    ClassProvider, FactoryProvider, LifecycleProvider, Provider, ProviderScope, ValueProvider,
+};
+
+#[derive(Clone)]
+struct CachedInstance {
+    version: u64,
+    value: Arc<dyn Any + Send + Sync>,
+}
+
+struct DependencyContainerInner {
+    providers: RwLock<HashMap<TypeId, Arc<dyn Provider>>>,
+    singletons: RwLock<HashMap<TypeId, CachedInstance>>,
+    versions: RwLock<HashMap<TypeId, u64>>,
+}
 
 /// The core Dependency Injection Container.
 pub struct DependencyContainer {
-    /// The registry of all available providers, keyed by the type they resolve.
-    providers: RwLock<HashMap<TypeId, Arc<dyn Provider>>>,
-    
-    /// Cache of constructed singletons.
-    singletons: RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
+    inner: Arc<DependencyContainerInner>,
+    scoped: RwLock<HashMap<TypeId, CachedInstance>>,
 }
 
 impl Default for DependencyContainer {
@@ -25,61 +36,197 @@ impl Default for DependencyContainer {
 impl DependencyContainer {
     pub fn new() -> Self {
         Self {
-            providers: RwLock::new(HashMap::new()),
-            singletons: RwLock::new(HashMap::new()),
+            inner: Arc::new(DependencyContainerInner {
+                providers: RwLock::new(HashMap::new()),
+                singletons: RwLock::new(HashMap::new()),
+                versions: RwLock::new(HashMap::new()),
+            }),
+            scoped: RwLock::new(HashMap::new()),
         }
+    }
+
+    /// Create a new child scope that shares registrations and singletons
+    /// but maintains its own scoped cache.
+    pub fn create_scope(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+            scoped: RwLock::new(HashMap::new()),
+        }
+    }
+
+    async fn bump_version(&self, type_id: TypeId) -> u64 {
+        let mut versions = self.inner.versions.write().await;
+        let next = versions
+            .get(&type_id)
+            .copied()
+            .unwrap_or(0)
+            .saturating_add(1);
+        versions.insert(type_id, next);
+        next
+    }
+
+    async fn current_version(&self, type_id: TypeId) -> u64 {
+        let versions = self.inner.versions.read().await;
+        versions.get(&type_id).copied().unwrap_or(0)
+    }
+
+    async fn register_provider<T: Send + Sync + 'static>(&self, provider: Arc<dyn Provider>) {
+        let type_id = TypeId::of::<T>();
+
+        self.bump_version(type_id).await;
+
+        {
+            let mut providers = self.inner.providers.write().await;
+            providers.insert(type_id, provider);
+        }
+
+        {
+            let mut singletons = self.inner.singletons.write().await;
+            singletons.remove(&type_id);
+        }
+
+        {
+            let mut scoped = self.scoped.write().await;
+            scoped.remove(&type_id);
+        }
+    }
+
+    async fn cache_singleton(
+        &self,
+        type_id: TypeId,
+        version: u64,
+        instance: Arc<dyn Any + Send + Sync>,
+    ) {
+        let mut singletons = self.inner.singletons.write().await;
+        singletons.insert(
+            type_id,
+            CachedInstance {
+                version,
+                value: instance,
+            },
+        );
+    }
+
+    async fn cache_scoped(
+        &self,
+        type_id: TypeId,
+        version: u64,
+        instance: Arc<dyn Any + Send + Sync>,
+    ) {
+        let mut scoped = self.scoped.write().await;
+        scoped.insert(
+            type_id,
+            CachedInstance {
+                version,
+                value: instance,
+            },
+        );
     }
 
     /// Register a provider interface.
     pub async fn register<T: Send + Sync + 'static>(&self, provider: Arc<dyn Provider>) {
-        let type_id = TypeId::of::<T>();
-        let mut providers = self.providers.write().await;
-        providers.insert(type_id, provider);
+        self.register_provider::<T>(provider).await;
     }
 
     /// Register a direct value as a singleton provider.
     pub async fn register_value<T: Send + Sync + 'static>(&self, instance: T) {
         let type_id = TypeId::of::<T>();
+        let version = self.bump_version(type_id).await;
         let instance_arc = Arc::new(instance);
-        let provider = Arc::new(crate::di::provider::ValueProvider::new_from_arc(instance_arc.clone()));
-        let lifecycle_provider = Arc::new(crate::di::provider::LifecycleProvider::new(provider));
-        
-        let mut providers = self.providers.write().await;
-        providers.insert(type_id, lifecycle_provider.clone());
+        let provider = Arc::new(ValueProvider::new_from_arc(instance_arc.clone()));
 
-        // Also cache it as a singleton immediately
-        let mut singletons = self.singletons.write().await;
-        singletons.insert(type_id, instance_arc);
+        {
+            let mut providers = self.inner.providers.write().await;
+            providers.insert(type_id, provider);
+        }
+
+        {
+            let mut singletons = self.inner.singletons.write().await;
+            singletons.insert(
+                type_id,
+                CachedInstance {
+                    version,
+                    value: instance_arc,
+                },
+            );
+        }
     }
 
     /// Register a type that implements the `Injectable` trait.
     pub async fn register_injectable<T: crate::di::provider::Injectable>(
-        &self, 
+        &self,
         scope: ProviderScope,
-        dependencies: Vec<TypeId>
+        dependencies: Vec<TypeId>,
     ) {
         let type_id = TypeId::of::<T>();
-        let inner_provider = Arc::new(crate::di::provider::ClassProvider::new(
-            scope, 
-            dependencies,
-            move |container| Box::pin(T::build(container))
-        ));
-        let provider = Arc::new(crate::di::provider::LifecycleProvider::new(inner_provider));
-        
-        let mut providers = self.providers.write().await;
-        providers.insert(type_id, provider);
+        self.bump_version(type_id).await;
+        let inner_provider = Arc::new(ClassProvider::new(scope, dependencies, move |container| {
+            Box::pin(T::build(container))
+        }));
+
+        {
+            let mut providers = self.inner.providers.write().await;
+            providers.insert(type_id, inner_provider);
+        }
+
+        {
+            let mut singletons = self.inner.singletons.write().await;
+            singletons.remove(&type_id);
+        }
+
+        {
+            let mut scoped = self.scoped.write().await;
+            scoped.remove(&type_id);
+        }
+    }
+
+    /// Register a type via a factory closure.
+    pub async fn register_factory<T, F>(
+        &self,
+        scope: ProviderScope,
+        dependencies: Vec<TypeId>,
+        factory: F,
+    ) where
+        T: Send + Sync + 'static,
+        F: for<'a> Fn(
+                &'a DependencyContainer,
+            ) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<T, DiError>> + Send + 'a>,
+            > + Send
+            + Sync
+            + 'static,
+    {
+        let provider = Arc::new(FactoryProvider::new(scope, dependencies, factory));
+
+        self.register_provider::<T>(provider).await;
     }
 
     /// Check if a type is registered.
     pub async fn has<T: 'static>(&self) -> bool {
         let type_id = TypeId::of::<T>();
-        // Check singletons first (like register_value), then providers
-        let singletons = self.singletons.read().await;
-        if singletons.contains_key(&type_id) {
-            return true;
-        }
-        let providers = self.providers.read().await;
+        let providers = self.inner.providers.read().await;
         providers.contains_key(&type_id)
+    }
+
+    /// Remove a provider and invalidate any cached instances for that type.
+    pub async fn remove<T: 'static>(&self) -> bool {
+        let type_id = TypeId::of::<T>();
+        let removed = {
+            let mut providers = self.inner.providers.write().await;
+            providers.remove(&type_id).is_some()
+        };
+
+        if removed {
+            self.bump_version(type_id).await;
+
+            let mut singletons = self.inner.singletons.write().await;
+            singletons.remove(&type_id);
+
+            let mut scoped = self.scoped.write().await;
+            scoped.remove(&type_id);
+        }
+
+        removed
     }
 
     /// Resolve an instance of the given type.
@@ -87,51 +234,129 @@ impl DependencyContainer {
         let type_id = TypeId::of::<T>();
         let type_name = std::any::type_name::<T>();
 
-        // 1. Check if we already have it constructed (Singleton)
-        {
-            let singletons = self.singletons.read().await;
-            if let Some(instance) = singletons.get(&type_id) {
-                // Downcast
-                if let Ok(arc_t) = instance.clone().downcast::<T>() {
-                    return Ok(arc_t);
-                }
-            }
-        }
-
-        // 2. We don't have it cached. Find the provider.
+        // Always resolve against the current provider registry first so removed
+        // providers cannot be resurrected from a stale cache.
+        let version = self.current_version(type_id).await;
         let provider = {
-            let providers = self.providers.read().await;
+            let providers = self.inner.providers.read().await;
             providers.get(&type_id).cloned()
         };
 
-        if let Some(provider) = provider {
-            let scope = provider.metadata().scope;
-            
-            // Build the instance
-            // Note: In a fully SCXML compliant system, this step triggers the `nivasa.provider.scxml` lifecycle
-            let instance_any = provider.build(self).await?;
+        let provider = match provider {
+            Some(provider) => provider,
+            None => return Err(DiError::ProviderNotFound(type_name)),
+        };
 
-            // Try to downcast
-            let arc_t = instance_any
-                .downcast::<T>()
-                .map_err(|_| DiError::ConstructionFailed(type_name, "Internal error: downcast failed".to_string()))?;
+        match provider.metadata().scope {
+            ProviderScope::Singleton => {
+                if let Some(cached) = self.read_cached_singleton(type_id, version).await {
+                    return self.downcast_cached(cached, type_name);
+                }
 
-            // 3. Cache it if it's a singleton
-            if scope == ProviderScope::Singleton {
-                let mut singletons = self.singletons.write().await;
-                singletons.insert(type_id, arc_t.clone() as Arc<dyn Any + Send + Sync>);
+                let instance_any = self.build_provider_with_lifecycle(provider.clone()).await?;
+                let cached_version = self.current_version(type_id).await;
+                if cached_version == version {
+                    self.cache_singleton(type_id, version, instance_any.clone())
+                        .await;
+                }
+
+                self.downcast_instance(instance_any, type_name)
             }
+            ProviderScope::Scoped => {
+                if let Some(cached) = self.read_cached_scoped(type_id, version).await {
+                    return self.downcast_cached(cached, type_name);
+                }
 
-            // Return it
-            Ok(arc_t)
-        } else {
-            Err(DiError::ProviderNotFound(type_name))
+                let instance_any = self.build_provider_with_lifecycle(provider.clone()).await?;
+                let cached_version = self.current_version(type_id).await;
+                if cached_version == version {
+                    self.cache_scoped(type_id, version, instance_any.clone())
+                        .await;
+                }
+
+                self.downcast_instance(instance_any, type_name)
+            }
+            ProviderScope::Transient => {
+                let instance_any = self.build_provider_with_lifecycle(provider).await?;
+                self.downcast_instance(instance_any, type_name)
+            }
         }
+    }
+
+    async fn build_provider_with_lifecycle(
+        &self,
+        provider: Arc<dyn Provider>,
+    ) -> Result<Arc<dyn Any + Send + Sync>, DiError> {
+        LifecycleProvider::new(provider).build(self).await
+    }
+
+    async fn read_cached_singleton(
+        &self,
+        type_id: TypeId,
+        version: u64,
+    ) -> Option<Arc<dyn Any + Send + Sync>> {
+        let cached = {
+            let singletons = self.inner.singletons.read().await;
+            singletons.get(&type_id).cloned()
+        };
+
+        match cached {
+            Some(entry) if entry.version == version => Some(entry.value),
+            Some(_) => {
+                let mut singletons = self.inner.singletons.write().await;
+                singletons.remove(&type_id);
+                None
+            }
+            None => None,
+        }
+    }
+
+    async fn read_cached_scoped(
+        &self,
+        type_id: TypeId,
+        version: u64,
+    ) -> Option<Arc<dyn Any + Send + Sync>> {
+        let cached = {
+            let scoped = self.scoped.read().await;
+            scoped.get(&type_id).cloned()
+        };
+
+        match cached {
+            Some(entry) if entry.version == version => Some(entry.value),
+            Some(_) => {
+                let mut scoped = self.scoped.write().await;
+                scoped.remove(&type_id);
+                None
+            }
+            None => None,
+        }
+    }
+
+    fn downcast_cached<T: Send + Sync + 'static>(
+        &self,
+        cached: Arc<dyn Any + Send + Sync>,
+        type_name: &'static str,
+    ) -> Result<Arc<T>, DiError> {
+        cached.downcast::<T>().map_err(|_| {
+            DiError::ConstructionFailed(type_name, "Internal error: downcast failed".to_string())
+        })
+    }
+
+    fn downcast_instance<T: Send + Sync + 'static>(
+        &self,
+        instance: Arc<dyn Any + Send + Sync>,
+        type_name: &'static str,
+    ) -> Result<Arc<T>, DiError> {
+        instance.downcast::<T>().map_err(|_| {
+            DiError::ConstructionFailed(type_name, "Internal error: downcast failed".to_string())
+        })
     }
 
     /// Resolve an optional instance of the given type.
     /// Returns Ok(Some(Arc<T>)) if found, Ok(None) if not registered.
-    pub async fn resolve_optional<T: Send + Sync + 'static>(&self) -> Result<Option<Arc<T>>, DiError> {
+    pub async fn resolve_optional<T: Send + Sync + 'static>(
+        &self,
+    ) -> Result<Option<Arc<T>>, DiError> {
         if self.has::<T>().await {
             self.resolve::<T>().await.map(Some)
         } else {
@@ -139,14 +364,14 @@ impl DependencyContainer {
         }
     }
 
-    /// Freezes registrations, validates the dependency graph for cycles, 
+    /// Freezes registrations, validates the dependency graph for cycles,
     /// and pre-instantiates all Singletons in topological order.
     pub async fn initialize(&self) -> Result<(), DiError> {
         let mut graph = DependencyGraph::new();
 
         // 1. Build the graph from all registered providers
         {
-            let providers = self.providers.read().await;
+            let providers = self.inner.providers.read().await;
             for (type_id, provider) in providers.iter() {
                 let meta = provider.metadata();
                 graph.add_node(*type_id, meta.type_name, meta.dependencies.clone());
@@ -161,22 +386,29 @@ impl DependencyContainer {
         // any singleton dependencies it requests from the container are already cached.
         for type_id in resolution_order {
             let provider_opt = {
-                let providers = self.providers.read().await;
+                let providers = self.inner.providers.read().await;
                 providers.get(&type_id).cloned()
             };
 
             if let Some(provider) = provider_opt {
                 if provider.metadata().scope == ProviderScope::Singleton {
-                    // Check if already in singletons (e.g. registered via register_value)
+                    let version = self.current_version(type_id).await;
                     let is_cached = {
-                        let singletons = self.singletons.read().await;
-                        singletons.contains_key(&type_id)
+                        let singletons = self.inner.singletons.read().await;
+                        singletons
+                            .get(&type_id)
+                            .map(|entry| entry.version == version)
+                            .unwrap_or(false)
                     };
-                    
+
                     if !is_cached {
-                        let instance_any = provider.build(self).await?;
-                        let mut singletons = self.singletons.write().await;
-                        singletons.insert(type_id, instance_any);
+                        let instance_any = self
+                            .build_provider_with_lifecycle(provider.clone())
+                            .await?;
+                        let latest_version = self.current_version(type_id).await;
+                        if latest_version == version {
+                            self.cache_singleton(type_id, version, instance_any).await;
+                        }
                     }
                 }
             }
@@ -189,15 +421,12 @@ impl DependencyContainer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::di::provider::FactoryProvider;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use async_trait::async_trait;
-    use crate::di::provider::{ProviderMetadata, FactoryProvider};
 
-    struct DepA;
-    struct DepB;
-    
-    struct TestSingletonFactory {
-        counter: Arc<AtomicUsize>,
+    #[derive(Debug)]
+    struct TestValue {
+        id: usize,
     }
 
     #[tokio::test]
@@ -206,29 +435,112 @@ mod tests {
         let counter = Arc::new(AtomicUsize::new(0));
         let c = counter.clone();
 
-        let factory = FactoryProvider::new(
-            ProviderScope::Singleton,
-            vec![], // No deps
-            move |_| {
-                let ctr = c.clone();
-                Box::pin(async move {
-                    ctr.fetch_add(1, Ordering::SeqCst);
-                    Ok(DepA)
-                })
-            }
-        );
+        let factory = FactoryProvider::new(ProviderScope::Singleton, vec![], move |_| {
+            let ctr = c.clone();
+            Box::pin(async move {
+                let id = ctr.fetch_add(1, Ordering::SeqCst);
+                Ok(TestValue { id })
+            })
+        });
 
-        container.register::<DepA>(Arc::new(factory)).await;
-        
-        // Initialize should pre-build the singleton
+        container.register::<TestValue>(Arc::new(factory)).await;
         container.initialize().await.unwrap();
-        
+
         assert_eq!(counter.load(Ordering::SeqCst), 1);
 
-        // Resolving it multiple times should not increment the counter
-        let _inst1 = container.resolve::<DepA>().await.unwrap();
-        let _inst2 = container.resolve::<DepA>().await.unwrap();
-        
+        let inst1 = container.resolve::<TestValue>().await.unwrap();
+        let inst2 = container.resolve::<TestValue>().await.unwrap();
+
+        assert_eq!(inst1.id, inst2.id);
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_scoped_resolution_is_per_scope() {
+        let container = DependencyContainer::new();
+        let counter = Arc::new(AtomicUsize::new(0));
+        let c = counter.clone();
+
+        let factory = FactoryProvider::new(ProviderScope::Scoped, vec![], move |_| {
+            let ctr = c.clone();
+            Box::pin(async move {
+                let id = ctr.fetch_add(1, Ordering::SeqCst);
+                Ok(TestValue { id })
+            })
+        });
+
+        container.register::<TestValue>(Arc::new(factory)).await;
+
+        let scope_a = container.create_scope();
+        let scope_b = container.create_scope();
+
+        let a1 = scope_a.resolve::<TestValue>().await.unwrap();
+        let a2 = scope_a.resolve::<TestValue>().await.unwrap();
+        let b1 = scope_b.resolve::<TestValue>().await.unwrap();
+
+        assert_eq!(a1.id, a2.id);
+        assert_ne!(a1.id, b1.id);
+        assert_eq!(counter.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn test_transient_resolution_creates_new_instances() {
+        let container = DependencyContainer::new();
+        let counter = Arc::new(AtomicUsize::new(0));
+        let c = counter.clone();
+
+        let factory = FactoryProvider::new(ProviderScope::Transient, vec![], move |_| {
+            let ctr = c.clone();
+            Box::pin(async move {
+                let id = ctr.fetch_add(1, Ordering::SeqCst);
+                Ok(TestValue { id })
+            })
+        });
+
+        container.register::<TestValue>(Arc::new(factory)).await;
+
+        let first = container.resolve::<TestValue>().await.unwrap();
+        let second = container.resolve::<TestValue>().await.unwrap();
+
+        assert_ne!(first.id, second.id);
+        assert_eq!(counter.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn test_remove_invalidates_existing_scope_cache() {
+        let container = DependencyContainer::new();
+        let counter = Arc::new(AtomicUsize::new(0));
+        let c = counter.clone();
+
+        let first_factory = FactoryProvider::new(ProviderScope::Scoped, vec![], move |_| {
+            let ctr = c.clone();
+            Box::pin(async move {
+                let id = ctr.fetch_add(1, Ordering::SeqCst);
+                Ok(TestValue { id })
+            })
+        });
+
+        container
+            .register::<TestValue>(Arc::new(first_factory))
+            .await;
+
+        let scope = container.create_scope();
+        let first = scope.resolve::<TestValue>().await.unwrap();
+        assert_eq!(first.id, 0);
+
+        assert!(container.remove::<TestValue>().await);
+        assert!(!container.has::<TestValue>().await);
+
+        let second_factory = FactoryProvider::new(ProviderScope::Scoped, vec![], move |_| {
+            Box::pin(async move { Ok(TestValue { id: 99 }) })
+        });
+
+        container
+            .register::<TestValue>(Arc::new(second_factory))
+            .await;
+
+        let second = scope.resolve::<TestValue>().await.unwrap();
+        assert_eq!(second.id, 99);
         assert_eq!(counter.load(Ordering::SeqCst), 1);
     }
 }

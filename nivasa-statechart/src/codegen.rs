@@ -12,6 +12,13 @@ use crate::types::*;
 
 /// Generate Rust source code from a parsed SCXML document.
 pub fn generate_rust(doc: &ScxmlDocument) -> String {
+    generate_rust_with_spec_path(doc, "nivasa_statechart")
+}
+
+/// Generate Rust source code from a parsed SCXML document with a custom
+/// `StatechartSpec` path. This lets the same generator compile both inside
+/// the `nivasa_statechart` crate and in downstream crates that depend on it.
+pub fn generate_rust_with_spec_path(doc: &ScxmlDocument, spec_path: &str) -> String {
     let chart_name = doc
         .metadata
         .name
@@ -74,7 +81,7 @@ pub fn generate_rust(doc: &ScxmlDocument) -> String {
     out.push('\n');
 
     // StatechartSpec impl
-    out.push_str(&generate_spec_impl(&chart_name, &hash, initial_state));
+    out.push_str(&generate_spec_impl(&chart_name, &hash, initial_state, spec_path));
 
     out
 }
@@ -130,7 +137,8 @@ fn generate_transition_fn(
         state_type
     );
 
-    for state in doc.states.values() {
+    for state_id in collect_states(doc) {
+        let state = doc.states.get(&state_id).expect("state id must exist");
         for transition in &state.transitions {
             if let Some(ref event) = transition.event {
                 if let Some(target) = transition.target.first() {
@@ -170,7 +178,8 @@ fn generate_valid_events_fn(
         event_type
     );
 
-    for state in doc.states.values() {
+    for state_id in collect_states(doc) {
+        let state = doc.states.get(&state_id).expect("state id must exist");
         let events: Vec<String> = state
             .transitions
             .iter()
@@ -250,13 +259,13 @@ fn generate_handler_trait(chart_name: &str, entry_states: &[String]) -> String {
     out
 }
 
-fn generate_spec_impl(chart_name: &str, hash: &str, _initial: &str) -> String {
+fn generate_spec_impl(chart_name: &str, hash: &str, _initial: &str, spec_path: &str) -> String {
     let state_type = format!("{}State", chart_name);
     let event_type = format!("{}Event", chart_name);
 
     format!(
         "pub struct {}Statechart;\n\n\
-         impl nivasa_statechart::StatechartSpec for {}Statechart {{\n\
+         impl {}::StatechartSpec for {}Statechart {{\n\
              type State = {};\n\
              type Event = {};\n\n\
              fn transition(current: &Self::State, event: &Self::Event) -> Option<Self::State> {{\n\
@@ -276,6 +285,7 @@ fn generate_spec_impl(chart_name: &str, hash: &str, _initial: &str) -> String {
              }}\n\
          }}\n",
         chart_name,
+        spec_path,
         chart_name,
         state_type,
         event_type,
@@ -302,7 +312,7 @@ impl CaseConvert for str {
                 match chars.next() {
                     None => String::new(),
                     Some(f) => {
-                        f.to_uppercase().to_string() + &chars.as_str().to_lowercase()
+                        f.to_uppercase().to_string() + chars.as_str()
                     }
                 }
             })
@@ -342,6 +352,7 @@ mod tests {
         assert_eq!("error.send.failed".to_pascal_case(), "ErrorSendFailed");
         assert_eq!("HelloWorld".to_snake_case(), "hello_world");
         assert_eq!("module.init".to_pascal_case(), "ModuleInit");
+        assert_eq!("NivasaApplication".to_pascal_case(), "NivasaApplication");
     }
 
     #[test]
@@ -391,5 +402,27 @@ mod tests {
 
         assert!(code.contains("(SimpleState::A, SimpleEvent::Go) => Some(SimpleState::B)"));
         assert!(code.contains("_ => None"));
+    }
+
+    #[test]
+    fn test_codegen_orders_states_deterministically() {
+        let scxml = r#"<?xml version="1.0"?>
+<scxml version="1.0" name="order" initial="b" xmlns="http://www.w3.org/2005/07/scxml">
+  <state id="b"><transition event="go" target="c"/></state>
+  <state id="a"><transition event="go" target="c"/></state>
+  <final id="c"/>
+</scxml>"#;
+
+        let doc = ScxmlDocument::from_str(scxml).unwrap();
+        let code = generate_rust(&doc);
+
+        let a_transition = code
+            .find("(OrderState::A, OrderEvent::Go) => Some(OrderState::C)")
+            .expect("missing transition for state a");
+        let b_transition = code
+            .find("(OrderState::B, OrderEvent::Go) => Some(OrderState::C)")
+            .expect("missing transition for state b");
+
+        assert!(a_transition < b_transition);
     }
 }

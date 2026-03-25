@@ -1,11 +1,14 @@
 pub mod lifecycle;
+pub mod registry;
 
+use crate::di::DependencyContainer;
 use async_trait::async_trait;
 use std::any::TypeId;
-use crate::di::DependencyContainer;
+
+pub use registry::{ModuleEntry, ModuleRegistry, ModuleRegistryError};
 
 /// Metadata for a Nivasa module.
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ModuleMetadata {
     pub imports: Vec<TypeId>,
     pub providers: Vec<TypeId>,
@@ -13,19 +16,56 @@ pub struct ModuleMetadata {
     pub exports: Vec<TypeId>,
 }
 
+impl ModuleMetadata {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_imports(mut self, imports: Vec<TypeId>) -> Self {
+        self.imports = imports;
+        self
+    }
+
+    pub fn with_providers(mut self, providers: Vec<TypeId>) -> Self {
+        self.providers = providers;
+        self
+    }
+
+    pub fn with_controllers(mut self, controllers: Vec<TypeId>) -> Self {
+        self.controllers = controllers;
+        self
+    }
+
+    pub fn with_exports(mut self, exports: Vec<TypeId>) -> Self {
+        self.exports = exports;
+        self
+    }
+}
+
 /// The core trait for all Nivasa modules.
 #[async_trait]
 pub trait Module: Send + Sync + 'static {
     fn metadata(&self) -> ModuleMetadata;
-    async fn configure(&self, container: &DependencyContainer) -> Result<(), crate::di::error::DiError>;
+    async fn configure(
+        &self,
+        container: &DependencyContainer,
+    ) -> Result<(), crate::di::error::DiError>;
 }
 
 /// Lifecycle hook traits
 #[async_trait]
-pub trait OnModuleInit: Send + Sync { async fn on_module_init(&self); }
+pub trait OnModuleInit: Send + Sync {
+    async fn on_module_init(&self);
+}
 #[async_trait]
-pub trait OnModuleDestroy: Send + Sync { async fn on_module_destroy(&self); }
+pub trait OnModuleDestroy: Send + Sync {
+    async fn on_module_destroy(&self);
+}
 #[async_trait]
-pub trait OnApplicationBootstrap: Send + Sync { async fn on_application_bootstrap(&self); }
+pub trait OnApplicationBootstrap: Send + Sync {
+    async fn on_application_bootstrap(&self);
+}
 #[async_trait]
-pub trait OnApplicationShutdown: Send + Sync { async fn on_application_shutdown(&self); }
+pub trait OnApplicationShutdown: Send + Sync {
+    async fn on_application_shutdown(&self);
+}

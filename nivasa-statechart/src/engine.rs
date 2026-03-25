@@ -7,8 +7,15 @@
 //! - **Debug builds**: panic with full diagnostic
 //! - **Release builds**: return `Err(InvalidTransitionError)`
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::marker::PhantomData;
+
+#[cfg(debug_assertions)]
+use std::collections::VecDeque;
+
+#[cfg(debug_assertions)]
+const MAX_RECENT_TRANSITIONS: usize = 64;
 
 /// Trait that generated code must implement for each statechart.
 ///
@@ -43,6 +50,73 @@ pub trait StatechartTracer: Send + Sync {
     fn on_transition(&self, from: &str, event: &str, to: &str);
     /// Called when an invalid transition is attempted.
     fn on_invalid_transition(&self, from: &str, event: &str, valid_events: &[String]);
+}
+
+/// Built-in tracer that emits transition events via `tracing`.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct LoggingTracer;
+
+impl StatechartTracer for LoggingTracer {
+    fn on_transition(&self, from: &str, event: &str, to: &str) {
+        tracing::debug!(from, event, to, "statechart transition");
+    }
+
+    fn on_invalid_transition(&self, from: &str, event: &str, valid_events: &[String]) {
+        tracing::warn!(from, event, ?valid_events, "invalid statechart transition");
+    }
+}
+
+/// Kind of transition captured in debug history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TransitionKind {
+    Valid,
+    Invalid,
+}
+
+/// A serializable record of one transition attempt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransitionRecord {
+    pub kind: TransitionKind,
+    pub from: String,
+    pub event: String,
+    pub to: Option<String>,
+    pub valid_events: Vec<String>,
+}
+
+impl TransitionRecord {
+    pub fn valid(from: impl Into<String>, event: impl Into<String>, to: impl Into<String>) -> Self {
+        Self {
+            kind: TransitionKind::Valid,
+            from: from.into(),
+            event: event.into(),
+            to: Some(to.into()),
+            valid_events: Vec::new(),
+        }
+    }
+
+    pub fn invalid(
+        from: impl Into<String>,
+        event: impl Into<String>,
+        valid_events: Vec<String>,
+    ) -> Self {
+        Self {
+            kind: TransitionKind::Invalid,
+            from: from.into(),
+            event: event.into(),
+            to: None,
+            valid_events,
+        }
+    }
+}
+
+/// Serializable snapshot of an engine for debug inspection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StatechartSnapshot {
+    pub statechart_name: String,
+    pub current_state: String,
+    pub scxml_hash: String,
+    pub raw_scxml: Option<String>,
+    pub recent_transitions: Vec<TransitionRecord>,
 }
 
 /// Error returned when an invalid transition is attempted (release builds).
@@ -87,6 +161,8 @@ pub struct StatechartEngine<S: StatechartSpec> {
     current_state: S::State,
     /// Optional tracer for observing transitions.
     tracer: Option<Box<dyn StatechartTracer>>,
+    #[cfg(debug_assertions)]
+    recent_transitions: VecDeque<TransitionRecord>,
     /// Phantom for spec type.
     _spec: PhantomData<S>,
 }
@@ -97,6 +173,8 @@ impl<S: StatechartSpec> StatechartEngine<S> {
         Self {
             current_state: initial_state,
             tracer: None,
+            #[cfg(debug_assertions)]
+            recent_transitions: VecDeque::new(),
             _spec: PhantomData,
         }
     }
@@ -106,6 +184,8 @@ impl<S: StatechartSpec> StatechartEngine<S> {
         Self {
             current_state: initial_state,
             tracer: Some(tracer),
+            #[cfg(debug_assertions)]
+            recent_transitions: VecDeque::new(),
             _spec: PhantomData,
         }
     }
@@ -120,31 +200,35 @@ impl<S: StatechartSpec> StatechartEngine<S> {
         &mut self,
         event: S::Event,
     ) -> Result<S::State, InvalidTransitionError<S>> {
+        let from = format!("{:?}", self.current_state);
+        let event_str = format!("{:?}", event);
+
         match S::transition(&self.current_state, &event) {
             Some(target) => {
+                let to = format!("{:?}", target);
                 if let Some(ref tracer) = self.tracer {
-                    tracer.on_transition(
-                        &format!("{:?}", self.current_state),
-                        &format!("{:?}", event),
-                        &format!("{:?}", target),
-                    );
+                    tracer.on_transition(&from, &event_str, &to);
                 }
+                self.record_transition(TransitionRecord::valid(from, event_str, to));
                 self.current_state = target;
                 Ok(target)
             }
             None => {
                 let valid_events = S::valid_events_for(&self.current_state);
+                let valid_events_debug = valid_events
+                    .iter()
+                    .map(|e| format!("{:?}", e))
+                    .collect::<Vec<_>>();
 
                 if let Some(ref tracer) = self.tracer {
-                    tracer.on_invalid_transition(
-                        &format!("{:?}", self.current_state),
-                        &format!("{:?}", event),
-                        &valid_events
-                            .iter()
-                            .map(|e| format!("{:?}", e))
-                            .collect::<Vec<_>>(),
-                    );
+                    tracer.on_invalid_transition(&from, &event_str, &valid_events_debug);
                 }
+
+                self.record_transition(TransitionRecord::invalid(
+                    from,
+                    event_str,
+                    valid_events_debug,
+                ));
 
                 let err: InvalidTransitionError<S> = InvalidTransitionError {
                     current_state: self.current_state,
@@ -184,6 +268,41 @@ impl<S: StatechartSpec> StatechartEngine<S> {
     /// Get the SCXML content hash for parity checking.
     pub fn scxml_hash(&self) -> &'static str {
         S::scxml_hash()
+    }
+
+    /// Return a serializable snapshot for debug inspection.
+    pub fn snapshot(&self, raw_scxml: Option<String>) -> StatechartSnapshot {
+        StatechartSnapshot {
+            statechart_name: S::name().to_string(),
+            current_state: format!("{:?}", self.current_state),
+            scxml_hash: S::scxml_hash().to_string(),
+            raw_scxml,
+            recent_transitions: self.recent_transitions(),
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn record_transition(&mut self, record: TransitionRecord) {
+        if self.recent_transitions.len() >= MAX_RECENT_TRANSITIONS {
+            self.recent_transitions.pop_front();
+        }
+        self.recent_transitions.push_back(record);
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn record_transition(&mut self, _record: TransitionRecord) {}
+
+    /// Return the recent transition history.
+    pub fn recent_transitions(&self) -> Vec<TransitionRecord> {
+        #[cfg(debug_assertions)]
+        {
+            self.recent_transitions.iter().cloned().collect()
+        }
+
+        #[cfg(not(debug_assertions))]
+        {
+            Vec::new()
+        }
     }
 }
 
@@ -311,5 +430,27 @@ mod tests {
 
         let log = transitions.lock().unwrap();
         assert_eq!(log.len(), 2);
+    }
+
+    #[test]
+    fn test_snapshot_and_recent_transitions() {
+        let mut engine = StatechartEngine::<TestSpec>::with_tracer(
+            TestState::Idle,
+            Box::new(LoggingTracer),
+        );
+        engine.send_event(TestEvent::Start).unwrap();
+        engine.send_event(TestEvent::Finish).unwrap();
+
+        let snapshot = engine.snapshot(Some("<scxml/>".to_string()));
+        assert_eq!(snapshot.statechart_name, "test");
+        assert_eq!(snapshot.current_state, "Done");
+        assert_eq!(snapshot.scxml_hash, "test_hash");
+        assert_eq!(snapshot.raw_scxml.as_deref(), Some("<scxml/>"));
+        assert_eq!(snapshot.recent_transitions.len(), 2);
+        assert_eq!(snapshot.recent_transitions[0].kind, TransitionKind::Valid);
+
+        let json = serde_json::to_string(&snapshot).unwrap();
+        assert!(json.contains("\"statechart_name\""));
+        assert!(json.contains("\"recent_transitions\""));
     }
 }

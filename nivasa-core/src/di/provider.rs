@@ -1,10 +1,10 @@
+use crate::di::error::DiError;
+use async_trait::async_trait;
 use std::any::{Any, TypeId};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use async_trait::async_trait;
-use crate::di::error::DiError;
 
-use crate::di::lifecycle::{NivasaproviderEvent, NivasaproviderState, NivasaproviderStatechart};
+use crate::di::lifecycle::{NivasaProviderEvent, NivasaProviderState, NivasaProviderStatechart};
 use nivasa_statechart::StatechartEngine;
 
 /// Lifespan scope of a provider instance.
@@ -62,22 +62,22 @@ pub trait Injectable: Sized + Send + Sync + 'static {
 /// A provider that wraps another provider and enforces an SCXML lifecycle.
 pub struct LifecycleProvider {
     inner: Arc<dyn Provider>,
-    engine: Mutex<StatechartEngine<NivasaproviderStatechart>>,
+    engine: Mutex<StatechartEngine<NivasaProviderStatechart>>,
 }
 
 impl LifecycleProvider {
     pub fn new(inner: Arc<dyn Provider>) -> Self {
-        let mut engine = StatechartEngine::new(NivasaproviderState::Unregistered);
+        let mut engine = StatechartEngine::new(NivasaProviderState::Unregistered);
         // Move from Unregistered to Registered immediately upon wrapping for the container
-        let _ = engine.send_event(NivasaproviderEvent::ProviderRegister);
-        
+        let _ = engine.send_event(NivasaProviderEvent::ProviderRegister);
+
         Self {
             inner,
             engine: Mutex::new(engine),
         }
     }
 
-    pub async fn state(&self) -> NivasaproviderState {
+    pub async fn state(&self) -> NivasaProviderState {
         self.engine.lock().await.current_state()
     }
 }
@@ -95,11 +95,13 @@ impl Provider for LifecycleProvider {
         let mut engine = self.engine.lock().await;
 
         // 1. Start resolution
-        engine.send_event(NivasaproviderEvent::ProviderResolve)
+        engine
+            .send_event(NivasaProviderEvent::ProviderResolve)
             .map_err(|e| DiError::Registration(format!("Invalid state transition: {}", e)))?;
 
         // 2. Dependencies Ready
-        engine.send_event(NivasaproviderEvent::DependenciesReady)
+        engine
+            .send_event(NivasaProviderEvent::DependenciesReady)
             .map_err(|e| DiError::Registration(format!("Invalid state transition: {}", e)))?;
 
         // 3. Constructing
@@ -108,11 +110,11 @@ impl Provider for LifecycleProvider {
 
         match result {
             Ok(instance) => {
-                let _ = engine.send_event(NivasaproviderEvent::ProviderConstructed);
+                let _ = engine.send_event(NivasaProviderEvent::ProviderConstructed);
                 Ok(instance)
             }
             Err(e) => {
-                let _ = engine.send_event(NivasaproviderEvent::ErrorConstruction);
+                let _ = engine.send_event(NivasaProviderEvent::ErrorConstruction);
                 Err(e)
             }
         }
@@ -161,7 +163,13 @@ impl<T: Send + Sync + 'static> Provider for ValueProvider<T> {
 pub struct FactoryProvider<T, F>
 where
     T: Send + Sync + 'static,
-    F: for<'a> Fn(&'a crate::di::container::DependencyContainer) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, DiError>> + Send + 'a>> + Send + Sync + 'static,
+    F: for<'a> Fn(
+            &'a crate::di::container::DependencyContainer,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<T, DiError>> + Send + 'a>,
+        > + Send
+        + Sync
+        + 'static,
 {
     metadata: ProviderMetadata,
     factory: F,
@@ -170,7 +178,13 @@ where
 impl<T, F> FactoryProvider<T, F>
 where
     T: Send + Sync + 'static,
-    F: for<'a> Fn(&'a crate::di::container::DependencyContainer) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, DiError>> + Send + 'a>> + Send + Sync + 'static,
+    F: for<'a> Fn(
+            &'a crate::di::container::DependencyContainer,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<T, DiError>> + Send + 'a>,
+        > + Send
+        + Sync
+        + 'static,
 {
     pub fn new(scope: ProviderScope, dependencies: Vec<TypeId>, factory: F) -> Self {
         Self {
@@ -189,7 +203,13 @@ where
 impl<T, F> Provider for FactoryProvider<T, F>
 where
     T: Send + Sync + 'static,
-    F: for<'a> Fn(&'a crate::di::container::DependencyContainer) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, DiError>> + Send + 'a>> + Send + Sync + 'static,
+    F: for<'a> Fn(
+            &'a crate::di::container::DependencyContainer,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<T, DiError>> + Send + 'a>,
+        > + Send
+        + Sync
+        + 'static,
 {
     fn metadata(&self) -> &ProviderMetadata {
         &self.metadata
@@ -208,7 +228,13 @@ where
 pub struct ClassProvider<T, F>
 where
     T: Send + Sync + 'static,
-    F: for<'a> Fn(&'a crate::di::container::DependencyContainer) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, DiError>> + Send + 'a>> + Send + Sync + 'static,
+    F: for<'a> Fn(
+            &'a crate::di::container::DependencyContainer,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<T, DiError>> + Send + 'a>,
+        > + Send
+        + Sync
+        + 'static,
 {
     metadata: ProviderMetadata,
     constructor: F,
@@ -217,7 +243,13 @@ where
 impl<T, F> ClassProvider<T, F>
 where
     T: Send + Sync + 'static,
-    F: for<'a> Fn(&'a crate::di::container::DependencyContainer) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, DiError>> + Send + 'a>> + Send + Sync + 'static,
+    F: for<'a> Fn(
+            &'a crate::di::container::DependencyContainer,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<T, DiError>> + Send + 'a>,
+        > + Send
+        + Sync
+        + 'static,
 {
     pub fn new(scope: ProviderScope, dependencies: Vec<TypeId>, constructor: F) -> Self {
         Self {
@@ -236,7 +268,13 @@ where
 impl<T, F> Provider for ClassProvider<T, F>
 where
     T: Send + Sync + 'static,
-    F: for<'a> Fn(&'a crate::di::container::DependencyContainer) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, DiError>> + Send + 'a>> + Send + Sync + 'static,
+    F: for<'a> Fn(
+            &'a crate::di::container::DependencyContainer,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<T, DiError>> + Send + 'a>,
+        > + Send
+        + Sync
+        + 'static,
 {
     fn metadata(&self) -> &ProviderMetadata {
         &self.metadata
