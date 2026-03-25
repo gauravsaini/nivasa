@@ -2,6 +2,8 @@
 
 This page documents the controller parameter surface that the macros recognize today and separates it from what the runtime can actually extract at request time.
 
+The public request extractor for `HeaderMap` is now landed in `nivasa-http`, but controller-side `#[headers]` binding is still waiting on the later SCXML handler-execution path.
+
 ## Compile-Time Surface
 
 `#[impl_controller]` recognizes these parameter markers when it scans handler signatures on routed controller methods:
@@ -37,7 +39,7 @@ The macro also validates the obvious shape errors up front:
 
 ## Runtime Extraction Today
 
-The request layer in `nivasa-http` currently exposes concrete extraction support through `NivasaRequest` and `FromRequest` implementations for:
+The request layer in `nivasa-http` currently exposes concrete extraction support through `NivasaRequest::extract<T>()` and `FromRequest` implementations for:
 
 - `NivasaRequest`
 - `RoutePathCaptures`
@@ -57,7 +59,7 @@ That gives the runtime support we have today for the following controller marker
 | `#[param("name")]` | Captured path parameters through `RoutePathCaptures` and `path_param_typed` |
 | `#[query]` | Full query parsing through `Query<T>` plus single-value helpers on `NivasaRequest` |
 | `#[header("name")]` | Single-header lookup through `header()` and typed lookup through `header_typed()` |
-| `#[headers]` | Full header-map access through `HeaderMap` |
+| `#[headers]` | Full header-map extraction is available through `NivasaRequest::extract::<HeaderMap>()`, but controller-side execution still waits on SCXML handler binding |
 | `#[req]` | Raw request access through `NivasaRequest` |
 
 The remaining markers are compile-time metadata only today:

@@ -12,8 +12,9 @@ The crate currently exposes these pieces:
 
 1. `Body` as the core request/response payload wrapper.
 1. `NivasaRequest` with method, URI, headers, body, and route-capture access.
+1. `NivasaRequest::extract::<HeaderMap>()` plus `FromRequest for HeaderMap` for full header-map access.
 1. `NivasaResponse` plus `NivasaResponseBuilder`.
-1. `FromRequest` for request, headers, body, JSON, query, and route-capture extraction.
+1. `FromRequest` for request, `HeaderMap`, body, JSON, query, and route-capture extraction.
 1. `IntoResponse` for common response shapes, including `Result<T, HttpException>` so endpoint handlers can return success or HTTP error values directly and have `HttpException` serialize to the JSON error payload.
 1. `Download` plus `NivasaResponse::download()` for byte-backed file attachment responses that set `Content-Disposition`.
 1. `RequestPipeline` for the SCXML request coordinator.
@@ -39,4 +40,5 @@ These pieces are still intentionally out of scope or only partially wired:
 1. Keep transport code focused on I/O and request construction.
 1. Keep lifecycle decisions in the SCXML pipeline.
 1. Keep response helpers small and composable so later runtime wiring can build on them.
+1. Treat `HeaderMap` extraction as a public request API today, but do not describe controller-side `#[headers]` argument binding as live until the SCXML handler-execution path lands.
 1. Use the attachment helper for simple byte downloads, but do not treat it as a full download subsystem yet; it is still byte-backed rather than stream- or filesystem-backed.
