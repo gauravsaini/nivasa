@@ -245,21 +245,21 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 1.2.1 — Module Trait
 - [ ] Define `Module` trait with `fn configure(&self, container: &mut DependencyContainer)`
-- [ ] Define `ModuleMetadata` struct: `imports`, `controllers`, `providers`, `exports`
+- [x] Define `ModuleMetadata` struct: `imports`, `controllers`, `providers`, `exports`
 - [ ] Define `OnModuleInit` trait with `async fn on_module_init(&self)`
 - [ ] Define `OnModuleDestroy` trait with `async fn on_module_destroy(&self)`
 - [ ] Define `OnApplicationBootstrap` trait (fires after all modules init)
 - [ ] Define `OnApplicationShutdown` trait (fires before modules destroy)
 
 #### 1.2.2 — `#[module]` Attribute Macro (in `nivasa-macros`)
-- [ ] Parse `#[module({ imports: [...], controllers: [...], providers: [...], exports: [...] })]`
-- [ ] Validate attribute syntax and emit helpful errors on typos
-- [ ] Generate `impl Module for T` with metadata accessor methods
-- [ ] Generate provider registration calls for listed providers
+- [x] Parse `#[module({ imports: [...], controllers: [...], providers: [...], exports: [...] })]`
+- [x] Validate attribute syntax and emit helpful errors on typos
+- [x] Generate `impl Module for T` with metadata accessor methods
+- [x] Generate provider registration calls for listed providers
 - [ ] Generate controller registration calls
 - [ ] Generate import resolution (pull in imported module's exported providers)
 - [ ] Generate export filtering (only exports are visible to importing modules)
-- [ ] Support `middlewares: [...]` in module config
+- [x] Support `middlewares: [...]` in module config
 
 #### 1.2.3 — Dynamic Modules (NestJS `forRoot` / `forFeature`)
 - [ ] Define `DynamicModule` struct (metadata + extra providers)
@@ -270,10 +270,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test `for_feature` creates isolated instance per importing module
 
 #### 1.2.4 — Module Registry & Dependency Graph
-- [ ] Implement `ModuleRegistry` to track all registered modules
-- [ ] Build module dependency graph from `imports` lists
-- [ ] Resolve initialization order via topological sort
-- [ ] Detect circular module imports and emit clear error
+- [x] Implement `ModuleRegistry` to track all registered modules
+- [x] Build module dependency graph from `imports` lists
+- [x] Resolve initialization order via topological sort
+- [x] Detect circular module imports and emit clear error
 - [ ] Support `@Global()` equivalent — module's exports available everywhere
 
 #### 1.2.5 — Module Initialization Lifecycle (driven by `nivasa.module.scxml`)
@@ -299,7 +299,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test module with imports and exports
 - [ ] Test nested modules (A imports B imports C)
 - [ ] Test lifecycle hooks fire in correct order
-- [ ] Test circular module import detection
+- [x] Test circular module import detection
 - [ ] Test global module (available everywhere without explicit import)
 - [ ] Test dynamic module via `for_root`
 
