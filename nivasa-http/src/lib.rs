@@ -796,6 +796,109 @@ impl IntoResponse for Vec<u8> {
     }
 }
 
+fn infer_stream_content_type(chunks: &[Body]) -> Option<&'static str> {
+    let mut content_type = None;
+
+    for chunk in chunks {
+        if chunk.is_empty() {
+            continue;
+        }
+
+        let chunk_content_type = chunk.content_type()?;
+        match content_type {
+            None => content_type = Some(chunk_content_type),
+            Some(existing) if existing == chunk_content_type => {}
+            Some(_) => return None,
+        }
+    }
+
+    content_type
+}
+
+/// Buffered streaming response helper.
+///
+/// This collects chunked bodies into a single wrapper-layer response without
+/// requiring transport-level streaming support.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamBody {
+    chunks: Vec<Body>,
+    content_type: Option<String>,
+}
+
+impl StreamBody {
+    /// Create a streaming response from buffered chunks.
+    pub fn new<I, B>(chunks: I) -> Self
+    where
+        I: IntoIterator<Item = B>,
+        B: Into<Body>,
+    {
+        Self {
+            chunks: chunks.into_iter().map(Into::into).collect(),
+            content_type: None,
+        }
+    }
+
+    /// Append an additional buffered chunk.
+    pub fn push(mut self, chunk: impl Into<Body>) -> Self {
+        self.chunks.push(chunk.into());
+        self
+    }
+
+    /// Override the inferred `Content-Type`.
+    pub fn with_content_type(mut self, content_type: impl Into<String>) -> Self {
+        self.content_type = Some(content_type.into());
+        self
+    }
+
+    fn into_parts(self) -> (Body, Option<String>) {
+        let Self {
+            chunks,
+            content_type,
+        } = self;
+
+        let content_type = content_type.or_else(|| {
+            infer_stream_content_type(&chunks).map(std::borrow::ToOwned::to_owned)
+        });
+
+        let mut body = Vec::new();
+        for chunk in chunks {
+            body.extend_from_slice(&chunk.as_bytes());
+        }
+
+        let body = if body.is_empty() {
+            Body::empty()
+        } else {
+            Body::bytes(body)
+        };
+
+        (body, content_type)
+    }
+}
+
+impl NivasaResponse {
+    /// Create an OK streaming response from buffered chunks.
+    pub fn stream<I, B>(chunks: I) -> Self
+    where
+        I: IntoIterator<Item = B>,
+        B: Into<Body>,
+    {
+        StreamBody::new(chunks).into_response()
+    }
+}
+
+impl IntoResponse for StreamBody {
+    fn into_response(self) -> NivasaResponse {
+        let (body, content_type) = self.into_parts();
+        let mut response = NivasaResponse::new(StatusCode::OK, body);
+
+        if let Some(content_type) = content_type {
+            response = response.with_header(CONTENT_TYPE.as_str(), content_type);
+        }
+
+        response
+    }
+}
+
 /// Buffered server-sent events response helper.
 ///
 /// This frames SSE payloads into a `text/event-stream` body without introducing

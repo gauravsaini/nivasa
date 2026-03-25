@@ -362,7 +362,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement JSON response (auto-serialize via Serde)
 - [x] Implement plain text response
 - [x] Implement HTML response
-- [ ] Implement streaming response bodies
+- [x] Implement streaming response bodies
 - [x] Implement SSE response helper
 - [x] Implement file download response
 - [x] Implement redirect response (301, 302, 307, 308)
