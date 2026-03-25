@@ -1,6 +1,6 @@
 # API Versioning
 
-This document describes the public versioning surface in Nivasa and how far it is wired into runtime today. `global_prefix` is exposed through `ServerOptions`, but it is still bootstrap-only and is not wired into runtime route registration yet.
+This document describes the public versioning surface in Nivasa and how far it is wired into runtime today. `global_prefix` is exposed through `ServerOptions`, and `AppBootstrapConfig::global_prefix()` now exposes the normalized value for bootstrap-time route setup, but it is still not wired into runtime route registration yet.
 
 ## What Exists Today
 
@@ -9,7 +9,7 @@ The umbrella crate now exports app-facing config types in `nivasa`:
 1. `VersioningStrategy` with `Uri`, `Header`, and `MediaType` variants.
 1. `VersioningOptions`, which stores the selected strategy plus an optional default version.
 1. `ServerOptions`, which groups `host`, `port`, `cors`, `global_prefix`, and `versioning`.
-1. `AppBootstrapConfig`, which currently wraps `ServerOptions` as a pure bootstrap boundary.
+1. `AppBootstrapConfig`, which currently wraps `ServerOptions` as a pure bootstrap boundary and exposes `global_prefix()` for route setup.
 
 These types are available from the crate root and the prelude, and their builders normalize simple input forms such as `1` into `v1`.
 
@@ -30,7 +30,7 @@ The SCXML request pipeline remains the owner of request lifecycle transitions, b
 1. It filters the route registry to the versioned or unversioned routes that should be considered for the request.
 1. `RequestPipeline` then continues through its SCXML-driven lifecycle and calls `match_route` on that filtered registry.
 1. `AppBootstrapConfig` is still just the data handoff boundary for app-level configuration, not a runtime bootstrap executor.
-1. `global_prefix` follows the same pattern today: it can be supplied in config, but runtime route registration does not read or apply it yet.
+1. `global_prefix` follows the same pattern today: it can be supplied in config and read through `AppBootstrapConfig::global_prefix()`, but runtime route registration does not read or apply it yet.
 
 ## What Is Not Yet Wired
 
@@ -38,7 +38,7 @@ The new app-facing config surface is intentionally ahead of runtime integration:
 
 1. `AppBootstrapConfig` is exported, but it remains pure configuration rather than a runtime bootstrap object.
 1. `ServerOptions.versioning` exists, but the server does not read it yet.
-1. `ServerOptions.global_prefix` exists, but the server does not read it yet.
+1. `AppBootstrapConfig::global_prefix()` exists, but the runtime server does not consume it yet.
 1. `ServerOptions.cors` exists, but the server does not read it yet.
 1. There is no `NestApplication`-style bootstrap path wired up to consume `AppBootstrapConfig` or `VersioningOptions` at application start.
 
