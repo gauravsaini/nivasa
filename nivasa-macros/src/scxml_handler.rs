@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
-use quote::quote;
 use quick_xml::events::Event as XmlEvent;
 use quick_xml::Reader;
+use quote::quote;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
@@ -71,14 +71,18 @@ pub fn scxml_handler_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 fn validate_scxml_handler(args: &ScxmlHandlerArgs) -> Result<()> {
-    let statechart = args
-        .statechart
-        .as_ref()
-        .ok_or_else(|| Error::new(proc_macro2::Span::call_site(), "missing required `statechart` argument"))?;
-    let state = args
-        .state
-        .as_ref()
-        .ok_or_else(|| Error::new(proc_macro2::Span::call_site(), "missing required `state` argument"))?;
+    let statechart = args.statechart.as_ref().ok_or_else(|| {
+        Error::new(
+            proc_macro2::Span::call_site(),
+            "missing required `statechart` argument",
+        )
+    })?;
+    let state = args.state.as_ref().ok_or_else(|| {
+        Error::new(
+            proc_macro2::Span::call_site(),
+            "missing required `state` argument",
+        )
+    })?;
 
     let statechart_name = statechart.value();
     let state_name = state.value();
@@ -239,7 +243,8 @@ fn extract_state_ids(source: &str) -> Result<BTreeSet<String>> {
 
 fn read_attr(e: &quick_xml::events::BytesStart, name: &str) -> Result<Option<String>> {
     for attr in e.attributes() {
-        let attr = attr.map_err(|err| Error::new(proc_macro2::Span::call_site(), err.to_string()))?;
+        let attr =
+            attr.map_err(|err| Error::new(proc_macro2::Span::call_site(), err.to_string()))?;
         if attr.key.as_ref() == name.as_bytes() {
             let value = attr
                 .unescape_value()

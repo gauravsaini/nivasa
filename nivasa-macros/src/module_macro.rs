@@ -1,7 +1,10 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, parse::{Parse, ParseStream}, ItemStruct, Token, Type};
 use std::collections::HashMap;
+use syn::{
+    parse::{Parse, ParseStream},
+    parse_macro_input, ItemStruct, Token, Type,
+};
 
 struct ModuleArgs {
     pub properties: HashMap<String, Vec<Type>>,
@@ -11,24 +14,26 @@ impl Parse for ModuleArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let content;
         syn::braced!(content in input);
-        
+
         let mut properties = HashMap::new();
-        
+
         while !content.is_empty() {
             let key: syn::Ident = content.parse()?;
             content.parse::<Token![:]>()?;
-            
+
             let bracketed_content;
             syn::bracketed!(bracketed_content in content);
-            
-            let types = syn::punctuated::Punctuated::<Type, Token![,]>::parse_terminated(&bracketed_content)?;
+
+            let types = syn::punctuated::Punctuated::<Type, Token![,]>::parse_terminated(
+                &bracketed_content,
+            )?;
             properties.insert(key.to_string(), types.into_iter().collect());
-            
+
             if !content.is_empty() {
                 content.parse::<Token![,]>()?;
             }
         }
-        
+
         Ok(ModuleArgs { properties })
     }
 }
@@ -39,8 +44,16 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name = &input.ident;
 
     let imports = args.properties.get("imports").cloned().unwrap_or_default();
-    let providers = args.properties.get("providers").cloned().unwrap_or_default();
-    let controllers = args.properties.get("controllers").cloned().unwrap_or_default();
+    let providers = args
+        .properties
+        .get("providers")
+        .cloned()
+        .unwrap_or_default();
+    let controllers = args
+        .properties
+        .get("controllers")
+        .cloned()
+        .unwrap_or_default();
     let exports = args.properties.get("exports").cloned().unwrap_or_default();
 
     let expanded = quote! {

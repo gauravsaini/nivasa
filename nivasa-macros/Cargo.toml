@@ -16,4 +16,6 @@ proc-macro2 = "1"
 quick-xml = { workspace = true }
 
 [dev-dependencies]
+nivasa-core = { path = "../nivasa-core" }
+async-trait = { workspace = true }
 trybuild = "1"
