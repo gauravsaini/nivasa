@@ -3,6 +3,7 @@
 //! Nivasa framework HTTP primitives.
 
 mod pipeline;
+pub mod upload;
 mod server;
 
 use http::{
@@ -1052,6 +1053,7 @@ where
 }
 
 pub use pipeline::RequestPipeline;
+pub use upload::UploadedFile;
 pub use server::{NivasaServer, NivasaServerBuilder};
 
 #[cfg(debug_assertions)]
