@@ -66,14 +66,30 @@ fn crate_root_reexports_bootstrap_config_as_pure_data() {
     let server = ServerOptions::builder()
         .host("0.0.0.0")
         .port(8080)
+        .versioning(
+            VersioningOptions::builder(VersioningStrategy::Uri)
+                .default_version(" v1 ")
+                .build(),
+        )
         .build();
     let bootstrap = nivasa::AppBootstrapConfig::from(server.clone());
 
     assert_eq!(bootstrap.server, server);
     assert_eq!(
+        bootstrap.versioning().map(|options| options.strategy),
+        Some(VersioningStrategy::Uri)
+    );
+    assert_eq!(
+        bootstrap
+            .versioning()
+            .and_then(|options| options.default_version.as_deref()),
+        Some("v1")
+    );
+    assert_eq!(
         nivasa::AppBootstrapConfig::default().server,
         ServerOptions::default()
     );
+    assert_eq!(nivasa::AppBootstrapConfig::default().versioning(), None);
 }
 
 #[test]
