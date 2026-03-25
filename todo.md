@@ -75,7 +75,7 @@
 - [x] Write `statecharts/nivasa.module.scxml` — module lifecycle template (Unloaded → Loading → Loaded → Initialized → Active → Destroying → Destroyed)
 - [x] Write `statecharts/nivasa.provider.scxml` — DI provider lifecycle (Unregistered → Registered → Resolving → Constructing → Resolved → Disposing → Disposed)
 - [x] Write `statecharts/nivasa.request.scxml` — HTTP request pipeline (Received → Middleware → Routing → Guards → InterceptorPre → Pipes → Handler → InterceptorPost → ErrorHandling → Response → Done)
-- [ ] Validate all SCXML files against W3C SCXML XSD schema
+- [x] Validate all SCXML files against W3C SCXML XSD schema
 - [x] Verify each statechart: no unreachable states, no dead-ends without `<final>`, deterministic transitions
 - [x] Commit these files as the first meaningful commit — _the statecharts are the spec_
 
@@ -151,18 +151,18 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `StatechartTracer` trait: `fn on_transition(from, event, to)`
 - [x] Implement `LoggingTracer` — logs every transition via `tracing`
 - [x] Build serializable debug snapshot helpers for current state, raw SCXML, and recent transitions
-- [ ] Implement debug endpoint: `GET /_nivasa/statechart` — returns current state config as JSON
-- [ ] Implement debug endpoint: `GET /_nivasa/statechart/scxml` — returns raw SCXML document
-- [ ] Implement debug endpoint: `GET /_nivasa/statechart/transitions` — returns recent transition log
-- [ ] All introspection endpoints gated behind `#[cfg(debug_assertions)]` — zero cost in release
+- [x] Implement debug endpoint: `GET /_nivasa/statechart` — returns current state config as JSON
+- [x] Implement debug endpoint: `GET /_nivasa/statechart/scxml` — returns raw SCXML document
+- [x] Implement debug endpoint: `GET /_nivasa/statechart/transitions` — returns recent transition log
+- [x] All introspection endpoints gated behind `#[cfg(debug_assertions)]` — zero cost in release
 
 ### 0.5.8 — CLI: `nivasa statechart` Commands (`nivasa-cli`)
 - [x] Implement `nivasa statechart validate --all` — validate all SCXML files
 - [x] Implement `nivasa statechart validate <file>` — validate one SCXML file
 - [x] Implement `nivasa statechart parity` — verify generated Rust matches current SCXML
-- [ ] Implement `nivasa statechart visualize --format svg` — generate SVG diagrams from SCXML
-- [ ] Implement `nivasa statechart diff HEAD~1` — show statechart changes between commits
-- [ ] Implement `nivasa statechart inspect --port 3000` — query running app's statechart state
+- [x] Implement `nivasa statechart visualize --format svg` — generate SVG diagrams from SCXML
+- [x] Implement `nivasa statechart diff HEAD~1` — show statechart changes between commits
+- [x] Implement `nivasa statechart inspect --port 3000` — query running app's statechart state
 
 ### 0.5.9 — SCXML Engine Tests
 - [x] Test: Application lifecycle — Created → Bootstrapping → Running → ShuttingDown → Terminated
