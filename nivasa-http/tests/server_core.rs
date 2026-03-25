@@ -10,10 +10,12 @@ use http_body_util::{BodyExt, Empty, Full};
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use hyper_util::rt::TokioExecutor;
 use nivasa_http::{
-    run_controller_action, Body, ControllerResponse, NivasaRequest, NivasaResponse, NivasaServer,
+    run_controller_action, run_controller_action_with_body, Body, ControllerResponse, Json,
+    NivasaRequest, NivasaResponse, NivasaServer,
 };
 use nivasa_macros::{controller, impl_controller};
 use nivasa_routing::RouteMethod;
+use serde::Deserialize;
 use std::{
     error::Error,
     net::TcpListener as StdTcpListener,
@@ -27,6 +29,11 @@ use tokio::{
     sync::oneshot,
     time::{sleep, timeout},
 };
+
+#[derive(Debug, Deserialize)]
+struct CreateRuntimeUser {
+    name: String,
+}
 
 #[controller("/controller")]
 struct RuntimeResponseController;
@@ -47,6 +54,23 @@ impl RuntimeResponseController {
             .status(http::StatusCode::ACCEPTED)
             .header("x-controller-runtime", "res")
             .text(format!("controller-{user_id}"));
+    }
+}
+
+#[controller("/body")]
+struct RuntimeBodyController;
+
+#[impl_controller]
+impl RuntimeBodyController {
+    #[nivasa_macros::post("/create")]
+    fn create(&self, #[nivasa_macros::body] payload: Json<CreateRuntimeUser>) -> NivasaResponse {
+        let payload = payload.into_inner();
+
+        NivasaResponse::new(
+            http::StatusCode::CREATED,
+            Body::json(serde_json::json!({ "name": payload.name })),
+        )
+        .with_header("x-controller-runtime", "body")
     }
 }
 
@@ -159,6 +183,127 @@ async fn server_dispatches_controller_res_runtime_through_request_pipeline(
 
     let body = response.into_body().collect().await?.to_bytes();
     assert_eq!(body, Bytes::from_static(b"controller-42"));
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_dispatches_controller_body_runtime_through_request_pipeline(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let controller = RuntimeBodyController;
+    let route = RuntimeBodyController::__nivasa_controller_routes()
+        .into_iter()
+        .next()
+        .expect("controller body route must exist");
+
+    let server = NivasaServer::builder()
+        .route(route.0, route.1, move |request| {
+            run_controller_action_with_body::<Json<CreateRuntimeUser>, _, _>(request, |payload| {
+                controller.create(payload)
+            })
+        })
+        .expect("route must register")
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Full<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::POST)
+        .uri(format!("http://127.0.0.1:{port}/body/create"))
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .body(Full::new(Bytes::from_static(br#"{ "name": "Ada" }"#)))?;
+
+    let response = client.request(request).await?;
+    assert_eq!(response.status(), http::StatusCode::CREATED);
+    assert_eq!(
+        response
+            .headers()
+            .get("x-controller-runtime")
+            .expect("response header must exist"),
+        "body"
+    );
+
+    let body = response.into_body().collect().await?.to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body)?;
+    assert_eq!(body, serde_json::json!({ "name": "Ada" }));
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_returns_bad_request_for_controller_body_runtime_extraction_failures(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let controller = RuntimeBodyController;
+    let route = RuntimeBodyController::__nivasa_controller_routes()
+        .into_iter()
+        .next()
+        .expect("controller body route must exist");
+
+    let server = NivasaServer::builder()
+        .route(route.0, route.1, move |request| {
+            run_controller_action_with_body::<Json<CreateRuntimeUser>, _, _>(request, |payload| {
+                controller.create(payload)
+            })
+        })
+        .expect("route must register")
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Full<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::POST)
+        .uri(format!("http://127.0.0.1:{port}/body/create"))
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .body(Full::new(Bytes::from_static(br#"{"name":"Ada""#)))?;
+
+    let response = client.request(request).await?;
+    assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response
+            .headers()
+            .get(http::header::CONTENT_TYPE)
+            .expect("error content type must exist"),
+        "application/json"
+    );
+
+    let body = response.into_body().collect().await?.to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body)?;
+    assert_eq!(body["statusCode"], 400);
+    assert_eq!(body["error"], "Bad Request");
+    assert!(body["message"]
+        .as_str()
+        .expect("error message must be a string")
+        .starts_with("invalid request body:"));
 
     drop(client);
     let _ = shutdown_tx.send(());

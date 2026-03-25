@@ -828,6 +828,26 @@ where
     response.into_response()
 }
 
+/// Execute a controller-style action with a single body-shaped extracted value.
+///
+/// This is intentionally narrow: it supports the first body-only runtime slice
+/// on top of the existing request extraction surface and assumes route matching
+/// has already been driven through the request pipeline.
+pub fn run_controller_action_with_body<T, F, R>(
+    request: &NivasaRequest,
+    action: F,
+) -> NivasaResponse
+where
+    T: FromRequest,
+    F: FnOnce(T) -> R,
+    R: IntoResponse,
+{
+    match request.extract::<T>() {
+        Ok(body) => action(body).into_response(),
+        Err(error) => HttpException::bad_request(error.to_string()).into_response(),
+    }
+}
+
 impl IntoResponse for NivasaResponse {
     fn into_response(self) -> NivasaResponse {
         self

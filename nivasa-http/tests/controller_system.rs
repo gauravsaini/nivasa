@@ -1,7 +1,7 @@
 use http::{Method, Request};
 use nivasa_http::{
-    run_controller_action, Body, ControllerResponse, FromRequest, Json, NivasaRequest, Query,
-    RequestPipeline,
+    run_controller_action, run_controller_action_with_body, Body, ControllerResponse, FromRequest,
+    Json, NivasaRequest, NivasaResponse, Query, RequestPipeline,
 };
 use nivasa_macros::{controller, impl_controller};
 use nivasa_routing::{
@@ -157,6 +157,23 @@ impl ResponseController {
     }
 }
 
+#[controller("/body")]
+struct BodyController;
+
+#[impl_controller]
+impl BodyController {
+    #[nivasa_macros::post("/create")]
+    fn create(&self, #[nivasa_macros::body] payload: Json<CreateUser>) -> NivasaResponse {
+        let payload = payload.into_inner();
+
+        NivasaResponse::new(
+            http::StatusCode::CREATED,
+            Body::json(serde_json::json!({ "name": payload.name })),
+        )
+        .with_header("x-controller-mode", "body")
+    }
+}
+
 #[test]
 fn versioned_controller_routes_and_response_metadata_are_exposed() {
     let controller = VersionedReportsController;
@@ -253,4 +270,67 @@ fn controller_res_runtime_runs_only_after_route_matching() {
         response.body(),
         &Body::json(serde_json::json!({ "id": "42" }))
     );
+}
+
+#[test]
+fn controller_body_runtime_extracts_json_only_after_route_matching() {
+    let mut routes = RouteDispatchRegistry::new();
+    let controller = BodyController;
+    let route = BodyController::__nivasa_controller_routes()
+        .into_iter()
+        .next()
+        .expect("body controller must expose a route");
+
+    routes
+        .register_pattern(
+            RouteMethod::from(route.0),
+            route.1,
+            move |request: &NivasaRequest| {
+                run_controller_action_with_body::<Json<CreateUser>, _, _>(request, |payload| {
+                    controller.create(payload)
+                })
+            },
+        )
+        .expect("controller body route must register");
+
+    let request = NivasaRequest::new(
+        Method::POST,
+        "/body/create",
+        Body::json(serde_json::json!({ "name": "Ada" })),
+    );
+    let mut pipeline = RequestPipeline::new(request);
+    pipeline.parse_request().unwrap();
+    pipeline.complete_middleware().unwrap();
+
+    let outcome = pipeline.match_route(&routes).unwrap();
+    assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
+    assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+
+    let response = match outcome {
+        RouteDispatchOutcome::Matched(entry) => (entry.value)(pipeline.request()),
+        _ => panic!("route must match"),
+    };
+
+    assert_eq!(response.status(), http::StatusCode::CREATED);
+    assert_eq!(response.headers().get("x-controller-mode").unwrap(), "body");
+    assert_eq!(
+        response.body(),
+        &Body::json(serde_json::json!({ "name": "Ada" }))
+    );
+}
+
+#[test]
+fn controller_body_runtime_maps_missing_body_to_bad_request() {
+    let response = run_controller_action_with_body::<Json<CreateUser>, _, _>(
+        &NivasaRequest::new(Method::POST, "/body/create", Body::empty()),
+        |_| NivasaResponse::text("unreachable"),
+    );
+
+    assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
+
+    let body: serde_json::Value =
+        serde_json::from_slice(&response.body().as_bytes()).expect("error payload must be json");
+    assert_eq!(body["statusCode"], 400);
+    assert_eq!(body["error"], "Bad Request");
+    assert_eq!(body["message"], "request body is empty");
 }
