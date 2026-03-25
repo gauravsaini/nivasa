@@ -35,12 +35,15 @@ fn request_pipeline_drives_route_matching_outcomes() {
     let matched = matched_pipeline.match_route(&matched_routes).unwrap();
     assert!(matches!(matched, RouteDispatchOutcome::Matched(_)));
     assert_eq!(matched_pipeline.snapshot().current_state, "GuardChain");
+    assert!(matched_pipeline.request().path_params().is_some());
+    assert!(matched_pipeline.request().path_params().unwrap().is_empty());
 
     let mut not_found_pipeline = ready_pipeline();
     let not_found_routes = RouteDispatchRegistry::<&str>::new();
     let not_found = not_found_pipeline.match_route(&not_found_routes).unwrap();
     assert!(matches!(not_found, RouteDispatchOutcome::NotFound));
     assert_eq!(not_found_pipeline.snapshot().current_state, "ErrorHandling");
+    assert!(not_found_pipeline.request().path_params().is_none());
 
     let mut not_allowed_pipeline = ready_pipeline();
     let mut not_allowed_routes = RouteDispatchRegistry::new();
@@ -56,6 +59,29 @@ fn request_pipeline_drives_route_matching_outcomes() {
         RouteDispatchOutcome::MethodNotAllowed { .. }
     ));
     assert_eq!(not_allowed_pipeline.snapshot().current_state, "ErrorHandling");
+    assert!(not_allowed_pipeline.request().path_params().is_none());
+}
+
+#[test]
+fn request_pipeline_attaches_route_captures_for_parameterized_routes() {
+    let request = nivasa_http::NivasaRequest::new(Method::GET, "/users/42", Body::empty());
+    let mut pipeline = RequestPipeline::new(request);
+    let mut routes = RouteDispatchRegistry::new();
+
+    pipeline.parse_request().unwrap();
+    pipeline.complete_middleware().unwrap();
+    routes
+        .register_pattern(RouteMethod::Get, "/users/:id", "user")
+        .unwrap();
+
+    let matched = pipeline.match_route(&routes).unwrap();
+    assert!(matches!(matched, RouteDispatchOutcome::Matched(_)));
+    assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+    assert_eq!(pipeline.request().path_param("id"), Some("42"));
+    assert_eq!(
+        pipeline.request().path_params().unwrap().get("id"),
+        Some("42")
+    );
 }
 
 #[test]
@@ -67,6 +93,7 @@ fn request_pipeline_routes_middleware_errors_to_error_handling() {
     pipeline.fail_middleware().unwrap();
 
     assert_eq!(pipeline.snapshot().current_state, "ErrorHandling");
+    assert!(pipeline.request().path_params().is_none());
 }
 
 #[test]
@@ -77,6 +104,7 @@ fn request_pipeline_routes_parse_errors_to_error_handling() {
     pipeline.fail_parse().unwrap();
 
     assert_eq!(pipeline.snapshot().current_state, "ErrorHandling");
+    assert!(pipeline.request().path_params().is_none());
 }
 
 #[test]

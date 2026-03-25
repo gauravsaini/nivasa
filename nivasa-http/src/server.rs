@@ -1,5 +1,5 @@
 use crate::{Body, NivasaRequest, NivasaResponse, RequestPipeline};
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use http::{header::ALLOW, Request, Response, StatusCode};
 use http_body_util::{BodyExt, Full};
 use hyper::{body::Incoming, service::service_fn};
@@ -9,7 +9,7 @@ use nivasa_routing::{
     parse_api_version_accept, parse_api_version_header, RouteDispatchError, RouteDispatchOutcome,
     RouteDispatchRegistry, RouteMethod,
 };
-use std::{future::Future, io, net::SocketAddr, pin::Pin, sync::Arc};
+use std::{future::Future, io, net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
 use tokio::{net::TcpListener, sync::oneshot, task::JoinSet};
 
 type RouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
@@ -17,12 +17,16 @@ type RouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync +
 /// Minimal HTTP transport shell for Nivasa.
 pub struct NivasaServer {
     routes: RouteDispatchRegistry<RouteHandler>,
+    request_timeout: Option<Duration>,
+    request_body_size_limit: Option<usize>,
     shutdown: Option<oneshot::Receiver<()>>,
 }
 
 /// Builder for [`NivasaServer`].
 pub struct NivasaServerBuilder {
     routes: RouteDispatchRegistry<RouteHandler>,
+    request_timeout: Option<Duration>,
+    request_body_size_limit: Option<usize>,
     shutdown: Option<oneshot::Receiver<()>>,
 }
 
@@ -38,6 +42,8 @@ impl NivasaServer {
         let listener = TcpListener::bind(addr).await?;
         let mut shutdown = shutdown_future(self.shutdown.take());
         let routes = self.routes;
+        let request_timeout = self.request_timeout;
+        let request_body_size_limit = self.request_body_size_limit;
         let mut connections = JoinSet::new();
 
         loop {
@@ -53,7 +59,29 @@ impl NivasaServer {
                         let io = TokioIo::new(stream);
                         let service = service_fn(move |request| {
                             let routes = routes.clone();
-                            async move { handle_request(request, routes).await }
+                            let request_timeout = request_timeout;
+                            let request_body_size_limit = request_body_size_limit;
+                            async move {
+                                if let Some(timeout) = request_timeout {
+                                    match tokio::time::timeout(
+                                        timeout,
+                                        handle_request(request, routes, request_body_size_limit),
+                                    )
+                                    .await
+                                    {
+                                        Ok(result) => result,
+                                        Err(_) => Ok(build_response(
+                                            StatusCode::REQUEST_TIMEOUT,
+                                            NivasaResponse::new(
+                                                StatusCode::REQUEST_TIMEOUT,
+                                                Body::text("request timed out"),
+                                            ),
+                                        )),
+                                    }
+                                } else {
+                                    handle_request(request, routes, request_body_size_limit).await
+                                }
+                            }
                         });
 
                         let builder = AutoBuilder::new(TokioExecutor::new());
@@ -72,6 +100,8 @@ impl NivasaServerBuilder {
     fn new() -> Self {
         Self {
             routes: RouteDispatchRegistry::new(),
+            request_timeout: None,
+            request_body_size_limit: None,
             shutdown: None,
         }
     }
@@ -116,6 +146,18 @@ impl NivasaServerBuilder {
         Ok(self)
     }
 
+    /// Configure the maximum amount of time allowed for a request.
+    pub fn request_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = Some(timeout);
+        self
+    }
+
+    /// Configure the maximum request body size in bytes.
+    pub fn request_body_size_limit(mut self, limit: usize) -> Self {
+        self.request_body_size_limit = Some(limit);
+        self
+    }
+
     /// Provide a custom shutdown signal for tests or embeddings.
     pub fn shutdown_signal(mut self, shutdown: oneshot::Receiver<()>) -> Self {
         self.shutdown = Some(shutdown);
@@ -126,6 +168,8 @@ impl NivasaServerBuilder {
     pub fn build(self) -> NivasaServer {
         NivasaServer {
             routes: self.routes,
+            request_timeout: self.request_timeout,
+            request_body_size_limit: self.request_body_size_limit,
             shutdown: self.shutdown,
         }
     }
@@ -134,11 +178,21 @@ impl NivasaServerBuilder {
 async fn handle_request(
     request: hyper::Request<Incoming>,
     routes: RouteDispatchRegistry<RouteHandler>,
+    request_body_size_limit: Option<usize>,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
     let (parts, body) = request.into_parts();
-    let body = match body.collect().await {
-        Ok(collected) => collected.to_bytes(),
-        Err(_) => {
+    let body = match collect_request_body(body, request_body_size_limit).await {
+        Ok(body) => body,
+        Err(BodyCollectionError::TooLarge) => {
+            return Ok(build_response(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                NivasaResponse::new(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    Body::text("request body too large"),
+                ),
+            ));
+        }
+        Err(BodyCollectionError::Invalid) => {
             return Ok(build_response(
                 StatusCode::BAD_REQUEST,
                 NivasaResponse::new(StatusCode::BAD_REQUEST, Body::text("invalid request body")),
@@ -178,7 +232,17 @@ async fn handle_request(
     let versioned_routes = versioned_routes_for_request(pipeline.request(), &routes);
 
     let response = match pipeline.match_route(&versioned_routes) {
-        Ok(RouteDispatchOutcome::Matched(entry)) => (entry.value)(pipeline.request()),
+        Ok(RouteDispatchOutcome::Matched(entry)) => {
+            let request = pipeline.request().clone();
+            let handler = Arc::clone(&entry.value);
+            match tokio::task::spawn_blocking(move || (handler)(&request)).await {
+                Ok(response) => response,
+                Err(_) => NivasaResponse::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Body::text("request handler failed"),
+                ),
+            }
+        }
         Ok(RouteDispatchOutcome::NotFound) => {
             NivasaResponse::new(StatusCode::NOT_FOUND, Body::text("not found"))
         }
@@ -196,6 +260,33 @@ async fn handle_request(
     };
 
     Ok(build_response(response.status(), response))
+}
+
+async fn collect_request_body(
+    mut body: Incoming,
+    limit: Option<usize>,
+) -> Result<Bytes, BodyCollectionError> {
+    let mut bytes = BytesMut::new();
+
+    while let Some(frame) = body.frame().await {
+        let frame = frame.map_err(|_| BodyCollectionError::Invalid)?;
+        if let Ok(data) = frame.into_data() {
+            if let Some(limit) = limit {
+                if bytes.len().saturating_add(data.len()) > limit {
+                    return Err(BodyCollectionError::TooLarge);
+                }
+            }
+            bytes.extend_from_slice(&data);
+        }
+    }
+
+    Ok(bytes.freeze())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BodyCollectionError {
+    Invalid,
+    TooLarge,
 }
 
 fn versioned_routes_for_request(

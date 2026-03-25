@@ -1,11 +1,19 @@
 use bytes::Bytes;
-use http_body_util::{BodyExt, Empty};
+use http_body_util::{BodyExt, Empty, Full};
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use hyper_util::rt::TokioExecutor;
 use nivasa_http::{Body, NivasaResponse, NivasaServer};
 use nivasa_routing::RouteMethod;
-use std::{error::Error, net::TcpListener as StdTcpListener};
-use tokio::{sync::oneshot, time::{sleep, timeout, Duration}};
+use std::{
+    error::Error,
+    net::TcpListener as StdTcpListener,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
+use tokio::{sync::oneshot, time::{sleep, timeout}};
 
 fn free_port() -> u16 {
     StdTcpListener::bind("127.0.0.1:0")
@@ -164,6 +172,87 @@ async fn server_dispatches_media_type_versioned_routes_through_request_pipeline(
     drop(client);
     let _ = shutdown_tx.send(());
     timeout(std::time::Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_enforces_request_body_size_limit() -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let handler_called = Arc::new(AtomicBool::new(false));
+    let handler_called_for_route = handler_called.clone();
+
+    let server = NivasaServer::builder()
+        .route(RouteMethod::Post, "/uploads", move |_| {
+            handler_called_for_route.store(true, Ordering::SeqCst);
+            NivasaResponse::new(http::StatusCode::OK, Body::text("accepted"))
+        })
+        .expect("route must register")
+        .request_body_size_limit(4)
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server.listen("127.0.0.1", port).await.expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Full<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(http::Method::POST)
+        .uri(format!("http://127.0.0.1:{port}/uploads"))
+        .body(Full::new(Bytes::from_static(b"hello")))?;
+
+    let response = client.request(request).await?;
+    assert_eq!(response.status(), http::StatusCode::PAYLOAD_TOO_LARGE);
+    let body = response.into_body().collect().await?.to_bytes();
+    assert_eq!(body, Bytes::from_static(b"request body too large"));
+    assert!(!handler_called.load(Ordering::SeqCst));
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_times_out_slow_handlers() -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .route(RouteMethod::Get, "/slow", |_| {
+            std::thread::sleep(Duration::from_millis(100));
+            NivasaResponse::new(http::StatusCode::OK, Body::text("late"))
+        })
+        .expect("route must register")
+        .request_timeout(Duration::from_millis(25))
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server.listen("127.0.0.1", port).await.expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Empty<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(http::Method::GET)
+        .uri(format!("http://127.0.0.1:{port}/slow"))
+        .body(Empty::<Bytes>::new())?;
+
+    let response = client.request(request).await?;
+    assert_eq!(response.status(), http::StatusCode::REQUEST_TIMEOUT);
+    let body = response.into_body().collect().await?.to_bytes();
+    assert_eq!(body, Bytes::from_static(b"request timed out"));
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
     Ok(())
 }
 
