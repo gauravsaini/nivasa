@@ -1,0 +1,29 @@
+//! # nivasa-statechart
+//!
+//! SCXML (W3C State Chart XML) engine for the Nivasa framework.
+//!
+//! This crate provides:
+//! - **Parser**: Parse `.scxml` files into an in-memory state tree
+//! - **Validator**: Check statecharts for completeness, reachability, determinism
+//! - **Codegen**: Generate Rust enums, transition tables, and handler traits from SCXML
+//! - **Engine**: Runtime statechart interpreter that enforces valid transitions
+//!
+//! ## Architecture
+//!
+//! The SCXML files in `statecharts/` are the **source of truth** for all state
+//! machines in Nivasa. The `build.rs` script parses them and generates Rust code.
+//! The `StatechartEngine` enforces transitions at runtime — there is no `set_state()`.
+//!
+//! ## SCXML Compliance
+//!
+//! Based on [W3C SCXML Recommendation (September 2015)](https://www.w3.org/TR/scxml/).
+
+pub mod codegen;
+pub mod engine;
+pub mod parser;
+pub mod types;
+pub mod validator;
+
+pub use engine::{InvalidTransitionError, StatechartEngine, StatechartSpec, StatechartTracer};
+pub use parser::ScxmlDocument;
+pub use types::*;

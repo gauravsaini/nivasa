@@ -1,0 +1,13 @@
+[package]
+name = "nivasa"
+description = "Nivasa — A modular, SCXML-driven Rust web framework with NestJS pattern compliance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nivasa-core = { path = "../nivasa-core" }
+nivasa-common = { path = "../nivasa-common" }
+nivasa-statechart = { path = "../nivasa-statechart" }
+nivasa-macros = { path = "../nivasa-macros" }

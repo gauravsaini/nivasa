@@ -1,0 +1,15 @@
+[package]
+name = "nivasa-cli"
+description = "CLI tool for the Nivasa framework"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "nivasa"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+nivasa-statechart = { path = "../nivasa-statechart" }
