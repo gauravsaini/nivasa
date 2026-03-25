@@ -1,4 +1,6 @@
 use nivasa::prelude::*;
+#[allow(unused_imports)]
+use nivasa::prelude::{injectable, module, scxml_handler};
 
 #[test]
 fn crate_root_reexports_app_config_builders() {
@@ -90,6 +92,17 @@ fn crate_root_reexports_bootstrap_config_as_pure_data() {
         ServerOptions::default()
     );
     assert_eq!(nivasa::AppBootstrapConfig::default().versioning(), None);
+}
+
+#[test]
+fn prelude_reexports_core_traits_macros_and_http_types() {
+    fn _asserts_module_trait_name_is_in_scope<T: Module>() {}
+    fn _asserts_injectable_trait_name_is_in_scope<T: Injectable>() {}
+
+    let _container = DependencyContainer::new();
+    let _ = ProviderScope::Singleton;
+    let _ = HttpStatus::Ok;
+    let _ = HttpException::bad_request("boom");
 }
 
 #[test]
