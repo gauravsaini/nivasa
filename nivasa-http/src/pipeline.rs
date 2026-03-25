@@ -1,3 +1,12 @@
+//! SCXML-safe request pipeline coordinator.
+//!
+//! The request lifecycle is defined in `statecharts/nivasa.request.scxml`.
+//! This coordinator only advances the engine through typed
+//! `NivasaRequestEvent` values and never mutates state directly.
+//!
+//! The full pipeline is:
+//! `Received -> MiddlewareChain -> RouteMatching -> GuardChain -> InterceptorPre -> PipeTransform -> HandlerExecution -> InterceptorPost -> ErrorHandling -> SendingResponse -> Done`
+
 use crate::NivasaRequest;
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry};
 use nivasa_statechart::{
@@ -39,21 +48,28 @@ impl RequestPipeline {
     pub fn parse_request(
         &mut self,
     ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
-        self.advance(NivasaRequestEvent::RequestParsed)
+        self.advance(self.request_parsed_event())
+    }
+
+    /// Route the request into the SCXML error path from parse failure.
+    pub fn fail_parse(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(self.parse_error_event())
     }
 
     /// Mark middleware as complete and advance to route matching.
     pub fn complete_middleware(
         &mut self,
     ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
-        self.advance(NivasaRequestEvent::MiddlewareComplete)
+        self.advance(self.middleware_complete_event())
     }
 
     /// Mark middleware as failed and enter the SCXML error path.
     pub fn fail_middleware(
         &mut self,
     ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
-        self.advance(NivasaRequestEvent::ErrorMiddleware)
+        self.advance(self.middleware_error_event())
     }
 
     /// Match the request against the routing registry and advance the engine.
@@ -65,13 +81,13 @@ impl RequestPipeline {
 
         match &outcome {
             RouteDispatchOutcome::Matched(_) => {
-                self.advance(NivasaRequestEvent::RouteMatched)?;
+                self.advance(self.route_matched_event())?;
             }
             RouteDispatchOutcome::MethodNotAllowed { .. } => {
-                self.advance(NivasaRequestEvent::RouteMethodNotAllowed)?;
+                self.advance(self.route_method_not_allowed_event())?;
             }
             RouteDispatchOutcome::NotFound => {
-                self.advance(NivasaRequestEvent::RouteNotFound)?;
+                self.advance(self.route_not_found_event())?;
             }
         }
 
@@ -83,5 +99,33 @@ impl RequestPipeline {
         event: NivasaRequestEvent,
     ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
         self.engine.send_event(event)
+    }
+
+    fn request_parsed_event(&self) -> NivasaRequestEvent {
+        NivasaRequestEvent::RequestParsed
+    }
+
+    fn parse_error_event(&self) -> NivasaRequestEvent {
+        NivasaRequestEvent::ErrorParse
+    }
+
+    fn middleware_complete_event(&self) -> NivasaRequestEvent {
+        NivasaRequestEvent::MiddlewareComplete
+    }
+
+    fn middleware_error_event(&self) -> NivasaRequestEvent {
+        NivasaRequestEvent::ErrorMiddleware
+    }
+
+    fn route_matched_event(&self) -> NivasaRequestEvent {
+        NivasaRequestEvent::RouteMatched
+    }
+
+    fn route_not_found_event(&self) -> NivasaRequestEvent {
+        NivasaRequestEvent::RouteNotFound
+    }
+
+    fn route_method_not_allowed_event(&self) -> NivasaRequestEvent {
+        NivasaRequestEvent::RouteMethodNotAllowed
     }
 }

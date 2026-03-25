@@ -70,6 +70,16 @@ fn request_pipeline_routes_middleware_errors_to_error_handling() {
 }
 
 #[test]
+fn request_pipeline_routes_parse_errors_to_error_handling() {
+    let request = nivasa_http::NivasaRequest::new(Method::GET, "/users/42", Body::empty());
+    let mut pipeline = RequestPipeline::new(request);
+
+    pipeline.fail_parse().unwrap();
+
+    assert_eq!(pipeline.snapshot().current_state, "ErrorHandling");
+}
+
+#[test]
 #[should_panic(expected = "SCXML violation")]
 fn invalid_stage_skip_is_rejected_by_the_engine() {
     let request = nivasa_http::NivasaRequest::new(Method::GET, "/users/42", Body::empty());
