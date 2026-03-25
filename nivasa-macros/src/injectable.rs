@@ -127,11 +127,73 @@ fn extract_optional_arc_inner_type(ty: &Type) -> Option<&Type> {
     None
 }
 
+fn extract_lazy_arc_inner_type(ty: &Type) -> Option<&Type> {
+    if let Type::Path(type_path) = ty {
+        if let Some(last_segment) = type_path.path.segments.last() {
+            if last_segment.ident == "Lazy" {
+                if let PathArguments::AngleBracketed(args) = &last_segment.arguments {
+                    if let Some(GenericArgument::Type(inner_ty)) = args.args.first() {
+                        return extract_arc_inner_type(inner_ty);
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn build_lazy_resolution(
+    field: &Field,
+    field_name: Option<&Ident>,
+) -> Result<(proc_macro2::TokenStream, Vec<Type>)> {
+    let ty = &field.ty;
+
+    if let Some(inner_ty) = extract_lazy_arc_inner_type(ty) {
+        let inner_ty = inner_ty.clone();
+        let resolution = match field_name {
+            Some(name) => quote! {
+                #name: {
+                    let container = <nivasa_core::di::container::DependencyContainer as ::core::clone::Clone>::clone(container);
+                    nivasa_core::di::Lazy::new(move || {
+                        let container = container.clone();
+                        async move {
+                            container.resolve::<#inner_ty>().await
+                        }
+                    })
+                }
+            },
+            None => quote! {
+                {
+                    let container = <nivasa_core::di::container::DependencyContainer as ::core::clone::Clone>::clone(container);
+                    nivasa_core::di::Lazy::new(move || {
+                        let container = container.clone();
+                        async move {
+                            container.resolve::<#inner_ty>().await
+                        }
+                    })
+                }
+            },
+        };
+
+        return Ok((resolution, vec![]));
+    }
+
+    Err(Error::new(
+        field.span(),
+        "`Lazy` fields must use `Lazy<Arc<T>>`",
+    ))
+}
+
 fn build_injected_resolution(
     field: &Field,
     field_name: Option<&Ident>,
 ) -> Result<(proc_macro2::TokenStream, Vec<Type>)> {
     let ty = &field.ty;
+
+    if extract_lazy_arc_inner_type(ty).is_some() {
+        return build_lazy_resolution(field, field_name);
+    }
 
     if let Some(inner_ty) = extract_arc_inner_type(ty) {
         let inner_ty = inner_ty.clone();
@@ -170,6 +232,36 @@ fn build_fallback_resolution(
     field_name: Option<&Ident>,
 ) -> (proc_macro2::TokenStream, Vec<Type>) {
     let ty = &field.ty;
+
+    if let Some(inner_ty) = extract_lazy_arc_inner_type(ty) {
+        let inner_ty = inner_ty.clone();
+        let resolution = match field_name {
+            Some(name) => quote! {
+                #name: {
+                    let container = <nivasa_core::di::container::DependencyContainer as ::core::clone::Clone>::clone(container);
+                    nivasa_core::di::Lazy::new(move || {
+                        let container = container.clone();
+                        async move {
+                            container.resolve::<#inner_ty>().await
+                        }
+                    })
+                }
+            },
+            None => quote! {
+                {
+                    let container = <nivasa_core::di::container::DependencyContainer as ::core::clone::Clone>::clone(container);
+                    nivasa_core::di::Lazy::new(move || {
+                        let container = container.clone();
+                        async move {
+                            container.resolve::<#inner_ty>().await
+                        }
+                    })
+                }
+            },
+        };
+
+        return (resolution, vec![]);
+    }
 
     if let Some(inner_ty) = extract_arc_inner_type(ty) {
         let inner_ty = inner_ty.clone();
