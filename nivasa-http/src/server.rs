@@ -5,7 +5,10 @@ use http_body_util::{BodyExt, Full};
 use hyper::{body::Incoming, service::service_fn};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder as AutoBuilder;
-use nivasa_routing::{RouteDispatchError, RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod};
+use nivasa_routing::{
+    parse_api_version_accept, parse_api_version_header, RouteDispatchError, RouteDispatchOutcome,
+    RouteDispatchRegistry, RouteMethod,
+};
 use std::{future::Future, io, net::SocketAddr, pin::Pin, sync::Arc};
 use tokio::{net::TcpListener, sync::oneshot, task::JoinSet};
 
@@ -85,6 +88,34 @@ impl NivasaServerBuilder {
         Ok(self)
     }
 
+    /// Register a route that is selected by `X-API-Version`.
+    pub fn route_header_versioned(
+        mut self,
+        method: impl Into<RouteMethod>,
+        version: impl Into<String>,
+        path: impl Into<String>,
+        handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static,
+    ) -> Result<Self, RouteDispatchError> {
+        let handler: RouteHandler = Arc::new(handler);
+        self.routes
+            .register_header_versioned_route(method, version, path, handler)?;
+        Ok(self)
+    }
+
+    /// Register a route that is selected by an `Accept` media type version.
+    pub fn route_media_type_versioned(
+        mut self,
+        method: impl Into<RouteMethod>,
+        version: impl Into<String>,
+        path: impl Into<String>,
+        handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static,
+    ) -> Result<Self, RouteDispatchError> {
+        let handler: RouteHandler = Arc::new(handler);
+        self.routes
+            .register_media_type_versioned_route(method, version, path, handler)?;
+        Ok(self)
+    }
+
     /// Provide a custom shutdown signal for tests or embeddings.
     pub fn shutdown_signal(mut self, shutdown: oneshot::Receiver<()>) -> Self {
         self.shutdown = Some(shutdown);
@@ -144,7 +175,9 @@ async fn handle_request(
         ));
     }
 
-    let response = match pipeline.match_route(&routes) {
+    let versioned_routes = versioned_routes_for_request(pipeline.request(), &routes);
+
+    let response = match pipeline.match_route(&versioned_routes) {
         Ok(RouteDispatchOutcome::Matched(entry)) => (entry.value)(pipeline.request()),
         Ok(RouteDispatchOutcome::NotFound) => {
             NivasaResponse::new(StatusCode::NOT_FOUND, Body::text("not found"))
@@ -163,6 +196,58 @@ async fn handle_request(
     };
 
     Ok(build_response(response.status(), response))
+}
+
+fn versioned_routes_for_request(
+    request: &NivasaRequest,
+    routes: &RouteDispatchRegistry<RouteHandler>,
+) -> RouteDispatchRegistry<RouteHandler> {
+    let version = request
+        .headers()
+        .get("X-API-Version")
+        .and_then(|value| value.to_str().ok())
+        .and_then(parse_api_version_header)
+        .or_else(|| {
+            request
+                .headers()
+                .get(http::header::ACCEPT)
+                .and_then(|value| value.to_str().ok())
+                .and_then(parse_api_version_accept)
+        });
+
+    let mut selected = RouteDispatchRegistry::new();
+
+    let mut saw_versioned_match = false;
+    if let Some(version) = version.as_deref() {
+        for entry in routes.iter() {
+            if entry.version.as_deref() == Some(version) && entry.pattern.matches(request.path()) {
+                saw_versioned_match = true;
+            }
+        }
+    }
+
+    for entry in routes.iter() {
+        let matches_path = entry.pattern.matches(request.path());
+        if !matches_path {
+            continue;
+        }
+
+        let should_include = match version.as_deref() {
+            Some(version) if saw_versioned_match => entry.version.as_deref() == Some(version),
+            Some(_) => entry.version.is_none(),
+            None => entry.version.is_none(),
+        };
+
+        if should_include {
+            let _ = selected.register(
+                entry.method.clone(),
+                entry.pattern.clone(),
+                entry.value.clone(),
+            );
+        }
+    }
+
+    selected
 }
 
 fn build_response(status: StatusCode, response: NivasaResponse) -> Response<Full<Bytes>> {
