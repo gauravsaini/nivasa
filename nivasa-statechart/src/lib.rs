@@ -21,6 +21,7 @@
 pub mod codegen;
 pub mod engine;
 pub mod parser;
+pub mod schema;
 pub mod types;
 pub mod validator;
 
@@ -29,6 +30,10 @@ pub use engine::{
     StatechartTracer, TransitionKind, TransitionRecord,
 };
 pub use parser::ScxmlDocument;
+pub use schema::{
+    scxml_schema_file, scxml_schema_root, validate_scxml_schema, SchemaDiagnostic,
+    SchemaDiagnostics, SchemaValidationError,
+};
 pub use types::*;
 
 // Include generated statechart code
