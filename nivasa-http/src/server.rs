@@ -233,8 +233,8 @@ async fn handle_request(
 
     let response = match pipeline.match_route(&versioned_routes) {
         Ok(RouteDispatchOutcome::Matched(entry)) => {
-            let request = pipeline.request().clone();
             let handler = Arc::clone(&entry.value);
+            let request = pipeline.request().clone();
             match tokio::task::spawn_blocking(move || (handler)(&request)).await {
                 Ok(response) => response,
                 Err(_) => NivasaResponse::new(

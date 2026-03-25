@@ -1,8 +1,8 @@
 use http::header::HeaderMap;
 use http::{Method, Request, StatusCode};
 use nivasa_http::{
-    Body, FromRequest, IntoResponse, Json, NivasaRequest, NivasaResponse, Query,
-    RequestExtractError,
+    Body, FromRequest, Html, IntoResponse, Json, NivasaRequest, NivasaResponse, Query,
+    Redirect, RequestExtractError, Text,
 };
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod, RoutePathCaptures};
 use serde::Deserialize;
@@ -175,12 +175,21 @@ fn into_response_supports_text_json_and_status_tuples() {
     let text = "hello".into_response();
     let json = serde_json::json!({"ok": true}).into_response();
     let tuple = (StatusCode::ACCEPTED, "queued").into_response();
+    let html = Html("<strong>hello</strong>").into_response();
+    let redirect = Redirect::temporary("/users").into_response();
 
     assert_eq!(text.status(), StatusCode::OK);
     assert_eq!(text.body().as_bytes(), b"hello");
     assert_eq!(
         text.headers().get(http::header::CONTENT_TYPE).unwrap(),
         "text/plain; charset=utf-8"
+    );
+
+    assert_eq!(html.status(), StatusCode::OK);
+    assert_eq!(html.body().as_bytes(), b"<strong>hello</strong>");
+    assert_eq!(
+        html.headers().get(http::header::CONTENT_TYPE).unwrap(),
+        "text/html; charset=utf-8"
     );
 
     assert_eq!(
@@ -191,6 +200,40 @@ fn into_response_supports_text_json_and_status_tuples() {
 
     assert_eq!(tuple.status(), StatusCode::ACCEPTED);
     assert_eq!(tuple.body().as_bytes(), b"queued");
+    assert_eq!(redirect.status(), StatusCode::FOUND);
+    assert_eq!(
+        redirect.headers().get(http::header::LOCATION).unwrap(),
+        "/users"
+    );
+    assert!(redirect.body().is_empty());
+}
+
+#[test]
+fn explicit_text_wrapper_and_redirect_variants_work() {
+    let text = Text("plain text").into_response();
+    let permanent = Redirect::permanent("/docs").into_response();
+    let preserve = Redirect::permanent_preserve_method("/submit").into_response();
+
+    assert_eq!(text.status(), StatusCode::OK);
+    assert_eq!(text.body().as_bytes(), b"plain text");
+    assert_eq!(
+        text.headers().get(http::header::CONTENT_TYPE).unwrap(),
+        "text/plain; charset=utf-8"
+    );
+
+    assert_eq!(permanent.status(), StatusCode::MOVED_PERMANENTLY);
+    assert_eq!(
+        permanent.headers().get(http::header::LOCATION).unwrap(),
+        "/docs"
+    );
+    assert!(permanent.body().is_empty());
+
+    assert_eq!(preserve.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(
+        preserve.headers().get(http::header::LOCATION).unwrap(),
+        "/submit"
+    );
+    assert!(preserve.body().is_empty());
 }
 
 #[test]

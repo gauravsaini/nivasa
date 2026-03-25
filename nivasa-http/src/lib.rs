@@ -18,6 +18,7 @@ use std::fmt;
 pub enum Body {
     Empty,
     Text(String),
+    Html(String),
     Json(serde_json::Value),
     Bytes(Vec<u8>),
 }
@@ -31,6 +32,11 @@ impl Body {
     /// Create a UTF-8 text body.
     pub fn text(text: impl Into<String>) -> Self {
         Self::Text(text.into())
+    }
+
+    /// Create an HTML body.
+    pub fn html(html: impl Into<String>) -> Self {
+        Self::Html(html.into())
     }
 
     /// Create a JSON body.
@@ -48,6 +54,7 @@ impl Body {
         match self {
             Body::Empty => None,
             Body::Text(_) => Some("text/plain; charset=utf-8"),
+            Body::Html(_) => Some("text/html; charset=utf-8"),
             Body::Json(_) => Some("application/json"),
             Body::Bytes(_) => Some("application/octet-stream"),
         }
@@ -63,6 +70,7 @@ impl Body {
         match self {
             Body::Empty => Vec::new(),
             Body::Text(text) => text.as_bytes().to_vec(),
+            Body::Html(html) => html.as_bytes().to_vec(),
             Body::Json(value) => serde_json::to_vec(value).expect("JSON body must serialize"),
             Body::Bytes(bytes) => bytes.clone(),
         }
@@ -73,6 +81,7 @@ impl Body {
         match self {
             Body::Empty => Vec::new(),
             Body::Text(text) => text.into_bytes(),
+            Body::Html(html) => html.into_bytes(),
             Body::Json(value) => serde_json::to_vec(&value).expect("JSON body must serialize"),
             Body::Bytes(bytes) => bytes,
         }
@@ -94,6 +103,44 @@ impl From<&str> for Body {
 impl From<String> for Body {
     fn from(value: String) -> Self {
         Self::text(value)
+    }
+}
+
+/// Explicit text body wrapper for response conversion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Text<T>(pub T);
+
+impl<T> Text<T> {
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> From<Text<T>> for Body
+where
+    T: Into<String>,
+{
+    fn from(value: Text<T>) -> Self {
+        Body::text(value.0.into())
+    }
+}
+
+/// Explicit HTML body wrapper for response conversion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Html<T>(pub T);
+
+impl<T> Html<T> {
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> From<Html<T>> for Body
+where
+    T: Into<String>,
+{
+    fn from(value: Html<T>) -> Self {
+        Body::html(value.0.into())
     }
 }
 
@@ -426,7 +473,7 @@ impl FromRequest for String {
     fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
         match request.body() {
             Body::Empty => Ok(String::new()),
-            Body::Text(text) => Ok(text.clone()),
+            Body::Text(text) | Body::Html(text) => Ok(text.clone()),
             Body::Json(value) => serde_json::to_string(value)
                 .map_err(|err| RequestExtractError::InvalidBody(err.to_string())),
             Body::Bytes(bytes) => String::from_utf8(bytes.clone())
@@ -439,7 +486,7 @@ impl FromRequest for serde_json::Value {
     fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
         match request.body() {
             Body::Empty => Err(RequestExtractError::MissingBody),
-            Body::Text(text) => serde_json::from_str(text)
+            Body::Text(text) | Body::Html(text) => serde_json::from_str(text)
                 .map_err(|err| RequestExtractError::InvalidBody(err.to_string())),
             Body::Json(value) => Ok(value.clone()),
             Body::Bytes(bytes) => serde_json::from_slice(bytes)
@@ -455,7 +502,7 @@ where
     fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
         let value = match request.body() {
             Body::Empty => return Err(RequestExtractError::MissingBody),
-            Body::Text(text) => serde_json::from_str(text)
+            Body::Text(text) | Body::Html(text) => serde_json::from_str(text)
                 .map_err(|err| RequestExtractError::InvalidBody(err.to_string()))?,
             Body::Json(value) => value.clone(),
             Body::Bytes(bytes) => serde_json::from_slice(bytes)
@@ -513,6 +560,11 @@ impl NivasaResponse {
         Self::new(StatusCode::OK, Body::text(text))
     }
 
+    /// Create an OK response from HTML.
+    pub fn html(html: impl Into<String>) -> Self {
+        Self::new(StatusCode::OK, Body::html(html))
+    }
+
     /// Create an OK response from JSON.
     pub fn json(value: impl Into<serde_json::Value>) -> Self {
         Self::new(StatusCode::OK, Body::json(value))
@@ -551,6 +603,14 @@ impl NivasaResponse {
             HeaderValue::from_str(value.as_ref()).expect("response header value must be valid");
         self.inner.headers_mut().insert(name, value);
         self
+    }
+
+    /// Create a redirect response with a `Location` header.
+    pub fn redirect(status: StatusCode, location: impl Into<String>) -> Self {
+        let location = location.into();
+        let mut response = Self::new(status, Body::empty());
+        response = response.with_header("location", location);
+        response
     }
 }
 
@@ -656,6 +716,24 @@ impl IntoResponse for Body {
     }
 }
 
+impl<T> IntoResponse for Text<T>
+where
+    T: Into<String>,
+{
+    fn into_response(self) -> NivasaResponse {
+        NivasaResponse::text(self.0)
+    }
+}
+
+impl<T> IntoResponse for Html<T>
+where
+    T: Into<String>,
+{
+    fn into_response(self) -> NivasaResponse {
+        NivasaResponse::html(self.0)
+    }
+}
+
 impl IntoResponse for String {
     fn into_response(self) -> NivasaResponse {
         NivasaResponse::text(self)
@@ -677,6 +755,44 @@ impl IntoResponse for Vec<u8> {
 impl IntoResponse for serde_json::Value {
     fn into_response(self) -> NivasaResponse {
         NivasaResponse::json(self)
+    }
+}
+
+/// Redirect response helper with common HTTP redirect statuses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Redirect {
+    status: StatusCode,
+    location: String,
+}
+
+impl Redirect {
+    pub fn to(location: impl Into<String>, status: StatusCode) -> Self {
+        Self {
+            status,
+            location: location.into(),
+        }
+    }
+
+    pub fn permanent(location: impl Into<String>) -> Self {
+        Self::to(location, StatusCode::MOVED_PERMANENTLY)
+    }
+
+    pub fn temporary(location: impl Into<String>) -> Self {
+        Self::to(location, StatusCode::FOUND)
+    }
+
+    pub fn temporary_preserve_method(location: impl Into<String>) -> Self {
+        Self::to(location, StatusCode::TEMPORARY_REDIRECT)
+    }
+
+    pub fn permanent_preserve_method(location: impl Into<String>) -> Self {
+        Self::to(location, StatusCode::PERMANENT_REDIRECT)
+    }
+}
+
+impl IntoResponse for Redirect {
+    fn into_response(self) -> NivasaResponse {
+        NivasaResponse::redirect(self.status, self.location)
     }
 }
 

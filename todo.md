@@ -359,12 +359,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement route prefix merging: global prefix + controller prefix + method path
 
 #### 2.1.6 — Response Types
-- [ ] Implement JSON response (auto-serialize via Serde)
-- [ ] Implement plain text response
-- [ ] Implement HTML response
+- [x] Implement JSON response (auto-serialize via Serde)
+- [x] Implement plain text response
+- [x] Implement HTML response
 - [ ] Implement stream/SSE response
 - [ ] Implement file download response
-- [ ] Implement redirect response (301, 302, 307, 308)
+- [x] Implement redirect response (301, 302, 307, 308)
 - [ ] Implement `HttpStatus` enum for all standard status codes
 - [ ] Implement `Result<T, HttpException>` return type handling
 - [x] Implement `#[http_code(201)]` to override default status code
@@ -396,8 +396,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `NivasaServer` struct with builder pattern
 - [x] Implement `listen(port, host)` to start HTTP server on Tokio runtime
 - [x] Implement graceful shutdown via `tokio::signal` (SIGTERM, SIGINT, Ctrl+C)
-- [ ] Implement configurable request body size limit
-- [ ] Implement configurable request timeout
+- [x] Implement configurable request body size limit
+- [x] Implement configurable request timeout
 - [ ] Implement optional TLS via `rustls` (feature-gated)
 
 #### 2.2.2 — Request / Response Wrappers
@@ -435,7 +435,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test request body parsing (JSON)
 - [ ] Test response serialization (JSON, text, HTML)
 - [ ] Test 404 for unknown routes
-- [ ] Test request body size limit enforcement
+- [x] Test request body size limit enforcement
 - [ ] Test file upload via multipart
 
 ---
