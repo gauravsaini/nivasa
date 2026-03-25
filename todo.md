@@ -413,7 +413,6 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 > A `StatechartEngine<RequestStatechart>` is created per request. Each pipeline stage is a state.
 > Each handler returns a `RequestEvent` which drives the transition. The engine rejects invalid transitions.
 
-- [ ] Document the full request lifecycle (reference the SCXML statechart diagram)
 - [x] Document the full request lifecycle (reference the SCXML statechart diagram)
 - [x] Create a `StatechartEngine<RequestStatechart>` per incoming request
 - [x] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` → ...
