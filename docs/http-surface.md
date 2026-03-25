@@ -19,6 +19,7 @@ The crate currently exposes these pieces:
 1. `StreamBody` plus `NivasaResponse::stream()` for buffered generic streaming responses.
 1. `Sse` plus `NivasaResponse::sse()` for buffered server-sent events responses.
 1. `Download` plus `NivasaResponse::download()` for byte-backed file attachment responses that set `Content-Disposition`.
+1. `ControllerResponse` plus `NivasaResponseBuilder` for the first `#[res]` runtime slice.
 1. `RequestPipeline` for the SCXML request coordinator.
 1. `NivasaServer` as the transport shell entry point.
 1. Request dispatch for URI, header, and media-type versioned routes through the server and routing layers.
@@ -29,7 +30,7 @@ The crate currently exposes these pieces:
 These pieces are still intentionally out of scope or only partially wired:
 
 1. Full controller invocation from generated metadata.
-1. Automatic runtime handling for every controller marker.
+1. Automatic runtime handling for the remaining controller markers beyond the first `#[res]` slice.
 1. Request body size limits.
 1. Request timeouts.
 1. TLS via `rustls`.
@@ -42,5 +43,5 @@ These pieces are still intentionally out of scope or only partially wired:
 1. Keep transport code focused on I/O and request construction.
 1. Keep lifecycle decisions in the SCXML pipeline.
 1. Keep response helpers small and composable so later runtime wiring can build on them, and treat buffered streaming as a wrapper-layer response helper rather than transport-level streaming.
-1. Treat `HeaderMap` extraction as a public request API today, but do not describe controller-side `#[headers]` argument binding as live until the SCXML handler-execution path lands.
+1. Treat `HeaderMap` extraction as a public request API today, but do not describe controller-side `#[headers]` argument binding as live until the SCXML handler-execution path lands. The first `#[res]` slice is intentionally narrow and does not imply the rest of controller execution has landed.
 1. Use the attachment helper for simple byte downloads, but do not treat it as a full download subsystem yet; it is still byte-backed rather than stream- or filesystem-backed.

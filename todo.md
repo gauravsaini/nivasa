@@ -334,6 +334,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Validate no duplicate routes within a controller
 
 #### 2.1.4 — Parameter Extraction
+> ⚠️ **SCXML / controller boundary:** the request pipeline still stops at route dispatch. The first landed controller runtime slice is `#[res]` response-builder access; the other controller markers remain partial or pending until the later SCXML handler-execution path lands.
+
 - [x] Strip and record controller parameter extractor metadata in `#[impl_controller]`
 - [ ] Implement `#[body]` extractor — deserialize JSON request body to typed DTO
 - [ ] Implement `#[param("name")]` extractor — extract path parameter
@@ -342,7 +344,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `#[headers]` extractor — access all request headers as map
 - [x] Implement `#[header("name")]` extractor — extract single header value
 - [ ] Implement `#[req]` extractor — raw `NivasaRequest` access
-- [ ] Implement `#[res]` extractor — raw response builder access
+- [x] Implement `#[res]` extractor — first runtime slice for mutable response builder access
 - [x] Implement `#[ip]` extractor — client IP address
 - [x] Implement `#[session]` extractor — session data (if session module loaded)
 - [x] Implement `#[file]` / `#[files]` extractor — multipart file upload
@@ -416,7 +418,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 - [x] Document the full request lifecycle (reference the SCXML statechart diagram)
 - [x] Create a `StatechartEngine<RequestStatechart>` per incoming request
-- [x] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` (route dispatch is the current stop; controller execution and later SCXML stages remain future work) → ...
+- [x] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` (route dispatch is the current SCXML stop; the first `#[res]` runtime slice begins on the controller side, and full controller execution plus later SCXML stages remain future work) → ...
 - [x] Each pipeline stage handler returns a `RequestEvent` that the engine uses to transition
 - [ ] Pipeline short-circuits are SCXML transitions: GuardDenied → `ErrorHandling` (not ad-hoc if/else)
 - [ ] Errors at any stage raise `error.*` events → engine transitions to `ErrorHandling` state

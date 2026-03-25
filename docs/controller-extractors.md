@@ -2,7 +2,7 @@
 
 This page documents the controller parameter surface that the macros recognize today and separates it from what the runtime can actually extract at request time.
 
-The public request extractor for `HeaderMap` is now landed in `nivasa-http`, but controller-side `#[headers]` binding is still waiting on the later SCXML handler-execution path.
+The public request extractor for `HeaderMap` is now landed in `nivasa-http`, and the first controller-side runtime slice for `#[res]` is also landed. That slice is intentionally narrow: it covers mutable response construction, not full controller execution. Controller-side `#[headers]` binding is still waiting on the later SCXML handler-execution path.
 
 ## Compile-Time Surface
 
@@ -61,10 +61,10 @@ That gives the runtime support we have today for the following controller marker
 | `#[header("name")]` | Single-header lookup through `header()` and typed lookup through `header_typed()` |
 | `#[headers]` | Full header-map extraction is available through `NivasaRequest::extract::<HeaderMap>()`, but controller-side execution still waits on SCXML handler binding |
 | `#[req]` | Raw request access through `NivasaRequest` |
+| `#[res]` | Mutable controller response access through `ControllerResponse` and `NivasaResponseBuilder`; this is the first landed runtime slice and remains intentionally narrow |
 
 The remaining markers are compile-time metadata only today:
 
-- `#[res]`
 - `#[ip]`
 - `#[session]`
 - `#[file]`
