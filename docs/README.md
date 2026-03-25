@@ -1,3 +1,8 @@
 # Docs
 
-Placeholder documentation root for the Nivasa project.
+Documentation root for the Nivasa project.
+
+- [Request Lifecycle](./request-lifecycle.md) - current SCXML-gated request flow, including the typed `RequestEvent` bridge and the `StatechartEngine::send_event` transition gate.
+- [nivasa-http Surface](./http-surface.md) - current request/response surface, including the SCXML-gated pipeline, `Result<HttpException>` mapping, buffered streaming and SSE helpers, and attachment helpers.
+- [API Versioning](./api-versioning.md) - public versioning config surface, the bootstrap-time `AppBootstrapConfig::global_prefix()` route-setup helper, and runtime boundaries.
+- [Server Core](./server-core.md) - transport shell, app-facing bootstrap config boundary, the bootstrap-time `AppBootstrapConfig::global_prefix()` helper, the minimal transport-side CORS bridge, and current TLS/runtime boundaries, with the SCXML request-pipeline gate kept explicit.

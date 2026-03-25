@@ -92,7 +92,7 @@ pub fn headers(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn header(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    item
+    controller::header(_attr, item)
 }
 
 #[proc_macro_attribute]
@@ -102,5 +102,35 @@ pub fn req(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn res(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn custom_param(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn http_code(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::http_code(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn ip(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn session(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn file(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn files(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
 }

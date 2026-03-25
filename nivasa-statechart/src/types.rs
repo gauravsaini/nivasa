@@ -4,7 +4,6 @@
 //! closely following the spec's element definitions.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 /// Unique identifier for a state within a statechart.
 pub type StateId = String;

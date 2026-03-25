@@ -1,5 +1,5 @@
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
 use std::collections::HashSet;
 use syn::{
     braced,
@@ -7,10 +7,11 @@ use syn::{
     parse_macro_input, parse_quote,
     spanned::Spanned,
     Attribute, Error, Expr, ExprLit, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, ItemStruct,
-    Lit, LitStr, Meta, PatType, Result, Token,
+    Lit, LitInt, LitStr, Meta, PatType, Path, Result, Token,
 };
 
 const ROUTE_MARKER_PREFIX: &str = "nivasa-route:";
+const RESPONSE_MARKER_PREFIX: &str = "nivasa-response:";
 
 #[derive(Debug, Default, Clone)]
 struct ControllerArgs {
@@ -35,6 +36,7 @@ struct ControllerMethodBinding {
     route: RouteBinding,
     handler: Ident,
     parameters: Vec<ParameterBinding>,
+    response: Option<ResponseBinding>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -46,6 +48,17 @@ enum ParameterExtractorKind {
     Header,
     Req,
     Res,
+    CustomParam,
+    Ip,
+    Session,
+    File,
+    Files,
+}
+
+#[derive(Debug, Clone)]
+struct ResponseBinding {
+    status_code: Option<u16>,
+    headers: Vec<(String, String)>,
 }
 
 impl ControllerArgs {
@@ -82,6 +95,11 @@ impl ParameterExtractorKind {
             ParameterExtractorKind::Header => "header",
             ParameterExtractorKind::Req => "req",
             ParameterExtractorKind::Res => "res",
+            ParameterExtractorKind::CustomParam => "custom_param",
+            ParameterExtractorKind::Ip => "ip",
+            ParameterExtractorKind::Session => "session",
+            ParameterExtractorKind::File => "file",
+            ParameterExtractorKind::Files => "files",
         }
     }
 
@@ -91,6 +109,27 @@ impl ParameterExtractorKind {
             ParameterExtractorKind::Param
                 | ParameterExtractorKind::Query
                 | ParameterExtractorKind::Header
+                | ParameterExtractorKind::CustomParam
+        )
+    }
+
+    fn accepts_optional_name(self) -> bool {
+        matches!(
+            self,
+            ParameterExtractorKind::Body
+                | ParameterExtractorKind::Headers
+                | ParameterExtractorKind::Req
+                | ParameterExtractorKind::Res
+        )
+    }
+
+    fn rejects_arguments(self) -> bool {
+        matches!(
+            self,
+            ParameterExtractorKind::Ip
+                | ParameterExtractorKind::Session
+                | ParameterExtractorKind::File
+                | ParameterExtractorKind::Files
         )
     }
 }
@@ -267,6 +306,16 @@ fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding
         Some(ParameterExtractorKind::Req)
     } else if attr_path_matches(attr, "res") {
         Some(ParameterExtractorKind::Res)
+    } else if attr_path_matches(attr, "custom_param") {
+        Some(ParameterExtractorKind::CustomParam)
+    } else if attr_path_matches(attr, "ip") {
+        Some(ParameterExtractorKind::Ip)
+    } else if attr_path_matches(attr, "session") {
+        Some(ParameterExtractorKind::Session)
+    } else if attr_path_matches(attr, "file") {
+        Some(ParameterExtractorKind::File)
+    } else if attr_path_matches(attr, "files") {
+        Some(ParameterExtractorKind::Files)
     } else {
         None
     };
@@ -275,7 +324,25 @@ fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding
         return Ok(None);
     };
 
-    let binding = if kind.takes_name() {
+    let binding = if kind == ParameterExtractorKind::CustomParam {
+        let path: Path = attr.parse_args()?;
+        let rendered = path
+            .to_token_stream()
+            .to_string()
+            .replace(' ', "");
+
+        if rendered.is_empty() {
+            return Err(Error::new(
+                attr.span(),
+                "`#[custom_param]` requires a parameter extractor type",
+            ));
+        }
+
+        ParameterBinding {
+            kind: kind.as_str(),
+            name: Some(LitStr::new(&rendered, path.span())),
+        }
+    } else if kind.takes_name() {
         let name: LitStr = attr.parse_args()?;
         if name.value().trim().is_empty() {
             return Err(Error::new(name.span(), "extractor name cannot be empty"));
@@ -285,7 +352,7 @@ fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding
             kind: kind.as_str(),
             name: Some(name),
         }
-    } else {
+    } else if kind.accepts_optional_name() {
         match &attr.meta {
             Meta::Path(_) => ParameterBinding {
                 kind: kind.as_str(),
@@ -302,14 +369,115 @@ fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding
                     name: Some(name),
                 }
             }
-            Meta::NameValue(_) => ParameterBinding {
+            Meta::NameValue(_) => {
+                return Err(Error::new(
+                    attr.span(),
+                    format!("`#[{}]` only supports bare or string-list syntax", kind.as_str()),
+                ));
+            }
+        }
+    } else if kind.rejects_arguments() {
+        match &attr.meta {
+            Meta::Path(_) => ParameterBinding {
                 kind: kind.as_str(),
                 name: None,
             },
+            _ => {
+                return Err(Error::new(
+                    attr.span(),
+                    format!("`#[{}]` does not take arguments", kind.as_str()),
+                ));
+            }
         }
+    } else {
+        unreachable!("unsupported extractor kind")
     };
 
     Ok(Some(binding))
+}
+
+fn response_marker_attr(text: &str) -> Attribute {
+    let marker = LitStr::new(text, proc_macro2::Span::call_site());
+    parse_quote!(#[doc = #marker])
+}
+
+fn parse_response_marker(attr: &Attribute) -> Result<Option<ResponseBinding>> {
+    if !attr.path().is_ident("doc") {
+        return Ok(None);
+    }
+
+    let Meta::NameValue(meta) = &attr.meta else {
+        return Ok(None);
+    };
+
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(doc), ..
+    }) = &meta.value
+    else {
+        return Ok(None);
+    };
+
+    let value = doc.value();
+    let Some(rest) = value.trim().strip_prefix(RESPONSE_MARKER_PREFIX) else {
+        return Ok(None);
+    };
+
+    let rest = rest.trim();
+    let Some((kind, payload)) = rest.split_once(' ') else {
+        return Err(Error::new(doc.span(), "invalid controller response marker"));
+    };
+
+    let kind = kind.trim();
+    let payload = payload.trim();
+    if kind.is_empty() || payload.is_empty() {
+        return Err(Error::new(doc.span(), "invalid controller response marker"));
+    }
+
+    match kind {
+        "http_code" => {
+            let status_code = payload.parse::<u16>().map_err(|_| {
+                Error::new(doc.span(), "invalid controller response status code")
+            })?;
+
+            if !(100..=599).contains(&status_code) {
+                return Err(Error::new(
+                    doc.span(),
+                    "controller response status code must be between 100 and 599",
+                ));
+            }
+
+            Ok(Some(ResponseBinding {
+                status_code: Some(status_code),
+                headers: Vec::new(),
+            }))
+        }
+        "header" => {
+            let Some((name, value)) = payload.split_once(' ') else {
+                return Err(Error::new(
+                    doc.span(),
+                    "invalid controller response header marker",
+                ));
+            };
+
+            let name = name.trim();
+            let value = value.trim();
+            if name.is_empty() || value.is_empty() {
+                return Err(Error::new(
+                    doc.span(),
+                    "controller response header name and value cannot be empty",
+                ));
+            }
+
+            Ok(Some(ResponseBinding {
+                status_code: None,
+                headers: vec![(name.to_string(), value.to_string())],
+            }))
+        }
+        other => Err(Error::new(
+            doc.span(),
+            format!("unsupported controller response marker `{other}`"),
+        )),
+    }
 }
 
 fn parse_route_marker(attr: &Attribute) -> Result<Option<RouteBinding>> {
@@ -363,6 +531,65 @@ fn parse_route_marker(attr: &Attribute) -> Result<Option<RouteBinding>> {
     };
 
     Ok(Some(RouteBinding { method, path }))
+}
+
+fn parse_response_binding(attr: &Attribute) -> Result<Option<ResponseBinding>> {
+    let response_code = if attr_path_matches(attr, "http_code") {
+        Some(true)
+    } else if attr_path_matches(attr, "header") {
+        Some(false)
+    } else {
+        None
+    };
+
+    let Some(is_code) = response_code else {
+        return parse_response_marker(attr);
+    };
+
+    if is_code {
+        let code: syn::LitInt = attr.parse_args()?;
+        let status_code = code.base10_parse::<u16>().map_err(|_| {
+            Error::new(code.span(), "invalid controller response status code")
+        })?;
+
+        if !(100..=599).contains(&status_code) {
+            return Err(Error::new(
+                code.span(),
+                "controller response status code must be between 100 and 599",
+            ));
+        }
+
+        Ok(Some(ResponseBinding {
+            status_code: Some(status_code),
+            headers: Vec::new(),
+        }))
+    } else {
+        let args: syn::punctuated::Punctuated<LitStr, Token![,]> =
+            attr.parse_args_with(syn::punctuated::Punctuated::parse_terminated)?;
+
+        if args.len() != 2 {
+            return Err(Error::new(
+                attr.span(),
+                "`#[header]` expects exactly two string arguments",
+            ));
+        }
+
+        let mut iter = args.into_iter();
+        let name = iter.next().expect("header name exists");
+        let value = iter.next().expect("header value exists");
+
+        if name.value().trim().is_empty() || value.value().trim().is_empty() {
+            return Err(Error::new(
+                attr.span(),
+                "controller response header name and value cannot be empty",
+            ));
+        }
+
+        Ok(Some(ResponseBinding {
+            status_code: None,
+            headers: vec![(name.value(), value.value())],
+        }))
+    }
 }
 
 fn parse_route_binding(attr: &Attribute) -> Result<Option<RouteBinding>> {
@@ -455,6 +682,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         };
 
         let mut method_route: Option<RouteBinding> = None;
+        let mut response_bindings = Vec::new();
         let mut retained_attrs = Vec::new();
 
         for attr in method.attrs.drain(..) {
@@ -468,12 +696,46 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                     }
                     method_route = Some(binding);
                 }
-                None => retained_attrs.push(attr),
+                None => match parse_response_binding(&attr)? {
+                    Some(binding) => response_bindings.push(binding),
+                    None => retained_attrs.push(attr),
+                },
             }
         }
 
         method.attrs = retained_attrs;
         let parameters = collect_parameter_bindings(method)?;
+        let has_controller_metadata = !response_bindings.is_empty() || !parameters.is_empty();
+        let response = if response_bindings.is_empty() {
+            None
+        } else {
+            let mut merged = ResponseBinding {
+                status_code: None,
+                headers: Vec::new(),
+            };
+
+            for binding in response_bindings {
+                if let Some(status_code) = binding.status_code {
+                    if merged.status_code.is_some() {
+                        return Err(Error::new(
+                            method.sig.ident.span(),
+                            "a controller method can only use one `#[http_code]` attribute",
+                        ));
+                    }
+                    merged.status_code = Some(status_code);
+                }
+                merged.headers.extend(binding.headers);
+            }
+
+            Some(merged)
+        };
+
+        if method_route.is_none() && has_controller_metadata {
+            return Err(Error::new(
+                method.sig.ident.span(),
+                "controller metadata requires an HTTP method attribute",
+            ));
+        }
 
         if let Some(binding) = method_route {
             let route_path = binding.path.value();
@@ -492,6 +754,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                 route: binding,
                 handler: method.sig.ident.clone(),
                 parameters,
+                response,
             });
         }
     }
@@ -534,6 +797,37 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         }
     });
 
+    let response_entries = methods.iter().map(|method| {
+        let handler = &method.handler;
+        let status_code = method
+            .response
+            .as_ref()
+            .and_then(|response| response.status_code)
+            .map(|value| quote!(Some(#value)))
+            .unwrap_or_else(|| quote!(None));
+        let headers = method
+            .response
+            .as_ref()
+            .map(|response| {
+                response
+                    .headers
+                    .iter()
+                    .map(|(name, value)| quote! { (#name, #value) })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        quote! {
+            (
+                stringify!(#handler),
+                #status_code,
+                vec![
+                    #(#headers),*
+                ]
+            )
+        }
+    });
+
     Ok(quote! {
         #input
 
@@ -563,6 +857,13 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             ) -> Vec<(&'static str, Vec<(&'static str, Option<&'static str>)>)> {
                 vec![
                     #(#parameter_entries),*
+                ]
+            }
+
+            pub fn __nivasa_controller_response_metadata(
+            ) -> Vec<(&'static str, Option<u16>, Vec<(&'static str, &'static str)>)> {
+                vec![
+                    #(#response_entries),*
                 ]
             }
         }
@@ -633,6 +934,48 @@ pub fn all(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut method = parse_macro_input!(item as ImplItemFn);
     method.attrs.insert(0, route_marker_attr("ALL", &path));
     quote!(#method).into()
+}
+
+pub fn http_code(attr: TokenStream, item: TokenStream) -> TokenStream {
+    match syn::parse::<ImplItemFn>(item.clone()) {
+        Ok(mut method) => {
+            let code = parse_macro_input!(attr as LitInt);
+            let marker = response_marker_attr(&format!("http_code {}", code.base10_digits()));
+            method.attrs.insert(0, marker);
+            quote!(#method).into()
+        }
+        Err(_) => item,
+    }
+}
+
+pub fn header(attr: TokenStream, item: TokenStream) -> TokenStream {
+    match syn::parse::<ImplItemFn>(item.clone()) {
+        Ok(mut method) => {
+            let args = parse_macro_input!(
+                attr with syn::punctuated::Punctuated::<LitStr, Token![,]>::parse_terminated
+            );
+            if args.len() != 2 {
+                return Error::new(
+                    proc_macro2::Span::call_site(),
+                    "`#[header]` expects exactly two string arguments",
+                )
+                .to_compile_error()
+                .into();
+            }
+
+            let mut iter = args.into_iter();
+            let name = iter.next().expect("header name exists");
+            let value = iter.next().expect("header value exists");
+            let marker = response_marker_attr(&format!(
+                "header {} {}",
+                name.value().trim(),
+                value.value().trim()
+            ));
+            method.attrs.insert(0, marker);
+            quote!(#method).into()
+        }
+        Err(_) => item,
+    }
 }
 
 pub fn impl_controller(attr: TokenStream, item: TokenStream) -> TokenStream {

@@ -1,0 +1,5 @@
+error: `#[ip]` does not take arguments
+ --> tests/trybuild/controller_parameter_extractors_flag_invalid.rs:9:15
+  |
+9 |     fn create(#[nivasa_macros::ip("remote")] ip: String) {
+  |               ^

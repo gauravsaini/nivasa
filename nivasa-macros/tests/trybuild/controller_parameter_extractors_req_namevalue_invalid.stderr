@@ -1,0 +1,5 @@
+error: `#[req]` only supports bare or string-list syntax
+ --> tests/trybuild/controller_parameter_extractors_req_namevalue_invalid.rs:9:15
+  |
+9 |     fn create(#[nivasa_macros::req = "request"] request: String) {
+  |               ^

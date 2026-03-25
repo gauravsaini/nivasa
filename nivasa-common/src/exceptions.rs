@@ -6,6 +6,8 @@
 use serde::Serialize;
 use std::fmt;
 
+use crate::HttpStatus;
+
 /// Base HTTP exception type.
 ///
 /// All specific exception types (BadRequest, NotFound, etc.) are created
@@ -32,6 +34,11 @@ impl HttpException {
         }
     }
 
+    /// Create a new HttpException from a typed HTTP status.
+    pub fn from_status(status: HttpStatus, message: impl Into<String>) -> Self {
+        Self::new(status.into(), message)
+    }
+
     /// Attach additional details to the exception.
     pub fn with_details(mut self, details: serde_json::Value) -> Self {
         self.details = Some(details);
@@ -41,43 +48,43 @@ impl HttpException {
     // --- Factory methods for common HTTP exceptions ---
 
     pub fn bad_request(message: impl Into<String>) -> Self {
-        Self::new(400, message)
+        Self::new(400u16, message)
     }
 
     pub fn unauthorized(message: impl Into<String>) -> Self {
-        Self::new(401, message)
+        Self::new(401u16, message)
     }
 
     pub fn forbidden(message: impl Into<String>) -> Self {
-        Self::new(403, message)
+        Self::new(403u16, message)
     }
 
     pub fn not_found(message: impl Into<String>) -> Self {
-        Self::new(404, message)
+        Self::new(404u16, message)
     }
 
     pub fn method_not_allowed(message: impl Into<String>) -> Self {
-        Self::new(405, message)
+        Self::new(405u16, message)
     }
 
     pub fn conflict(message: impl Into<String>) -> Self {
-        Self::new(409, message)
+        Self::new(409u16, message)
     }
 
     pub fn unprocessable_entity(message: impl Into<String>) -> Self {
-        Self::new(422, message)
+        Self::new(422u16, message)
     }
 
     pub fn too_many_requests(message: impl Into<String>) -> Self {
-        Self::new(429, message)
+        Self::new(429u16, message)
     }
 
     pub fn internal_server_error(message: impl Into<String>) -> Self {
-        Self::new(500, message)
+        Self::new(500u16, message)
     }
 
     pub fn service_unavailable(message: impl Into<String>) -> Self {
-        Self::new(503, message)
+        Self::new(503u16, message)
     }
 }
 
@@ -90,29 +97,10 @@ impl fmt::Display for HttpException {
 impl std::error::Error for HttpException {}
 
 fn default_error_name(status_code: u16) -> String {
-    match status_code {
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        402 => "Payment Required",
-        403 => "Forbidden",
-        404 => "Not Found",
-        405 => "Method Not Allowed",
-        406 => "Not Acceptable",
-        408 => "Request Timeout",
-        409 => "Conflict",
-        410 => "Gone",
-        413 => "Payload Too Large",
-        415 => "Unsupported Media Type",
-        422 => "Unprocessable Entity",
-        429 => "Too Many Requests",
-        500 => "Internal Server Error",
-        501 => "Not Implemented",
-        502 => "Bad Gateway",
-        503 => "Service Unavailable",
-        504 => "Gateway Timeout",
-        _ => "Unknown Error",
-    }
-    .to_string()
+    HttpStatus::try_from(status_code)
+        .map(|status| status.reason_phrase())
+        .unwrap_or("Unknown Error")
+        .to_string()
 }
 
 #[cfg(test)]
@@ -121,7 +109,7 @@ mod tests {
 
     #[test]
     fn test_exception_creation() {
-        let ex = HttpException::not_found("User not found");
+        let ex = HttpException::from_status(HttpStatus::NotFound, "User not found");
         assert_eq!(ex.status_code, 404);
         assert_eq!(ex.message, "User not found");
         assert_eq!(ex.error, "Not Found");

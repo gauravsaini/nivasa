@@ -3,11 +3,17 @@
 //! Nivasa framework HTTP primitives.
 
 mod pipeline;
+mod server;
+pub mod upload;
+
+pub use http::header::HeaderMap;
 
 use http::{
-    header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE},
+    header::{HeaderName, HeaderValue, CONTENT_TYPE},
     Method, Request, Response, StatusCode, Uri,
 };
+use nivasa_common::HttpException;
+use nivasa_routing::RoutePathCaptures;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
 
@@ -16,6 +22,7 @@ use std::fmt;
 pub enum Body {
     Empty,
     Text(String),
+    Html(String),
     Json(serde_json::Value),
     Bytes(Vec<u8>),
 }
@@ -29,6 +36,11 @@ impl Body {
     /// Create a UTF-8 text body.
     pub fn text(text: impl Into<String>) -> Self {
         Self::Text(text.into())
+    }
+
+    /// Create an HTML body.
+    pub fn html(html: impl Into<String>) -> Self {
+        Self::Html(html.into())
     }
 
     /// Create a JSON body.
@@ -46,6 +58,7 @@ impl Body {
         match self {
             Body::Empty => None,
             Body::Text(_) => Some("text/plain; charset=utf-8"),
+            Body::Html(_) => Some("text/html; charset=utf-8"),
             Body::Json(_) => Some("application/json"),
             Body::Bytes(_) => Some("application/octet-stream"),
         }
@@ -61,6 +74,7 @@ impl Body {
         match self {
             Body::Empty => Vec::new(),
             Body::Text(text) => text.as_bytes().to_vec(),
+            Body::Html(html) => html.as_bytes().to_vec(),
             Body::Json(value) => serde_json::to_vec(value).expect("JSON body must serialize"),
             Body::Bytes(bytes) => bytes.clone(),
         }
@@ -71,6 +85,7 @@ impl Body {
         match self {
             Body::Empty => Vec::new(),
             Body::Text(text) => text.into_bytes(),
+            Body::Html(html) => html.into_bytes(),
             Body::Json(value) => serde_json::to_vec(&value).expect("JSON body must serialize"),
             Body::Bytes(bytes) => bytes,
         }
@@ -95,6 +110,44 @@ impl From<String> for Body {
     }
 }
 
+/// Explicit text body wrapper for response conversion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Text<T>(pub T);
+
+impl<T> Text<T> {
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> From<Text<T>> for Body
+where
+    T: Into<String>,
+{
+    fn from(value: Text<T>) -> Self {
+        Body::text(value.0.into())
+    }
+}
+
+/// Explicit HTML body wrapper for response conversion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Html<T>(pub T);
+
+impl<T> Html<T> {
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> From<Html<T>> for Body
+where
+    T: Into<String>,
+{
+    fn from(value: Html<T>) -> Self {
+        Body::html(value.0.into())
+    }
+}
+
 impl From<Vec<u8>> for Body {
     fn from(value: Vec<u8>) -> Self {
         Self::bytes(value)
@@ -113,11 +166,54 @@ impl From<serde_json::Value> for Body {
     }
 }
 
+fn sanitize_sse_single_line(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| match ch {
+            '\r' | '\n' => ' ',
+            other => other,
+        })
+        .collect()
+}
+
+fn push_sse_field(body: &mut String, name: &str, value: &str) {
+    body.push_str(name);
+    body.push_str(value);
+    body.push('\n');
+}
+
+fn push_sse_multiline_field(body: &mut String, name: &str, value: &str) {
+    for line in value.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        body.push_str(name);
+        body.push_str(line);
+        body.push('\n');
+    }
+}
+
+fn escape_content_disposition_filename(filename: &str) -> String {
+    let mut escaped = String::with_capacity(filename.len());
+    for ch in filename.chars() {
+        if matches!(ch, '\\' | '"') {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
+}
+
 /// Errors raised when extracting values from a request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequestExtractError {
     MissingBody,
+    MissingPathParameters,
+    MissingPathParameter { name: String },
+    MissingQueryParameter { name: String },
+    MissingHeader { name: String },
     InvalidBody(String),
+    InvalidPathParameter { name: String, error: String },
+    InvalidQueryParameter { name: String, error: String },
+    InvalidHeader { name: String, error: String },
     InvalidQuery(String),
 }
 
@@ -125,7 +221,28 @@ impl fmt::Display for RequestExtractError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RequestExtractError::MissingBody => f.write_str("request body is empty"),
+            RequestExtractError::MissingPathParameters => {
+                f.write_str("request has no captured path parameters")
+            }
+            RequestExtractError::MissingPathParameter { name } => {
+                write!(f, "request is missing path parameter `{name}`")
+            }
+            RequestExtractError::MissingQueryParameter { name } => {
+                write!(f, "request is missing query parameter `{name}`")
+            }
+            RequestExtractError::MissingHeader { name } => {
+                write!(f, "request is missing header `{name}`")
+            }
             RequestExtractError::InvalidBody(err) => write!(f, "invalid request body: {err}"),
+            RequestExtractError::InvalidPathParameter { name, error } => {
+                write!(f, "invalid path parameter `{name}`: {error}")
+            }
+            RequestExtractError::InvalidQueryParameter { name, error } => {
+                write!(f, "invalid query parameter `{name}`: {error}")
+            }
+            RequestExtractError::InvalidHeader { name, error } => {
+                write!(f, "invalid header `{name}`: {error}")
+            }
             RequestExtractError::InvalidQuery(err) => write!(f, "invalid query string: {err}"),
         }
     }
@@ -158,10 +275,27 @@ impl<T> Json<T> {
     }
 }
 
+fn deserialize_path_value<T>(raw: &str) -> Result<T, String>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_str(raw)
+        .or_else(|_| serde_json::from_value(serde_json::Value::String(raw.to_string())))
+        .map_err(|err| err.to_string())
+}
+
+fn deserialize_scalar_value<T>(raw: &str) -> Result<T, String>
+where
+    T: DeserializeOwned,
+{
+    deserialize_path_value(raw)
+}
+
 /// Request wrapper used by the HTTP layer.
 #[derive(Debug, Clone)]
 pub struct NivasaRequest {
     inner: Request<Body>,
+    path_params: Option<RoutePathCaptures>,
 }
 
 impl NivasaRequest {
@@ -173,12 +307,18 @@ impl NivasaRequest {
             .body(body.into())
             .expect("request must have a valid URI");
 
-        Self { inner }
+        Self {
+            inner,
+            path_params: None,
+        }
     }
 
     /// Wrap an existing HTTP request.
     pub fn from_http(inner: Request<Body>) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            path_params: None,
+        }
     }
 
     /// Request method.
@@ -208,6 +348,27 @@ impl NivasaRequest {
             .and_then(|name| self.inner.headers().get(name))
     }
 
+    /// Look up and coerce a single header value by name.
+    pub fn header_typed<T>(&self, name: impl AsRef<str>) -> Result<T, RequestExtractError>
+    where
+        T: DeserializeOwned,
+    {
+        let name = name.as_ref().to_string();
+        let Some(raw) = self.header(&name) else {
+            return Err(RequestExtractError::MissingHeader { name });
+        };
+
+        let raw = raw
+            .to_str()
+            .map_err(|error| RequestExtractError::InvalidHeader {
+                name: name.clone(),
+                error: error.to_string(),
+            })?;
+
+        deserialize_scalar_value(raw)
+            .map_err(|error| RequestExtractError::InvalidHeader { name, error })
+    }
+
     /// Look up a single query parameter by name.
     pub fn query(&self, name: impl AsRef<str>) -> Option<&str> {
         let name = name.as_ref();
@@ -223,6 +384,20 @@ impl NivasaRequest {
         })
     }
 
+    /// Look up and coerce a single query parameter by name.
+    pub fn query_typed<T>(&self, name: impl AsRef<str>) -> Result<T, RequestExtractError>
+    where
+        T: DeserializeOwned,
+    {
+        let name = name.as_ref().to_string();
+        let Some(raw) = self.query(&name) else {
+            return Err(RequestExtractError::MissingQueryParameter { name });
+        };
+
+        deserialize_scalar_value(raw)
+            .map_err(|error| RequestExtractError::InvalidQueryParameter { name, error })
+    }
+
     /// Request body.
     pub fn body(&self) -> &Body {
         self.inner.body()
@@ -231,6 +406,42 @@ impl NivasaRequest {
     /// Mutable request body.
     pub fn body_mut(&mut self) -> &mut Body {
         self.inner.body_mut()
+    }
+
+    /// Attach captured path parameters to this request.
+    pub fn set_path_params(&mut self, path_params: RoutePathCaptures) {
+        self.path_params = Some(path_params);
+    }
+
+    /// Clear any attached path parameters.
+    pub fn clear_path_params(&mut self) {
+        self.path_params = None;
+    }
+
+    /// Borrow the captured path parameters, if any.
+    pub fn path_params(&self) -> Option<&RoutePathCaptures> {
+        self.path_params.as_ref()
+    }
+
+    /// Look up a captured path parameter by name.
+    pub fn path_param(&self, name: impl AsRef<str>) -> Option<&str> {
+        self.path_params
+            .as_ref()
+            .and_then(|captures| captures.get(name.as_ref()))
+    }
+
+    /// Look up and coerce a captured path parameter by name.
+    pub fn path_param_typed<T>(&self, name: impl AsRef<str>) -> Result<T, RequestExtractError>
+    where
+        T: DeserializeOwned,
+    {
+        let name = name.as_ref().to_string();
+        let Some(raw) = self.path_param(&name) else {
+            return Err(RequestExtractError::MissingPathParameter { name });
+        };
+
+        deserialize_path_value(raw)
+            .map_err(|error| RequestExtractError::InvalidPathParameter { name, error })
     }
 
     /// Consume the wrapper and return the inner request.
@@ -267,6 +478,15 @@ impl FromRequest for NivasaRequest {
     }
 }
 
+impl FromRequest for RoutePathCaptures {
+    fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
+        request
+            .path_params()
+            .cloned()
+            .ok_or(RequestExtractError::MissingPathParameters)
+    }
+}
+
 impl FromRequest for HeaderMap {
     fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
         Ok(request.headers().clone())
@@ -289,7 +509,7 @@ impl FromRequest for String {
     fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
         match request.body() {
             Body::Empty => Ok(String::new()),
-            Body::Text(text) => Ok(text.clone()),
+            Body::Text(text) | Body::Html(text) => Ok(text.clone()),
             Body::Json(value) => serde_json::to_string(value)
                 .map_err(|err| RequestExtractError::InvalidBody(err.to_string())),
             Body::Bytes(bytes) => String::from_utf8(bytes.clone())
@@ -302,7 +522,7 @@ impl FromRequest for serde_json::Value {
     fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
         match request.body() {
             Body::Empty => Err(RequestExtractError::MissingBody),
-            Body::Text(text) => serde_json::from_str(text)
+            Body::Text(text) | Body::Html(text) => serde_json::from_str(text)
                 .map_err(|err| RequestExtractError::InvalidBody(err.to_string())),
             Body::Json(value) => Ok(value.clone()),
             Body::Bytes(bytes) => serde_json::from_slice(bytes)
@@ -318,7 +538,7 @@ where
     fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
         let value = match request.body() {
             Body::Empty => return Err(RequestExtractError::MissingBody),
-            Body::Text(text) => serde_json::from_str(text)
+            Body::Text(text) | Body::Html(text) => serde_json::from_str(text)
                 .map_err(|err| RequestExtractError::InvalidBody(err.to_string()))?,
             Body::Json(value) => value.clone(),
             Body::Bytes(bytes) => serde_json::from_slice(bytes)
@@ -336,16 +556,14 @@ where
     T: DeserializeOwned,
 {
     fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
-        let Some(query) = request.uri().query() else {
-            return Err(RequestExtractError::InvalidQuery("missing query string".into()));
-        };
-
         let mut values = serde_json::Map::new();
-        for pair in query.split('&').filter(|segment| !segment.is_empty()) {
-            let (key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
-            let value = serde_json::from_str::<serde_json::Value>(raw_value)
-                .unwrap_or_else(|_| serde_json::Value::String(raw_value.to_string()));
-            values.insert(key.to_string(), value);
+        if let Some(query) = request.uri().query() {
+            for pair in query.split('&').filter(|segment| !segment.is_empty()) {
+                let (key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
+                let value = serde_json::from_str::<serde_json::Value>(raw_value)
+                    .unwrap_or_else(|_| serde_json::Value::String(raw_value.to_string()));
+                values.insert(key.to_string(), value);
+            }
         }
 
         serde_json::from_value(serde_json::Value::Object(values))
@@ -358,6 +576,73 @@ where
 #[derive(Debug, Clone)]
 pub struct NivasaResponse {
     inner: Response<Body>,
+}
+
+/// Mutable controller response handle for the first `#[res]` runtime slice.
+#[derive(Debug, Clone)]
+pub struct ControllerResponse {
+    status: StatusCode,
+    headers: HeaderMap,
+    body: Body,
+}
+
+impl Default for ControllerResponse {
+    fn default() -> Self {
+        Self {
+            status: StatusCode::OK,
+            headers: HeaderMap::new(),
+            body: Body::empty(),
+        }
+    }
+}
+
+impl ControllerResponse {
+    /// Create a new mutable controller response handle.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the response status code.
+    pub fn status(&mut self, status: StatusCode) -> &mut Self {
+        self.status = status;
+        self
+    }
+
+    /// Add or replace a response header.
+    pub fn header(&mut self, name: impl AsRef<str>, value: impl AsRef<str>) -> &mut Self {
+        let name = HeaderName::from_bytes(name.as_ref().as_bytes())
+            .expect("response header name must be valid");
+        let value =
+            HeaderValue::from_str(value.as_ref()).expect("response header value must be valid");
+        self.headers.insert(name, value);
+        self
+    }
+
+    /// Replace the current response body.
+    pub fn body(&mut self, body: impl Into<Body>) -> &mut Self {
+        self.body = body.into();
+        self
+    }
+
+    /// Set a text response body.
+    pub fn text(&mut self, text: impl Into<String>) -> &mut Self {
+        self.body(Body::text(text))
+    }
+
+    /// Set an HTML response body.
+    pub fn html(&mut self, html: impl Into<String>) -> &mut Self {
+        self.body(Body::html(html))
+    }
+
+    /// Set a JSON response body.
+    pub fn json(&mut self, value: impl Into<serde_json::Value>) -> &mut Self {
+        self.body(Body::json(value))
+    }
+
+    /// Set a raw byte response body.
+    pub fn bytes(&mut self, bytes: impl Into<Vec<u8>>) -> &mut Self {
+        self.body(Body::bytes(bytes))
+    }
 }
 
 impl NivasaResponse {
@@ -376,6 +661,11 @@ impl NivasaResponse {
         Self::new(StatusCode::OK, Body::text(text))
     }
 
+    /// Create an OK response from HTML.
+    pub fn html(html: impl Into<String>) -> Self {
+        Self::new(StatusCode::OK, Body::html(html))
+    }
+
     /// Create an OK response from JSON.
     pub fn json(value: impl Into<serde_json::Value>) -> Self {
         Self::new(StatusCode::OK, Body::json(value))
@@ -384,6 +674,17 @@ impl NivasaResponse {
     /// Create an OK response from raw bytes.
     pub fn bytes(bytes: impl Into<Vec<u8>>) -> Self {
         Self::new(StatusCode::OK, Body::bytes(bytes))
+    }
+
+    /// Create an OK attachment response from raw bytes.
+    pub fn download(filename: impl Into<String>, bytes: impl Into<Vec<u8>>) -> Self {
+        let filename = filename.into();
+        let disposition = format!(
+            "attachment; filename=\"{}\"",
+            escape_content_disposition_filename(&filename)
+        );
+
+        Self::bytes(bytes).with_header(http::header::CONTENT_DISPOSITION.as_str(), disposition)
     }
 
     /// Access the response status.
@@ -414,6 +715,14 @@ impl NivasaResponse {
             HeaderValue::from_str(value.as_ref()).expect("response header value must be valid");
         self.inner.headers_mut().insert(name, value);
         self
+    }
+
+    /// Create a redirect response with a `Location` header.
+    pub fn redirect(status: StatusCode, location: impl Into<String>) -> Self {
+        let location = location.into();
+        let mut response = Self::new(status, Body::empty());
+        response = response.with_header("location", location);
+        response
     }
 }
 
@@ -491,10 +800,9 @@ impl NivasaResponseBuilder {
 
         if response.headers().get(CONTENT_TYPE).is_none() {
             if let Some(content_type) = content_type {
-                response.headers_mut().insert(
-                    CONTENT_TYPE,
-                    HeaderValue::from_static(content_type),
-                );
+                response
+                    .headers_mut()
+                    .insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
             }
         }
 
@@ -507,15 +815,83 @@ pub trait IntoResponse {
     fn into_response(self) -> NivasaResponse;
 }
 
+/// Execute a controller-style action with mutable response access.
+///
+/// This is intentionally narrow: it only wires up the `#[res]`-style response
+/// handle and leaves later SCXML handler-execution stages for future work.
+pub fn run_controller_action<F>(request: &NivasaRequest, action: F) -> NivasaResponse
+where
+    F: FnOnce(&NivasaRequest, &mut ControllerResponse),
+{
+    let mut response = ControllerResponse::new();
+    action(request, &mut response);
+    response.into_response()
+}
+
+/// Execute a controller-style action with a single body-shaped extracted value.
+///
+/// This is intentionally narrow: it supports the first body-only runtime slice
+/// on top of the existing request extraction surface and assumes route matching
+/// has already been driven through the request pipeline.
+pub fn run_controller_action_with_body<T, F, R>(
+    request: &NivasaRequest,
+    action: F,
+) -> NivasaResponse
+where
+    T: FromRequest,
+    F: FnOnce(T) -> R,
+    R: IntoResponse,
+{
+    match request.extract::<T>() {
+        Ok(body) => action(body).into_response(),
+        Err(error) => HttpException::bad_request(error.to_string()).into_response(),
+    }
+}
+
 impl IntoResponse for NivasaResponse {
     fn into_response(self) -> NivasaResponse {
         self
     }
 }
 
+impl IntoResponse for ControllerResponse {
+    fn into_response(self) -> NivasaResponse {
+        let Self {
+            status,
+            headers,
+            body,
+        } = self;
+
+        NivasaResponseBuilder {
+            status,
+            headers,
+            body,
+        }
+        .build()
+    }
+}
+
 impl IntoResponse for Body {
     fn into_response(self) -> NivasaResponse {
         NivasaResponse::new(StatusCode::OK, self)
+    }
+}
+
+impl<T> IntoResponse for Text<T>
+where
+    T: Into<String>,
+{
+    fn into_response(self) -> NivasaResponse {
+        NivasaResponse::text(self.0)
+    }
+}
+
+impl<T> IntoResponse for Html<T>
+where
+    T: Into<String>,
+{
+    fn into_response(self) -> NivasaResponse {
+        NivasaResponse::html(self.0)
     }
 }
 
@@ -537,9 +913,326 @@ impl IntoResponse for Vec<u8> {
     }
 }
 
+fn infer_stream_content_type(chunks: &[Body]) -> Option<&'static str> {
+    let mut content_type = None;
+
+    for chunk in chunks {
+        if chunk.is_empty() {
+            continue;
+        }
+
+        let chunk_content_type = chunk.content_type()?;
+        match content_type {
+            None => content_type = Some(chunk_content_type),
+            Some(existing) if existing == chunk_content_type => {}
+            Some(_) => return None,
+        }
+    }
+
+    content_type
+}
+
+/// Buffered streaming response helper.
+///
+/// This collects chunked bodies into a single wrapper-layer response without
+/// requiring transport-level streaming support.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamBody {
+    chunks: Vec<Body>,
+    content_type: Option<String>,
+}
+
+impl StreamBody {
+    /// Create a streaming response from buffered chunks.
+    pub fn new<I, B>(chunks: I) -> Self
+    where
+        I: IntoIterator<Item = B>,
+        B: Into<Body>,
+    {
+        Self {
+            chunks: chunks.into_iter().map(Into::into).collect(),
+            content_type: None,
+        }
+    }
+
+    /// Append an additional buffered chunk.
+    pub fn push(mut self, chunk: impl Into<Body>) -> Self {
+        self.chunks.push(chunk.into());
+        self
+    }
+
+    /// Override the inferred `Content-Type`.
+    pub fn with_content_type(mut self, content_type: impl Into<String>) -> Self {
+        self.content_type = Some(content_type.into());
+        self
+    }
+
+    fn into_parts(self) -> (Body, Option<String>) {
+        let Self {
+            chunks,
+            content_type,
+        } = self;
+
+        let content_type = content_type
+            .or_else(|| infer_stream_content_type(&chunks).map(std::borrow::ToOwned::to_owned));
+
+        let mut body = Vec::new();
+        for chunk in chunks {
+            body.extend_from_slice(&chunk.as_bytes());
+        }
+
+        let body = if body.is_empty() {
+            Body::empty()
+        } else {
+            Body::bytes(body)
+        };
+
+        (body, content_type)
+    }
+}
+
+impl NivasaResponse {
+    /// Create an OK streaming response from buffered chunks.
+    pub fn stream<I, B>(chunks: I) -> Self
+    where
+        I: IntoIterator<Item = B>,
+        B: Into<Body>,
+    {
+        StreamBody::new(chunks).into_response()
+    }
+}
+
+impl IntoResponse for StreamBody {
+    fn into_response(self) -> NivasaResponse {
+        let (body, content_type) = self.into_parts();
+        let mut response = NivasaResponse::new(StatusCode::OK, body);
+
+        if let Some(content_type) = content_type {
+            response = response.with_header(CONTENT_TYPE.as_str(), content_type);
+        }
+
+        response
+    }
+}
+
+/// Buffered server-sent events response helper.
+///
+/// This frames SSE payloads into a `text/event-stream` body without introducing
+/// transport-level streaming requirements in the wrapper layer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SseEvent {
+    event: Option<String>,
+    id: Option<String>,
+    retry: Option<u64>,
+    data: Vec<String>,
+    comment: Vec<String>,
+}
+
+impl SseEvent {
+    /// Create an event with a single `data:` field.
+    pub fn data(data: impl Into<String>) -> Self {
+        Self {
+            event: None,
+            id: None,
+            retry: None,
+            data: vec![data.into()],
+            comment: Vec::new(),
+        }
+    }
+
+    /// Create a comment-only SSE frame.
+    pub fn comment(comment: impl Into<String>) -> Self {
+        Self {
+            event: None,
+            id: None,
+            retry: None,
+            data: Vec::new(),
+            comment: vec![comment.into()],
+        }
+    }
+
+    /// Set the event name.
+    pub fn event(mut self, event: impl Into<String>) -> Self {
+        self.event = Some(event.into());
+        self
+    }
+
+    /// Set the event identifier.
+    pub fn id(mut self, id: impl Into<String>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    /// Set the reconnection delay, in milliseconds.
+    pub fn retry(mut self, retry_ms: u64) -> Self {
+        self.retry = Some(retry_ms);
+        self
+    }
+
+    /// Append an additional data line to the event.
+    pub fn data_line(mut self, data: impl Into<String>) -> Self {
+        self.data.push(data.into());
+        self
+    }
+
+    fn render(&self, body: &mut String) {
+        if let Some(event) = &self.event {
+            push_sse_field(body, "event: ", &sanitize_sse_single_line(event));
+        }
+
+        if let Some(id) = &self.id {
+            push_sse_field(body, "id: ", &sanitize_sse_single_line(id));
+        }
+
+        if let Some(retry) = self.retry {
+            push_sse_field(body, "retry: ", &retry.to_string());
+        }
+
+        for comment in &self.comment {
+            push_sse_multiline_field(body, ": ", comment);
+        }
+
+        for data in &self.data {
+            push_sse_multiline_field(body, "data: ", data);
+        }
+
+        body.push('\n');
+    }
+}
+
+/// Buffered SSE response with one or more preframed events.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sse {
+    events: Vec<SseEvent>,
+}
+
+impl Sse {
+    /// Create an SSE response from a sequence of events.
+    pub fn new(events: impl IntoIterator<Item = SseEvent>) -> Self {
+        Self {
+            events: events.into_iter().collect(),
+        }
+    }
+
+    /// Append an event to the buffered stream.
+    pub fn push(mut self, event: SseEvent) -> Self {
+        self.events.push(event);
+        self
+    }
+
+    fn into_body(self) -> String {
+        let mut body = String::new();
+        for event in self.events {
+            event.render(&mut body);
+        }
+        body
+    }
+}
+
+impl From<SseEvent> for Sse {
+    fn from(event: SseEvent) -> Self {
+        Self::new([event])
+    }
+}
+
+impl NivasaResponse {
+    /// Create an OK server-sent events response.
+    pub fn sse(events: impl IntoIterator<Item = SseEvent>) -> Self {
+        Sse::new(events).into_response()
+    }
+}
+
+impl IntoResponse for SseEvent {
+    fn into_response(self) -> NivasaResponse {
+        Sse::from(self).into_response()
+    }
+}
+
+impl IntoResponse for Sse {
+    fn into_response(self) -> NivasaResponse {
+        NivasaResponse::new(StatusCode::OK, Body::text(self.into_body()))
+            .with_header(
+                http::header::CONTENT_TYPE.as_str(),
+                "text/event-stream; charset=utf-8",
+            )
+            .with_header(http::header::CACHE_CONTROL.as_str(), "no-cache")
+    }
+}
+
+/// File download response helper backed by the existing byte body surface.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Download {
+    filename: String,
+    bytes: Vec<u8>,
+}
+
+impl Download {
+    pub fn attachment(filename: impl Into<String>, bytes: impl Into<Vec<u8>>) -> Self {
+        Self {
+            filename: filename.into(),
+            bytes: bytes.into(),
+        }
+    }
+}
+
+impl IntoResponse for Download {
+    fn into_response(self) -> NivasaResponse {
+        NivasaResponse::download(self.filename, self.bytes)
+    }
+}
+
 impl IntoResponse for serde_json::Value {
     fn into_response(self) -> NivasaResponse {
         NivasaResponse::json(self)
+    }
+}
+
+impl IntoResponse for HttpException {
+    fn into_response(self) -> NivasaResponse {
+        let status =
+            StatusCode::from_u16(self.status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        NivasaResponse::new(
+            status,
+            serde_json::to_value(self).expect("HttpException must serialize"),
+        )
+    }
+}
+
+/// Redirect response helper with common HTTP redirect statuses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Redirect {
+    status: StatusCode,
+    location: String,
+}
+
+impl Redirect {
+    pub fn to(location: impl Into<String>, status: StatusCode) -> Self {
+        Self {
+            status,
+            location: location.into(),
+        }
+    }
+
+    pub fn permanent(location: impl Into<String>) -> Self {
+        Self::to(location, StatusCode::MOVED_PERMANENTLY)
+    }
+
+    pub fn temporary(location: impl Into<String>) -> Self {
+        Self::to(location, StatusCode::FOUND)
+    }
+
+    pub fn temporary_preserve_method(location: impl Into<String>) -> Self {
+        Self::to(location, StatusCode::TEMPORARY_REDIRECT)
+    }
+
+    pub fn permanent_preserve_method(location: impl Into<String>) -> Self {
+        Self::to(location, StatusCode::PERMANENT_REDIRECT)
+    }
+}
+
+impl IntoResponse for Redirect {
+    fn into_response(self) -> NivasaResponse {
+        NivasaResponse::redirect(self.status, self.location)
     }
 }
 
@@ -580,6 +1273,8 @@ where
 }
 
 pub use pipeline::RequestPipeline;
+pub use server::{NivasaServer, NivasaServerBuilder};
+pub use upload::UploadedFile;
 
 #[cfg(debug_assertions)]
 pub mod debug {

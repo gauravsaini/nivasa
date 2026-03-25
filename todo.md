@@ -334,19 +334,21 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Validate no duplicate routes within a controller
 
 #### 2.1.4 — Parameter Extraction
+> ⚠️ **SCXML / controller boundary:** the request pipeline still stops at route dispatch. The first landed controller runtime slice is `#[res]` response-builder access; the other controller markers remain partial or pending until the later SCXML handler-execution path lands.
+
 - [x] Strip and record controller parameter extractor metadata in `#[impl_controller]`
 - [ ] Implement `#[body]` extractor — deserialize JSON request body to typed DTO
 - [ ] Implement `#[param("name")]` extractor — extract path parameter
 - [ ] Implement `#[query]` extractor — deserialize full query string to struct
-- [ ] Implement `#[query("name")]` extractor — extract single query param
-- [ ] Implement `#[headers]` extractor — access all request headers as map
-- [ ] Implement `#[header("name")]` extractor — extract single header value
+- [x] Implement `#[query("name")]` extractor — extract single query param
+- [x] Implement `#[headers]` extractor — access all request headers as map
+- [x] Implement `#[header("name")]` extractor — extract single header value
 - [ ] Implement `#[req]` extractor — raw `NivasaRequest` access
-- [ ] Implement `#[res]` extractor — raw response builder access
-- [ ] Implement `#[ip]` extractor — client IP address
-- [ ] Implement `#[session]` extractor — session data (if session module loaded)
-- [ ] Implement `#[file]` / `#[files]` extractor — multipart file upload
-- [ ] Support custom parameter decorators: `#[custom_param(MyExtractor)]`
+- [x] Implement `#[res]` extractor — first runtime slice for mutable response builder access
+- [x] Implement `#[ip]` extractor — client IP address
+- [x] Implement `#[session]` extractor — session data (if session module loaded)
+- [x] Implement `#[file]` / `#[files]` extractor — multipart file upload
+- [x] Support custom parameter decorators: `#[custom_param(MyExtractor)]`
 
 #### 2.1.5 — Route Registration & Matching
 - [x] Implement `RouteRegistry` to store all routes
@@ -359,29 +361,30 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement route prefix merging: global prefix + controller prefix + method path
 
 #### 2.1.6 — Response Types
-- [ ] Implement JSON response (auto-serialize via Serde)
-- [ ] Implement plain text response
-- [ ] Implement HTML response
-- [ ] Implement stream/SSE response
-- [ ] Implement file download response
-- [ ] Implement redirect response (301, 302, 307, 308)
-- [ ] Implement `HttpStatus` enum for all standard status codes
-- [ ] Implement `Result<T, HttpException>` return type handling
-- [ ] Implement `#[http_code(201)]` to override default status code
-- [ ] Implement `#[header("key", "value")]` to set response headers
+- [x] Implement JSON response (auto-serialize via Serde)
+- [x] Implement plain text response
+- [x] Implement HTML response
+- [x] Implement streaming response bodies
+- [x] Implement SSE response helper
+- [x] Implement file download response
+- [x] Implement redirect response (301, 302, 307, 308)
+- [x] Implement `HttpStatus` enum for all standard status codes
+- [x] Implement `Result<T, HttpException>` return type handling
+- [x] Implement `#[http_code(201)]` to override default status code
+- [x] Implement `#[header("key", "value")]` to set response headers
 
 #### 2.1.7 — API Versioning
 - [x] Support URI versioning: `/v1/users`, `/v2/users`
-- [ ] Support header versioning: `X-API-Version: 1`
-- [ ] Support media type versioning: `Accept: application/vnd.app.v1+json`
+- [x] Support header versioning: `X-API-Version: 1`
+- [x] Support media type versioning: `Accept: application/vnd.app.v1+json`
 - [ ] Implement `VersioningOptions` config on `NestApplication`
 - [x] Test versioned routes resolve correctly
 
 #### 2.1.8 — Controller System Tests
 - [x] Test basic GET route registration and invocation
-- [ ] Test POST route with JSON body extraction
-- [ ] Test path parameter extraction and type coercion
-- [ ] Test query parameter extraction (single + struct)
+- [x] Test POST route with JSON body extraction
+- [x] Test path parameter extraction and type coercion
+- [x] Test query parameter extraction (single + struct)
 - [x] Test multiple routes on one controller
 - [x] Test controller prefix concatenation
 - [x] Test 404 for unmatched routes
@@ -392,13 +395,13 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 2.2 — HTTP Server Integration (`nivasa-http`)
 
 #### 2.2.1 — Server Core
-- [ ] Add `hyper` + `hyper-util` dependencies
-- [ ] Implement `NivasaServer` struct with builder pattern
-- [ ] Implement `listen(port, host)` to start HTTP server on Tokio runtime
-- [ ] Implement graceful shutdown via `tokio::signal` (SIGTERM, SIGINT, Ctrl+C)
-- [ ] Implement configurable request body size limit
-- [ ] Implement configurable request timeout
-- [ ] Implement optional TLS via `rustls` (feature-gated)
+- [x] Add `hyper` + `hyper-util` dependencies
+- [x] Implement `NivasaServer` struct with builder pattern
+- [x] Implement `listen(port, host)` to start HTTP server on Tokio runtime
+- [x] Implement graceful shutdown via `tokio::signal` (SIGTERM, SIGINT, Ctrl+C)
+- [x] Implement configurable request body size limit
+- [x] Implement configurable request timeout
+- [x] Implement optional TLS via `rustls` (feature-gated)
 
 #### 2.2.2 — Request / Response Wrappers
 - [x] Implement `NivasaRequest` wrapping `http::Request<Body>` with convenience methods
@@ -413,10 +416,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 > A `StatechartEngine<RequestStatechart>` is created per request. Each pipeline stage is a state.
 > Each handler returns a `RequestEvent` which drives the transition. The engine rejects invalid transitions.
 
-- [ ] Document the full request lifecycle (reference the SCXML statechart diagram)
+- [x] Document the full request lifecycle (reference the SCXML statechart diagram)
 - [x] Create a `StatechartEngine<RequestStatechart>` per incoming request
-- [x] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` → ...
-- [ ] Each pipeline stage handler returns a `RequestEvent` that the engine uses to transition
+- [x] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` (route dispatch is the current SCXML stop; the first `#[res]` runtime slice begins on the controller side, and full controller execution plus later SCXML stages remain future work) → ...
+- [x] Each pipeline stage handler returns a `RequestEvent` that the engine uses to transition
 - [ ] Pipeline short-circuits are SCXML transitions: GuardDenied → `ErrorHandling` (not ad-hoc if/else)
 - [ ] Errors at any stage raise `error.*` events → engine transitions to `ErrorHandling` state
 - [x] **Verify:** attempting to skip a pipeline stage (e.g., jump from Middleware to Handler) is rejected by the engine
@@ -430,12 +433,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement configurable allowed MIME types
 
 #### 2.2.5 — HTTP Server Tests
-- [ ] Test server starts and responds to GET /
+- [x] Test server starts and responds to GET /
 - [ ] Test graceful shutdown completes in-flight requests
 - [ ] Test request body parsing (JSON)
-- [ ] Test response serialization (JSON, text, HTML)
-- [ ] Test 404 for unknown routes
-- [ ] Test request body size limit enforcement
+- [x] Test response serialization (JSON, text, HTML)
+- [x] Test 404 for unknown routes
+- [x] Test request body size limit enforcement
 - [ ] Test file upload via multipart
 
 ---
@@ -535,7 +538,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.3.4 — Tower Compatibility Layer
 - [ ] Implement adapter: `Tower Service<Request> → NivasaMiddleware`
 - [ ] Implement adapter: `NivasaMiddleware → Tower Layer`
-- [ ] Test wrapping a Tower middleware (e.g., `tower-http::cors`) for use in Nivasa
+- [ ] Test wrapping a Tower middleware (e.g., `tower-http::cors`) for future Nivasa middleware support
 - [ ] Document how to use existing Tower ecosystem middleware
 
 #### 3.3.5 — Built-in Middleware
@@ -549,7 +552,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test global middleware runs on every request
 - [ ] Test module-level middleware runs only for that module's routes
 - [ ] Test middleware ordering (global before module before route)
-- [ ] Test CORS middleware adds correct headers
+- [ ] Test richer CORS middleware/CorsOptions integration adds correct headers
 - [ ] Test middleware exclusion (`.exclude()`)
 - [ ] Test Tower middleware adapter works
 
@@ -965,13 +968,14 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `NestApplication::create(AppModule)` factory method
 - [ ] Implement `.build() -> Result<App>` — resolve all modules, DI, and routes
 - [ ] Implement `.listen(ServerOptions) -> Result<()>` — start HTTP server
-- [ ] Implement `ServerOptions` struct: `port`, `host`, `cors`, `global_prefix`, `versioning`
-- [ ] Implement `.set_global_prefix("/api")` — prefix all routes
+- [x] Implement `ServerOptions` struct: `port`, `host`, `cors`, `global_prefix`, `versioning`
+- [x] Introduce `AppBootstrapConfig` boundary for server-only bootstrap config
+- [ ] Use `AppBootstrapConfig::global_prefix()` to prefix all routes during bootstrap
 - [ ] Implement `.use_global_guard(Guard)` — apply guard to all routes
 - [ ] Implement `.use_global_interceptor(Interceptor)` — apply interceptor globally
 - [ ] Implement `.use_global_pipe(Pipe)` — apply pipe globally (e.g., ValidationPipe)
 - [ ] Implement `.use_global_filter(Filter)` — apply exception filter globally
-- [ ] Implement `.enable_cors(CorsOptions)` — CORS configuration shorthand
+- [x] Implement `.enable_cors()` — minimal transport-side CORS bridge on `ServerOptions`; richer middleware/CorsOptions work remains future
 - [ ] Implement `.enable_versioning(VersioningOptions)` — API versioning config
 - [ ] Implement `.use_(Middleware)` — apply global middleware
 - [ ] Implement startup banner with ASCII art + version
@@ -997,6 +1001,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Write module system deep-dive documentation
 - [ ] Write DI container documentation (scopes, custom providers, lifecycle)
 - [ ] Write controllers & routing documentation (all extractors, response types)
+- [x] Write API versioning documentation
 - [ ] Write guards documentation (including Reflector and metadata)
 - [ ] Write interceptors documentation (with caching, logging examples)
 - [ ] Write pipes documentation (built-in pipes, custom pipes)
