@@ -2,13 +2,24 @@
 //!
 //! Nivasa framework routing primitives.
 
+use std::cmp::Ordering;
+
 /// A normalized route pattern.
 ///
-/// This first pass only supports static path segments. The enum keeps the API
-/// open for parameterized, wildcard, and optional segment variants later.
+/// Static routes remain the common case, and the parser also accepts named
+/// parameters plus trailing wildcard segments for broader matching.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RoutePattern {
     Static(Vec<String>),
+    Pattern(Vec<RoutePatternSegment>),
+}
+
+/// A single parsed route segment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RoutePatternSegment {
+    Literal(String),
+    Parameter { name: String },
+    Wildcard { name: Option<String> },
 }
 
 /// A route entry stored in the registry.
@@ -67,22 +78,68 @@ impl RoutePattern {
     /// Create a static route pattern from a path string.
     pub fn static_path(path: impl Into<String>) -> Result<Self, RouteRegistryError> {
         let normalized = normalize_path(path.into());
-        let segments = split_path_segments(&normalized).collect::<Vec<_>>();
+        let segments = parse_segments(&normalized)?;
 
-        if let Some(segment) = segments.iter().find(|segment| is_dynamic_segment(segment)) {
-            return Err(RouteRegistryError::UnsupportedPatternSegment {
-                path: normalized,
-                segment: segment.clone(),
-            });
+        if let Some(segment) = segments
+            .iter()
+            .find(|segment| !matches!(segment, RoutePatternSegment::Literal(_)))
+        {
+            return Err(unsupported_segment(&normalized, &segment_label(segment)));
         }
 
-        Ok(RoutePattern::Static(segments))
+        Ok(RoutePattern::Static(
+            segments
+                .into_iter()
+                .map(|segment| match segment {
+                    RoutePatternSegment::Literal(value) => value,
+                    _ => unreachable!(),
+                })
+                .collect(),
+        ))
+    }
+
+    /// Parse a route pattern from a path string.
+    pub fn parse(path: impl Into<String>) -> Result<Self, RouteRegistryError> {
+        let normalized = normalize_path(path.into());
+        let segments = parse_segments(&normalized)?;
+
+        if segments
+            .iter()
+            .all(|segment| matches!(segment, RoutePatternSegment::Literal(_)))
+        {
+            Ok(RoutePattern::Static(
+                segments
+                    .into_iter()
+                    .map(|segment| match segment {
+                        RoutePatternSegment::Literal(value) => value,
+                        _ => unreachable!(),
+                    })
+                    .collect(),
+            ))
+        } else {
+            Ok(RoutePattern::Pattern(segments))
+        }
     }
 
     /// The canonical route path for this pattern.
     pub fn path(&self) -> String {
         match self {
             RoutePattern::Static(segments) => join_segments(segments),
+            RoutePattern::Pattern(segments) => {
+                let segments = segments
+                    .iter()
+                    .map(|segment| match segment {
+                        RoutePatternSegment::Literal(value) => value.clone(),
+                        RoutePatternSegment::Parameter { name } => format!(":{}", name),
+                        RoutePatternSegment::Wildcard { name } => name
+                            .as_ref()
+                            .map(|value| format!("*{}", value))
+                            .unwrap_or_else(|| "*".to_string()),
+                    })
+                    .collect::<Vec<_>>();
+
+                join_segments(&segments)
+            }
         }
     }
 
@@ -93,13 +150,38 @@ impl RoutePattern {
 
         match self {
             RoutePattern::Static(expected) => expected == &candidate_segments,
+            RoutePattern::Pattern(expected) => matches_pattern(expected, &candidate_segments),
         }
     }
 
-    fn specificity(&self) -> usize {
+    fn specificity(&self) -> Vec<u8> {
         match self {
-            RoutePattern::Static(segments) => segments.len(),
+            RoutePattern::Static(segments) => {
+                vec![RouteSegmentKind::Literal.rank(); segments.len()]
+            }
+            RoutePattern::Pattern(segments) => segments
+                .iter()
+                .map(|segment| match segment {
+                    RoutePatternSegment::Literal(_) => RouteSegmentKind::Literal.rank(),
+                    RoutePatternSegment::Parameter { .. } => RouteSegmentKind::Parameter.rank(),
+                    RoutePatternSegment::Wildcard { .. } => RouteSegmentKind::Wildcard.rank(),
+                })
+                .collect(),
         }
+    }
+
+    fn cmp_specificity(&self, other: &Self) -> Ordering {
+        let self_specificity = self.specificity();
+        let other_specificity = other.specificity();
+
+        for (lhs, rhs) in self_specificity.iter().zip(other_specificity.iter()) {
+            let ordering = rhs.cmp(lhs);
+            if ordering != Ordering::Equal {
+                return ordering;
+            }
+        }
+
+        self_specificity.len().cmp(&other_specificity.len())
     }
 }
 
@@ -132,18 +214,15 @@ impl<T> RouteRegistry<T> {
         self.routes.iter()
     }
 
-    pub fn register(
-        &mut self,
-        pattern: RoutePattern,
-        value: T,
-    ) -> Result<(), RouteRegistryError> {
+    pub fn register(&mut self, pattern: RoutePattern, value: T) -> Result<(), RouteRegistryError> {
         let path = pattern.path();
         if self.routes.iter().any(|entry| entry.pattern.path() == path) {
             return Err(RouteRegistryError::DuplicateRoute { path });
         }
 
         self.routes.push(RouteEntry { pattern, value });
-        self.routes.sort_by_key(|entry| usize::MAX - entry.pattern.specificity());
+        self.routes
+            .sort_by(|left, right| left.pattern.cmp_specificity(&right.pattern));
         Ok(())
     }
 
@@ -153,6 +232,15 @@ impl<T> RouteRegistry<T> {
         value: T,
     ) -> Result<(), RouteRegistryError> {
         let pattern = RoutePattern::static_path(path)?;
+        self.register(pattern, value)
+    }
+
+    pub fn register_pattern(
+        &mut self,
+        path: impl Into<String>,
+        value: T,
+    ) -> Result<(), RouteRegistryError> {
+        let pattern = RoutePattern::parse(path)?;
         self.register(pattern, value)
     }
 
@@ -200,7 +288,9 @@ fn normalize_path(path: String) -> String {
 }
 
 fn split_path_segments(path: &str) -> impl Iterator<Item = String> + '_ {
-    path.split('/').filter(|segment| !segment.is_empty()).map(str::to_string)
+    path.split('/')
+        .filter(|segment| !segment.is_empty())
+        .map(str::to_string)
 }
 
 fn join_segments(segments: &[String]) -> String {
@@ -211,8 +301,118 @@ fn join_segments(segments: &[String]) -> String {
     }
 }
 
-fn is_dynamic_segment(segment: &str) -> bool {
-    segment.starts_with(':') || segment.starts_with('*') || segment.ends_with('?')
+fn parse_segments(path: &str) -> Result<Vec<RoutePatternSegment>, RouteRegistryError> {
+    let segments = split_path_segments(path).collect::<Vec<_>>();
+    let mut parsed = Vec::with_capacity(segments.len());
+    let mut saw_wildcard = false;
+
+    for (index, segment) in segments.iter().enumerate() {
+        if saw_wildcard {
+            return Err(unsupported_segment(path, segment));
+        }
+
+        if segment.ends_with('?') {
+            return Err(unsupported_segment(path, segment));
+        }
+
+        if let Some(name) = segment.strip_prefix(':') {
+            if name.is_empty() {
+                return Err(unsupported_segment(path, segment));
+            }
+
+            parsed.push(RoutePatternSegment::Parameter {
+                name: name.to_string(),
+            });
+            continue;
+        }
+
+        if let Some(name) = segment.strip_prefix('*') {
+            if index != segments.len() - 1 {
+                return Err(unsupported_segment(path, segment));
+            }
+
+            saw_wildcard = true;
+            parsed.push(RoutePatternSegment::Wildcard {
+                name: if name.is_empty() {
+                    None
+                } else {
+                    Some(name.to_string())
+                },
+            });
+            continue;
+        }
+
+        parsed.push(RoutePatternSegment::Literal(segment.clone()));
+    }
+
+    Ok(parsed)
+}
+
+fn matches_pattern(pattern: &[RoutePatternSegment], candidate: &[String]) -> bool {
+    let mut candidate_index = 0;
+
+    for (index, segment) in pattern.iter().enumerate() {
+        match segment {
+            RoutePatternSegment::Literal(expected) => {
+                let Some(actual) = candidate.get(candidate_index) else {
+                    return false;
+                };
+
+                if actual != expected {
+                    return false;
+                }
+
+                candidate_index += 1;
+            }
+            RoutePatternSegment::Parameter { .. } => {
+                if candidate.get(candidate_index).is_none() {
+                    return false;
+                }
+
+                candidate_index += 1;
+            }
+            RoutePatternSegment::Wildcard { .. } => {
+                return index == pattern.len() - 1;
+            }
+        }
+    }
+
+    candidate_index == candidate.len()
+}
+
+fn unsupported_segment(path: &str, segment: &str) -> RouteRegistryError {
+    RouteRegistryError::UnsupportedPatternSegment {
+        path: path.to_string(),
+        segment: segment.to_string(),
+    }
+}
+
+fn segment_label(segment: &RoutePatternSegment) -> String {
+    match segment {
+        RoutePatternSegment::Literal(value) => value.clone(),
+        RoutePatternSegment::Parameter { name } => format!(":{}", name),
+        RoutePatternSegment::Wildcard { name } => name
+            .as_ref()
+            .map(|value| format!("*{}", value))
+            .unwrap_or_else(|| "*".to_string()),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum RouteSegmentKind {
+    Literal,
+    Parameter,
+    Wildcard,
+}
+
+impl RouteSegmentKind {
+    fn rank(self) -> u8 {
+        match self {
+            RouteSegmentKind::Literal => 3,
+            RouteSegmentKind::Parameter => 2,
+            RouteSegmentKind::Wildcard => 1,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -297,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn route_registry_rejects_dynamic_patterns_for_now() {
+    fn route_registry_keeps_static_path_constructor_strict() {
         let err = RoutePattern::static_path("/users/:id").unwrap_err();
 
         assert_eq!(
@@ -307,5 +507,44 @@ mod tests {
                 segment: ":id".to_string()
             }
         );
+    }
+
+    #[test]
+    fn route_pattern_parses_named_parameters() {
+        let pattern = RoutePattern::parse("/users/:id").unwrap();
+
+        assert_eq!(pattern.path(), "/users/:id");
+        assert!(pattern.matches("/users/42"));
+        assert!(!pattern.matches("/users"));
+        assert!(!pattern.matches("/users/42/posts"));
+    }
+
+    #[test]
+    fn route_pattern_parses_wildcards() {
+        let pattern = RoutePattern::parse("/files/*path").unwrap();
+
+        assert_eq!(pattern.path(), "/files/*path");
+        assert!(pattern.matches("/files"));
+        assert!(pattern.matches("/files/a/b/c"));
+        assert!(!pattern.matches("/other"));
+    }
+
+    #[test]
+    fn route_registry_prefers_more_specific_patterns() {
+        let mut registry = RouteRegistry::new();
+
+        registry
+            .register_pattern("/files/*path", "wildcard")
+            .unwrap();
+        registry
+            .register_pattern("/files/:name", "parameter")
+            .unwrap();
+        registry
+            .register_static("/files/archive", "static")
+            .unwrap();
+
+        assert_eq!(registry.resolve("/files/archive"), Some(&"static"));
+        assert_eq!(registry.resolve("/files/readme"), Some(&"parameter"));
+        assert_eq!(registry.resolve("/files/docs/guide"), Some(&"wildcard"));
     }
 }

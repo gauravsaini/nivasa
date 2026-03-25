@@ -319,8 +319,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 2.1.2 — HTTP Method Attributes
 - [x] Implement `#[get("/path")]` attribute macro
 - [x] Implement `#[post("/path")]` attribute macro
-- [ ] Implement `#[put("/path")]` attribute macro
-- [ ] Implement `#[delete("/path")]` attribute macro
+- [x] Implement `#[put("/path")]` attribute macro
+- [x] Implement `#[delete("/path")]` attribute macro
 - [ ] Implement `#[patch("/path")]` attribute macro
 - [ ] Implement `#[head("/path")]` attribute macro
 - [ ] Implement `#[options("/path")]` attribute macro
@@ -350,11 +350,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 2.1.5 — Route Registration & Matching
 - [x] Implement `RouteRegistry` to store all routes
 - [x] Implement path matching: static segments (`/users`)
-- [ ] Implement path matching: named parameters (`/users/:id`)
-- [ ] Implement path matching: wildcard / catch-all (`/files/*path`)
+- [x] Implement path matching: named parameters (`/users/:id`)
+- [x] Implement path matching: wildcard / catch-all (`/files/*path`)
 - [ ] Implement path matching: optional segments (`/users/:id?`)
 - [x] Implement route conflict detection (duplicate routes → startup error)
-- [ ] Implement route ordering (static > parameterized > wildcard)
+- [x] Implement route ordering (static > parameterized > wildcard)
 - [x] Implement route prefix merging: global prefix + controller prefix + method path
 
 #### 2.1.6 — Response Types
