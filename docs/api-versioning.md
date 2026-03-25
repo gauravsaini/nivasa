@@ -39,6 +39,7 @@ The new app-facing config surface is intentionally ahead of runtime integration:
 1. `AppBootstrapConfig` is exported, but it remains pure configuration rather than a runtime bootstrap object.
 1. `ServerOptions.versioning` exists, but the server does not read it yet.
 1. `ServerOptions.global_prefix` exists, but the server does not read it yet.
+1. `ServerOptions.cors` exists, but the server does not read it yet.
 1. There is no `NestApplication`-style bootstrap path wired up to consume `AppBootstrapConfig` or `VersioningOptions` at application start.
 
 ## Practical Notes
