@@ -123,6 +123,19 @@ pub enum RouteDispatchOutcome<'a, T> {
     NotFound,
 }
 
+/// A borrowed set of dispatch entries selected for a normalized path.
+///
+/// The selection applies version-aware fallback rules:
+/// exact versioned routes are preferred when present, otherwise unversioned
+/// routes are used.
+#[derive(Debug, Clone)]
+pub struct RouteDispatchSelection<'a, T> {
+    path: String,
+    requested_version: Option<String>,
+    exact_version_match: bool,
+    entries: Vec<&'a RouteDispatchEntry<T>>,
+}
+
 /// Metadata describing a controller and the route prefix it owns.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ControllerMetadata {
@@ -170,6 +183,16 @@ impl ControllerMetadata {
             }
             None => self.path.clone(),
         }
+    }
+
+    /// Join this controller's normalized prefix with a route path.
+    pub fn route_path(&self, path: impl Into<String>) -> String {
+        merge_route_paths(self.path.clone(), path.into())
+    }
+
+    /// Join this controller's versioned prefix with a route path.
+    pub fn versioned_route_path(&self, path: impl Into<String>) -> String {
+        merge_route_paths(self.versioned_path(), path.into())
     }
 }
 
@@ -471,15 +494,9 @@ impl<T> RouteDispatchRegistry<T> {
         let path = pattern.path();
         let version = version.and_then(|value| normalize_version_token(&value));
 
-        if self
-            .routes
-            .iter()
-            .any(|entry| {
-                entry.method == method
-                    && entry.pattern.path() == path
-                    && entry.version == version
-            })
-        {
+        if self.routes.iter().any(|entry| {
+            entry.method == method && entry.pattern.path() == path && entry.version == version
+        }) {
             return Err(RouteDispatchError::DuplicateRoute {
                 method: method.as_str().to_string(),
                 path,
@@ -503,18 +520,15 @@ impl<T> RouteDispatchRegistry<T> {
         path: impl Into<String>,
         value: T,
     ) -> Result<(), RouteDispatchError> {
-        let pattern = RoutePattern::static_path(path)
-            .map_err(|err| match err {
-                RouteRegistryError::UnsupportedPatternSegment { path, segment } => {
-                    RouteDispatchError::UnsupportedPatternSegment { path, segment }
-                }
-                RouteRegistryError::DuplicateRoute { path } => {
-                    RouteDispatchError::DuplicateRoute {
-                        method: RouteMethod::parse("GET").as_str().to_string(),
-                        path,
-                    }
-                }
-            })?;
+        let pattern = RoutePattern::static_path(path).map_err(|err| match err {
+            RouteRegistryError::UnsupportedPatternSegment { path, segment } => {
+                RouteDispatchError::UnsupportedPatternSegment { path, segment }
+            }
+            RouteRegistryError::DuplicateRoute { path } => RouteDispatchError::DuplicateRoute {
+                method: RouteMethod::parse("GET").as_str().to_string(),
+                path,
+            },
+        })?;
         self.register(method, pattern, value)
     }
 
@@ -555,8 +569,77 @@ impl<T> RouteDispatchRegistry<T> {
         path: impl Into<String>,
         value: T,
     ) -> Result<(), RouteDispatchError> {
-        let merged = merge_route_paths(metadata.versioned_path(), path.into());
+        let merged = metadata.versioned_route_path(path);
         self.register_pattern(method, merged, value)
+    }
+
+    /// Select routes for a normalized path, applying version-aware fallback.
+    ///
+    /// If `version` is `Some`, exact versioned routes win when any exist.
+    /// Otherwise, the selection falls back to unversioned routes.
+    pub fn select(&self, path: &str) -> RouteDispatchSelection<'_, T> {
+        self.select_versioned(path, None)
+    }
+
+    /// Select routes for a path and explicit version token.
+    pub fn select_versioned(
+        &self,
+        path: &str,
+        version: Option<&str>,
+    ) -> RouteDispatchSelection<'_, T> {
+        let normalized_path = normalize_path(path.to_string());
+        let version = version.and_then(normalize_version_token);
+        let mut exact_version_entries = Vec::new();
+        let mut unversioned_entries = Vec::new();
+
+        for entry in &self.routes {
+            if !entry.pattern.matches(&normalized_path) {
+                continue;
+            }
+
+            match version.as_deref() {
+                Some(version) if entry.version.as_deref() == Some(version) => {
+                    exact_version_entries.push(entry)
+                }
+                Some(_) if entry.version.is_none() => unversioned_entries.push(entry),
+                None if entry.version.is_none() => unversioned_entries.push(entry),
+                _ => {}
+            }
+        }
+
+        let (entries, exact_version_match) =
+            if version.is_some() && !exact_version_entries.is_empty() {
+                (exact_version_entries, true)
+            } else {
+                (unversioned_entries, false)
+            };
+
+        RouteDispatchSelection {
+            path: normalized_path,
+            requested_version: version,
+            exact_version_match,
+            entries,
+        }
+    }
+
+    /// Select routes using an `X-API-Version` header value.
+    pub fn select_header_versioned(
+        &self,
+        path: &str,
+        header_value: Option<&str>,
+    ) -> RouteDispatchSelection<'_, T> {
+        let version = header_value.and_then(parse_api_version_header);
+        self.select_versioned(path, version.as_deref())
+    }
+
+    /// Select routes using an `Accept` media type version value.
+    pub fn select_media_type_versioned(
+        &self,
+        path: &str,
+        accept_value: Option<&str>,
+    ) -> RouteDispatchSelection<'_, T> {
+        let version = accept_value.and_then(parse_api_version_accept);
+        self.select_versioned(path, version.as_deref())
     }
 
     pub fn register_header_versioned_route(
@@ -611,35 +694,8 @@ impl<T> RouteDispatchRegistry<T> {
 
     pub fn dispatch(&self, method: impl AsRef<str>, path: &str) -> RouteDispatchOutcome<'_, T> {
         let method = method.as_ref().trim().to_ascii_uppercase();
-        let normalized_path = normalize_path(path.to_string());
-        let mut allowed_methods = Vec::new();
-
-        for entry in &self.routes {
-            if entry.version.is_some() {
-                continue;
-            }
-
-            if !entry.pattern.matches(&normalized_path) {
-                continue;
-            }
-
-            if entry.method.matches(&method) {
-                return RouteDispatchOutcome::Matched(entry);
-            }
-
-            allowed_methods.push(entry.method.as_str().to_string());
-        }
-
-        if allowed_methods.is_empty() {
-            RouteDispatchOutcome::NotFound
-        } else {
-            allowed_methods.sort();
-            allowed_methods.dedup();
-            RouteDispatchOutcome::MethodNotAllowed {
-                path: normalized_path,
-                allowed_methods,
-            }
-        }
+        let selection = self.select(path);
+        selection.dispatch(&method)
     }
 
     pub fn dispatch_versioned(
@@ -649,61 +705,8 @@ impl<T> RouteDispatchRegistry<T> {
         version: Option<&str>,
     ) -> RouteDispatchOutcome<'_, T> {
         let method = method.as_ref().trim().to_ascii_uppercase();
-        let normalized_path = normalize_path(path.to_string());
-        let version = version.and_then(normalize_version_token);
-        if let Some(version) = version.as_deref() {
-            let mut allowed_methods = Vec::new();
-            let mut saw_exact_version = false;
-
-            for entry in &self.routes {
-                if entry.version.as_deref() != Some(version) || !entry.pattern.matches(&normalized_path) {
-                    continue;
-                }
-
-                saw_exact_version = true;
-                if entry.method.matches(&method) {
-                    return RouteDispatchOutcome::Matched(entry);
-                }
-
-                allowed_methods.push(entry.method.as_str().to_string());
-            }
-
-            if saw_exact_version {
-                allowed_methods.sort();
-                allowed_methods.dedup();
-                return RouteDispatchOutcome::MethodNotAllowed {
-                    path: normalized_path,
-                    allowed_methods,
-                };
-            }
-        }
-
-        let mut allowed_methods = Vec::new();
-        let mut saw_unversioned = false;
-
-        for entry in &self.routes {
-            if entry.version.is_some() || !entry.pattern.matches(&normalized_path) {
-                continue;
-            }
-
-            saw_unversioned = true;
-            if entry.method.matches(&method) {
-                return RouteDispatchOutcome::Matched(entry);
-            }
-
-            allowed_methods.push(entry.method.as_str().to_string());
-        }
-
-        if saw_unversioned {
-            allowed_methods.sort();
-            allowed_methods.dedup();
-            return RouteDispatchOutcome::MethodNotAllowed {
-                path: normalized_path,
-                allowed_methods,
-            };
-        }
-
-        RouteDispatchOutcome::NotFound
+        let selection = self.select_versioned(path, version);
+        selection.dispatch(&method)
     }
 
     pub fn dispatch_header_versioned(
@@ -787,19 +790,7 @@ impl<T> RouteDispatchRegistry<T> {
         path: &str,
     ) -> Option<RouteDispatchMatch<'_, T>> {
         let method = method.as_ref().trim().to_ascii_uppercase();
-        let normalized_path = normalize_path(path.to_string());
-
-        for entry in &self.routes {
-            let Some(captures) = entry.pattern.captures(&normalized_path) else {
-                continue;
-            };
-
-            if entry.method.matches(&method) {
-                return Some(RouteDispatchMatch { entry, captures });
-            }
-        }
-
-        None
+        self.select(path).resolve_match(&method)
     }
 
     pub fn resolve_match_versioned(
@@ -809,42 +800,7 @@ impl<T> RouteDispatchRegistry<T> {
         version: Option<&str>,
     ) -> Option<RouteDispatchMatch<'_, T>> {
         let method = method.as_ref().trim().to_ascii_uppercase();
-        let normalized_path = normalize_path(path.to_string());
-        let version = version.and_then(normalize_version_token);
-
-        if let Some(version) = version.as_deref() {
-            for entry in &self.routes {
-                if entry.version.as_deref() != Some(version)
-                    || !entry.pattern.matches(&normalized_path)
-                {
-                    continue;
-                }
-
-                let Some(captures) = entry.pattern.captures(&normalized_path) else {
-                    continue;
-                };
-
-                if entry.method.matches(&method) {
-                    return Some(RouteDispatchMatch { entry, captures });
-                }
-            }
-        }
-
-        for entry in &self.routes {
-            if entry.version.is_some() || !entry.pattern.matches(&normalized_path) {
-                continue;
-            }
-
-            let Some(captures) = entry.pattern.captures(&normalized_path) else {
-                continue;
-            };
-
-            if entry.method.matches(&method) {
-                return Some(RouteDispatchMatch { entry, captures });
-            }
-        }
-
-        None
+        self.select_versioned(path, version).resolve_match(&method)
     }
 
     pub fn resolve_header_match(
@@ -865,6 +821,93 @@ impl<T> RouteDispatchRegistry<T> {
     ) -> Option<RouteDispatchMatch<'_, T>> {
         let version = accept_value.and_then(parse_api_version_accept);
         self.resolve_match_versioned(method, path, version.as_deref())
+    }
+}
+
+impl<'a, T> RouteDispatchSelection<'a, T> {
+    /// The normalized route path used to build this selection.
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// The requested version token, if one was supplied.
+    pub fn version(&self) -> Option<&str> {
+        self.requested_version.as_deref()
+    }
+
+    /// Whether the selection matched exact versioned routes.
+    pub fn exact_version_match(&self) -> bool {
+        self.exact_version_match
+    }
+
+    /// Whether the selection contains any routes.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// The number of selected routes.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Iterate over the selected routes.
+    pub fn iter(&self) -> impl Iterator<Item = &'a RouteDispatchEntry<T>> + '_ {
+        self.entries.iter().copied()
+    }
+
+    /// The allowed methods for the current selection.
+    pub fn allowed_methods(&self) -> Vec<String> {
+        let mut allowed_methods = self
+            .entries
+            .iter()
+            .map(|entry| entry.method.as_str().to_string())
+            .collect::<Vec<_>>();
+        allowed_methods.sort();
+        allowed_methods.dedup();
+        allowed_methods
+    }
+
+    /// Resolve the first matching route entry for the given method.
+    pub fn resolve(&self, method: &str) -> Option<&'a T> {
+        self.iter()
+            .find(|entry| entry.method.matches(method))
+            .map(|entry| &entry.value)
+    }
+
+    /// Resolve the first matching route entry for the given method.
+    pub fn resolve_entry(&self, method: &str) -> Option<&'a RouteDispatchEntry<T>> {
+        self.iter().find(|entry| entry.method.matches(method))
+    }
+
+    /// Resolve the first matching route and capture its path values.
+    pub fn resolve_match(&self, method: &str) -> Option<RouteDispatchMatch<'a, T>> {
+        for entry in self.iter() {
+            let Some(captures) = entry.pattern.captures(&self.path) else {
+                continue;
+            };
+
+            if entry.method.matches(method) {
+                return Some(RouteDispatchMatch { entry, captures });
+            }
+        }
+
+        None
+    }
+
+    /// Convert this selection into a dispatch outcome.
+    pub fn dispatch(&self, method: &str) -> RouteDispatchOutcome<'a, T> {
+        if let Some(entry) = self.resolve_entry(method) {
+            return RouteDispatchOutcome::Matched(entry);
+        }
+
+        if self.is_empty() {
+            RouteDispatchOutcome::NotFound
+        } else {
+            RouteDispatchOutcome::MethodNotAllowed {
+                path: self.path.clone(),
+                allowed_methods: self.allowed_methods(),
+            }
+        }
     }
 }
 
@@ -1166,7 +1209,7 @@ fn merge_route_paths(prefix: String, path: String) -> String {
     let path = path.trim();
 
     let normalized_prefix = prefix.trim_end_matches('/');
-    let normalized_path = path.trim_start_matches('/');
+    let normalized_path = path.trim_matches('/');
 
     match (normalized_prefix.is_empty(), normalized_path.is_empty()) {
         (true, true) => "/".to_string(),
@@ -1409,7 +1452,9 @@ mod tests {
         registry
             .register_pattern("/files/*path", "wildcard")
             .unwrap();
-        registry.register_pattern("/files/:name?", "optional").unwrap();
+        registry
+            .register_pattern("/files/:name?", "optional")
+            .unwrap();
         registry
             .register_pattern("/files/:name", "parameter")
             .unwrap();
@@ -1427,14 +1472,15 @@ mod tests {
     fn route_dispatch_registry_resolves_methods_and_paths() {
         let mut registry = RouteDispatchRegistry::new();
 
-        registry
-            .register_static("GET", "/users", "list")
-            .unwrap();
+        registry.register_static("GET", "/users", "list").unwrap();
 
         match registry.dispatch("GET", "/users") {
             RouteDispatchOutcome::Matched(entry) => {
                 assert_eq!(entry.method, RouteMethod::Get);
-                assert_eq!(entry.pattern, RoutePattern::Static(vec!["users".to_string()]));
+                assert_eq!(
+                    entry.pattern,
+                    RoutePattern::Static(vec!["users".to_string()])
+                );
                 assert_eq!(entry.value, "list");
             }
             other => panic!("unexpected dispatch result: {other:?}"),
@@ -1464,9 +1510,7 @@ mod tests {
     fn route_dispatch_registry_distinguishes_not_found_and_method_not_allowed() {
         let mut registry = RouteDispatchRegistry::new();
 
-        registry
-            .register_static("GET", "/users", "list")
-            .unwrap();
+        registry.register_static("GET", "/users", "list").unwrap();
         registry
             .register_pattern("POST", "/users/:id", "create")
             .unwrap();
@@ -1505,7 +1549,10 @@ mod tests {
         assert_eq!(registry.resolve("GET", "/files/archive"), Some(&"static"));
         assert_eq!(registry.resolve("GET", "/files/readme"), Some(&"parameter"));
         assert_eq!(registry.resolve("GET", "/files"), Some(&"optional"));
-        assert_eq!(registry.resolve("DELETE", "/files/docs/guide"), Some(&"wildcard"));
+        assert_eq!(
+            registry.resolve("DELETE", "/files/docs/guide"),
+            Some(&"wildcard")
+        );
     }
 
     #[test]
@@ -1531,6 +1578,14 @@ mod tests {
     }
 
     #[test]
+    fn metadata_joins_controller_route_paths() {
+        let metadata = ControllerMetadata::new("/users").with_version("1");
+
+        assert_eq!(metadata.route_path("/list"), "/users/list");
+        assert_eq!(metadata.versioned_route_path("list/"), "/v1/users/list");
+    }
+
+    #[test]
     fn route_dispatch_registry_registers_versioned_controller_routes() {
         let metadata = ControllerMetadata::new("/users").with_version("1");
         let mut registry = RouteDispatchRegistry::new();
@@ -1539,7 +1594,12 @@ mod tests {
             .register_versioned_controller_route("GET", &metadata, "/list", "v1-list")
             .unwrap();
         registry
-            .register_versioned_controller_route("GET", &ControllerMetadata::new("/users").with_version("2"), "/list", "v2-list")
+            .register_versioned_controller_route(
+                "GET",
+                &ControllerMetadata::new("/users").with_version("2"),
+                "/list",
+                "v2-list",
+            )
             .unwrap();
 
         assert_eq!(registry.resolve("GET", "/v1/users/list"), Some(&"v1-list"));
@@ -1598,7 +1658,9 @@ mod tests {
         registry
             .register_media_type_versioned_route("GET", "2", "/users", "media-v2")
             .unwrap();
-        registry.register_static("GET", "/users", "default").unwrap();
+        registry
+            .register_static("GET", "/users", "default")
+            .unwrap();
 
         assert_eq!(
             registry.resolve_header_versioned("GET", "/users", Some("1")),
@@ -1619,13 +1681,69 @@ mod tests {
     }
 
     #[test]
+    fn route_dispatch_selection_prefers_exact_versioned_routes() {
+        let mut registry = RouteDispatchRegistry::new();
+
+        registry
+            .register_header_versioned_route("GET", "1", "/users", "versioned")
+            .unwrap();
+        registry
+            .register_static("POST", "/users", "fallback")
+            .unwrap();
+
+        let selection = registry.select_versioned("/users", Some("1"));
+
+        assert_eq!(selection.path(), "/users");
+        assert_eq!(selection.version(), Some("v1"));
+        assert!(selection.exact_version_match());
+        assert_eq!(selection.len(), 1);
+        assert_eq!(selection.resolve("GET"), Some(&"versioned"));
+        assert_eq!(selection.allowed_methods(), vec!["GET".to_string()]);
+        assert_eq!(
+            selection.dispatch("POST"),
+            RouteDispatchOutcome::MethodNotAllowed {
+                path: "/users".to_string(),
+                allowed_methods: vec!["GET".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn route_dispatch_selection_falls_back_to_unversioned_routes() {
+        let mut registry = RouteDispatchRegistry::new();
+
+        registry
+            .register_header_versioned_route("GET", "2", "/users", "versioned")
+            .unwrap();
+        registry
+            .register_static("POST", "/users", "fallback")
+            .unwrap();
+
+        let selection = registry.select_header_versioned("/users", Some("1"));
+
+        assert_eq!(selection.version(), Some("v1"));
+        assert!(!selection.exact_version_match());
+        assert_eq!(selection.len(), 1);
+        assert_eq!(selection.resolve("POST"), Some(&"fallback"));
+        assert_eq!(
+            selection.dispatch("GET"),
+            RouteDispatchOutcome::MethodNotAllowed {
+                path: "/users".to_string(),
+                allowed_methods: vec!["POST".to_string()],
+            }
+        );
+    }
+
+    #[test]
     fn route_dispatch_registry_prefers_exact_version_over_unversioned_fallback_for_same_method() {
         let mut registry = RouteDispatchRegistry::new();
 
         registry
             .register_header_versioned_route("GET", "1", "/users", "versioned")
             .unwrap();
-        registry.register_static("GET", "/users", "default").unwrap();
+        registry
+            .register_static("GET", "/users", "default")
+            .unwrap();
 
         assert_eq!(
             registry.resolve_header_versioned("GET", "/users", Some("1")),
@@ -1644,7 +1762,9 @@ mod tests {
         registry
             .register_header_versioned_route("POST", "1", "/users", "versioned")
             .unwrap();
-        registry.register_static("GET", "/users", "default").unwrap();
+        registry
+            .register_static("GET", "/users", "default")
+            .unwrap();
 
         assert_eq!(
             registry.dispatch_header_versioned("GET", "/users", Some("1")),
@@ -1659,11 +1779,11 @@ mod tests {
     fn route_dispatch_registry_rejects_duplicate_method_routes() {
         let mut registry = RouteDispatchRegistry::new();
 
-        registry
-            .register_static("GET", "/users", "first")
-            .unwrap();
+        registry.register_static("GET", "/users", "first").unwrap();
 
-        let err = registry.register_static("GET", "/users/", "second").unwrap_err();
+        let err = registry
+            .register_static("GET", "/users/", "second")
+            .unwrap_err();
         assert_eq!(
             err,
             RouteDispatchError::DuplicateRoute {
