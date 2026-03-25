@@ -13,6 +13,8 @@ fn controller_macro_validation() {
     t.compile_fail("tests/trybuild/controller_parameter_extractors_invalid.rs");
     t.compile_fail("tests/trybuild/controller_custom_param_invalid.rs");
     t.compile_fail("tests/trybuild/controller_parameter_extractors_flag_invalid.rs");
+    t.compile_fail("tests/trybuild/controller_parameter_extractors_req_namevalue_invalid.rs");
+    t.compile_fail("tests/trybuild/controller_parameter_extractors_res_namevalue_invalid.rs");
     t.compile_fail("tests/trybuild/controller_response_metadata_invalid.rs");
     t.compile_fail("tests/trybuild/controller_response_metadata_no_route.rs");
     t.compile_fail("tests/trybuild/controller_parameter_extractors_no_route.rs");

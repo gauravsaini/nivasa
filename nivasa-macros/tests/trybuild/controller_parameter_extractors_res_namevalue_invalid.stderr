@@ -1,0 +1,5 @@
+error: `#[res]` only supports bare or string-list syntax
+ --> tests/trybuild/controller_parameter_extractors_res_namevalue_invalid.rs:9:15
+  |
+9 |     fn create(#[nivasa_macros::res = "response"] response: String) {
+  |               ^

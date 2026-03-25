@@ -25,7 +25,7 @@ The current compile-time guardrails are:
 
 - A handler parameter can use only one extractor attribute.
 - `#[param]`, `#[query]`, `#[header]`, and `#[custom_param]` require a non-empty argument.
-- `#[body]`, `#[headers]`, `#[req]`, and `#[res]` may appear with or without an optional string label.
+- `#[body]`, `#[headers]`, `#[req]`, and `#[res]` may appear with or without an optional string label, but `#[req = "..."]` and `#[res = "..."]` are rejected in favor of bare or list syntax.
 - `#[ip]`, `#[session]`, `#[file]`, and `#[files]` do not accept arguments.
 - Parameter extractors are only accepted on methods that also have an HTTP route marker such as `#[get]` or `#[post]`; otherwise `#[impl_controller]` rejects the method with `controller metadata requires an HTTP method attribute`.
 
