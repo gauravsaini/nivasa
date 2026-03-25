@@ -275,7 +275,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Build module dependency graph from `imports` lists
 - [x] Resolve initialization order via topological sort
 - [x] Detect circular module imports and emit clear error
-- [ ] Support `@Global()` equivalent — module's exports available everywhere
+- [x] Support `@Global()` equivalent — module's exports available everywhere
 
 #### 1.2.5 — Module Initialization Lifecycle (driven by `nivasa.module.scxml`)
 - [ ] Create a `StatechartEngine<ModuleStatechart>` per module instance
@@ -289,19 +289,19 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] **Verify:** invalid lifecycle transitions (e.g., `Active` → `Loading`) are rejected by the engine
 
 #### 1.2.6 — Import / Export Resolution
-- [ ] Implement export filtering — non-exported providers are invisible to importers
-- [ ] Implement transitive import resolution
-- [ ] Test importing a module and accessing its exported provider
-- [ ] Test that non-exported providers are NOT accessible (compile/runtime error)
-- [ ] Test re-exporting an imported module's provider
+- [x] Implement export filtering — non-exported providers are invisible to importers
+- [x] Implement transitive import resolution
+- [x] Test importing a module and accessing its exported provider
+- [x] Test that non-exported providers are NOT accessible (compile/runtime error)
+- [x] Test re-exporting an imported module's provider
 
 #### 1.2.7 — Module System Unit Tests
-- [ ] Test simple module with one provider
-- [ ] Test module with imports and exports
-- [ ] Test nested modules (A imports B imports C)
+- [x] Test simple module with one provider
+- [x] Test module with imports and exports
+- [x] Test nested modules (A imports B imports C)
 - [ ] Test lifecycle hooks fire in correct order
 - [x] Test circular module import detection
-- [ ] Test global module (available everywhere without explicit import)
+- [x] Test global module (available everywhere without explicit import)
 - [ ] Test dynamic module via `for_root`
 
 ---

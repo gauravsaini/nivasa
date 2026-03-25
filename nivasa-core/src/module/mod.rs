@@ -14,6 +14,7 @@ pub struct ModuleMetadata {
     pub providers: Vec<TypeId>,
     pub controllers: Vec<TypeId>,
     pub exports: Vec<TypeId>,
+    pub is_global: bool,
 }
 
 impl ModuleMetadata {
@@ -38,6 +39,11 @@ impl ModuleMetadata {
 
     pub fn with_exports(mut self, exports: Vec<TypeId>) -> Self {
         self.exports = exports;
+        self
+    }
+
+    pub fn with_global(mut self, is_global: bool) -> Self {
+        self.is_global = is_global;
         self
     }
 }

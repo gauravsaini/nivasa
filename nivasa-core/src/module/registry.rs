@@ -20,6 +20,11 @@ pub enum ModuleRegistryError {
         module: &'static str,
         missing: TypeId,
     },
+    #[error("module '{module}' exports {exported:?} but that item is not provided locally or by an import")]
+    InvalidExport {
+        module: &'static str,
+        exported: TypeId,
+    },
     #[error("module '{module}' is part of a circular import chain: {cycle}")]
     CircularImport { module: &'static str, cycle: String },
 }
@@ -68,6 +73,144 @@ impl ModuleRegistry {
 
     pub fn entries(&self) -> impl Iterator<Item = &ModuleEntry> {
         self.entries.values()
+    }
+
+    fn global_module_ids(&self) -> Vec<TypeId> {
+        let mut globals: Vec<(&'static str, TypeId)> = self
+            .entries
+            .values()
+            .filter(|entry| entry.metadata.is_global)
+            .map(|entry| (entry.type_name, entry.type_id))
+            .collect();
+        globals.sort_by(|left, right| left.0.cmp(right.0));
+        globals.into_iter().map(|(_, type_id)| type_id).collect()
+    }
+
+    fn public_surface_for(
+        &self,
+        current: TypeId,
+        cache: &mut HashMap<TypeId, HashSet<TypeId>>,
+        visiting: &mut HashSet<TypeId>,
+        path: &mut Vec<&'static str>,
+    ) -> Result<HashSet<TypeId>, ModuleRegistryError> {
+        if let Some(cached) = cache.get(&current) {
+            return Ok(cached.clone());
+        }
+
+        let entry = self
+            .entries
+            .get(&current)
+            .expect("current module must exist");
+
+        if visiting.contains(&current) {
+            path.push(entry.type_name);
+            let cycle = path.join(" -> ");
+            path.pop();
+            return Err(ModuleRegistryError::CircularImport {
+                module: entry.type_name,
+                cycle,
+            });
+        }
+
+        visiting.insert(current);
+        path.push(entry.type_name);
+
+        let mut import_surfaces = Vec::new();
+        for import in &entry.metadata.imports {
+            let imported = self
+                .entries
+                .get(import)
+                .ok_or(ModuleRegistryError::MissingImport {
+                    module: entry.type_name,
+                    missing: *import,
+                })?;
+
+            let surface = self.public_surface_for(*import, cache, visiting, path)?;
+            import_surfaces.push((imported.type_name, surface));
+        }
+
+        let provided: HashSet<TypeId> = entry.metadata.providers.iter().copied().collect();
+        let mut surface = HashSet::new();
+
+        for exported in &entry.metadata.exports {
+            if provided.contains(exported)
+                || import_surfaces
+                    .iter()
+                    .any(|(_, imported_surface)| imported_surface.contains(exported))
+            {
+                surface.insert(*exported);
+            } else {
+                path.pop();
+                visiting.remove(&current);
+                return Err(ModuleRegistryError::InvalidExport {
+                    module: entry.type_name,
+                    exported: *exported,
+                });
+            }
+        }
+
+        path.pop();
+        visiting.remove(&current);
+        cache.insert(current, surface.clone());
+
+        Ok(surface)
+    }
+
+    /// Compute the types this module makes visible to its consumers.
+    ///
+    /// A module can see:
+    /// - Its own exported providers
+    /// - Exports from imported modules
+    /// - Exports from global modules
+    pub fn visible_exports<M: Module>(&self) -> Result<HashSet<TypeId>, ModuleRegistryError> {
+        self.visible_exports_by_id(TypeId::of::<M>())
+    }
+
+    /// Compute the types made visible by the module identified by `module`.
+    pub fn visible_exports_by_id(
+        &self,
+        module: TypeId,
+    ) -> Result<HashSet<TypeId>, ModuleRegistryError> {
+        let entry = self
+            .entries
+            .get(&module)
+            .expect("module must be registered before querying visibility");
+
+        let mut cache = HashMap::new();
+        let mut visiting = HashSet::new();
+        let mut path = Vec::new();
+        let mut visible = self.public_surface_for(module, &mut cache, &mut visiting, &mut path)?;
+
+        for import in &entry.metadata.imports {
+            let surface = self.public_surface_for(*import, &mut cache, &mut visiting, &mut path)?;
+            visible.extend(surface);
+        }
+
+        for global in self.global_module_ids() {
+            if global == module {
+                continue;
+            }
+
+            let surface = self.public_surface_for(global, &mut cache, &mut visiting, &mut path)?;
+            visible.extend(surface);
+        }
+
+        // Keep the module's own exports in scope even if it is global.
+        if entry.metadata.is_global {
+            let surface = self.public_surface_for(module, &mut cache, &mut visiting, &mut path)?;
+            visible.extend(surface);
+        }
+
+        Ok(visible)
+    }
+
+    /// Returns whether a type exported by `Exported` is visible to `Consumer`.
+    pub fn is_visible_to<Consumer: Module, Exported: 'static>(
+        &self,
+    ) -> Result<bool, ModuleRegistryError> {
+        Ok(self
+            .visible_exports::<Consumer>()?
+            .contains(&TypeId::of::<Exported>()))
     }
 
     pub fn resolve_order(&self) -> Result<Vec<TypeId>, ModuleRegistryError> {

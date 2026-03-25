@@ -98,12 +98,12 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         #[async_trait::async_trait]
         impl nivasa_core::module::Module for #name {
             fn metadata(&self) -> nivasa_core::module::ModuleMetadata {
-                nivasa_core::module::ModuleMetadata {
-                    imports: vec![#(std::any::TypeId::of::<#imports>()),*],
-                    providers: vec![#(std::any::TypeId::of::<#providers>()),*],
-                    controllers: vec![#(std::any::TypeId::of::<#controllers>()),*],
-                    exports: vec![#(std::any::TypeId::of::<#exports>()),*],
-                }
+                nivasa_core::module::ModuleMetadata::new()
+                    .with_imports(vec![#(std::any::TypeId::of::<#imports>()),*])
+                    .with_providers(vec![#(std::any::TypeId::of::<#providers>()),*])
+                    .with_controllers(vec![#(std::any::TypeId::of::<#controllers>()),*])
+                    .with_exports(vec![#(std::any::TypeId::of::<#exports>()),*])
+                    .with_global(false)
             }
 
             async fn configure(&self, container: &nivasa_core::di::container::DependencyContainer) -> Result<(), nivasa_core::di::error::DiError> {
