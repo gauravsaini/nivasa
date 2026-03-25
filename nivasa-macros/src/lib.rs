@@ -41,6 +41,26 @@ pub fn delete(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn patch(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::patch(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn head(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::head(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn options(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::options(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn all(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::all(attr, item)
+}
+
+#[proc_macro_attribute]
 pub fn impl_controller(attr: TokenStream, item: TokenStream) -> TokenStream {
     controller::impl_controller(attr, item)
 }

@@ -223,6 +223,10 @@ fn parse_route_marker(attr: &Attribute) -> Result<Option<RouteBinding>> {
         "POST" => "POST",
         "PUT" => "PUT",
         "DELETE" => "DELETE",
+        "PATCH" => "PATCH",
+        "HEAD" => "HEAD",
+        "OPTIONS" => "OPTIONS",
+        "ALL" => "ALL",
         other => {
             return Err(Error::new(
                 doc.span(),
@@ -243,6 +247,14 @@ fn parse_route_binding(attr: &Attribute) -> Result<Option<RouteBinding>> {
         Some("PUT")
     } else if attr_path_matches(attr, "delete") {
         Some("DELETE")
+    } else if attr_path_matches(attr, "patch") {
+        Some("PATCH")
+    } else if attr_path_matches(attr, "head") {
+        Some("HEAD")
+    } else if attr_path_matches(attr, "options") {
+        Some("OPTIONS")
+    } else if attr_path_matches(attr, "all") {
+        Some("ALL")
     } else {
         None
     };
@@ -389,6 +401,34 @@ pub fn delete(attr: TokenStream, item: TokenStream) -> TokenStream {
     let path = parse_macro_input!(attr as LitStr);
     let mut method = parse_macro_input!(item as ImplItemFn);
     method.attrs.insert(0, route_marker_attr("DELETE", &path));
+    quote!(#method).into()
+}
+
+pub fn patch(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let path = parse_macro_input!(attr as LitStr);
+    let mut method = parse_macro_input!(item as ImplItemFn);
+    method.attrs.insert(0, route_marker_attr("PATCH", &path));
+    quote!(#method).into()
+}
+
+pub fn head(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let path = parse_macro_input!(attr as LitStr);
+    let mut method = parse_macro_input!(item as ImplItemFn);
+    method.attrs.insert(0, route_marker_attr("HEAD", &path));
+    quote!(#method).into()
+}
+
+pub fn options(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let path = parse_macro_input!(attr as LitStr);
+    let mut method = parse_macro_input!(item as ImplItemFn);
+    method.attrs.insert(0, route_marker_attr("OPTIONS", &path));
+    quote!(#method).into()
+}
+
+pub fn all(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let path = parse_macro_input!(attr as LitStr);
+    let mut method = parse_macro_input!(item as ImplItemFn);
+    method.attrs.insert(0, route_marker_attr("ALL", &path));
     quote!(#method).into()
 }
 
