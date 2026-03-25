@@ -6,6 +6,8 @@ use http::{
     header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE},
     Method, Request, Response, StatusCode, Uri,
 };
+use serde::{de::DeserializeOwned, Serialize};
+use std::fmt;
 
 /// Minimal response/request body abstraction for the HTTP wrapper layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,6 +111,51 @@ impl From<serde_json::Value> for Body {
     }
 }
 
+/// Errors raised when extracting values from a request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequestExtractError {
+    MissingBody,
+    InvalidBody(String),
+    InvalidQuery(String),
+}
+
+impl fmt::Display for RequestExtractError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RequestExtractError::MissingBody => f.write_str("request body is empty"),
+            RequestExtractError::InvalidBody(err) => write!(f, "invalid request body: {err}"),
+            RequestExtractError::InvalidQuery(err) => write!(f, "invalid query string: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for RequestExtractError {}
+
+/// Values that can be extracted from a request.
+pub trait FromRequest: Sized {
+    fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError>;
+}
+
+/// Query-string wrapper for typed extraction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Query<T>(pub T);
+
+impl<T> Query<T> {
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+/// JSON body wrapper for typed extraction and response conversion.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Json<T>(pub T);
+
+impl<T> Json<T> {
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
 /// Request wrapper used by the HTTP layer.
 #[derive(Debug, Clone)]
 pub struct NivasaRequest {
@@ -152,6 +199,28 @@ impl NivasaRequest {
         self.inner.headers()
     }
 
+    /// Look up a single header by name.
+    pub fn header(&self, name: impl AsRef<str>) -> Option<&HeaderValue> {
+        HeaderName::from_bytes(name.as_ref().as_bytes())
+            .ok()
+            .and_then(|name| self.inner.headers().get(name))
+    }
+
+    /// Look up a single query parameter by name.
+    pub fn query(&self, name: impl AsRef<str>) -> Option<&str> {
+        let name = name.as_ref();
+        self.inner.uri().query().and_then(|query| {
+            query.split('&').find_map(|pair| {
+                let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+                if key == name {
+                    Some(value)
+                } else {
+                    None
+                }
+            })
+        })
+    }
+
     /// Request body.
     pub fn body(&self) -> &Body {
         self.inner.body()
@@ -171,6 +240,11 @@ impl NivasaRequest {
     pub fn into_parts(self) -> (http::request::Parts, Body) {
         self.inner.into_parts()
     }
+
+    /// Extract a typed value from this request.
+    pub fn extract<T: FromRequest>(&self) -> Result<T, RequestExtractError> {
+        T::from_request(self)
+    }
 }
 
 impl From<Request<Body>> for NivasaRequest {
@@ -182,6 +256,99 @@ impl From<Request<Body>> for NivasaRequest {
 impl From<NivasaRequest> for Request<Body> {
     fn from(value: NivasaRequest) -> Self {
         value.into_inner()
+    }
+}
+
+impl FromRequest for NivasaRequest {
+    fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
+        Ok(request.clone())
+    }
+}
+
+impl FromRequest for HeaderMap {
+    fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
+        Ok(request.headers().clone())
+    }
+}
+
+impl FromRequest for Body {
+    fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
+        Ok(request.body().clone())
+    }
+}
+
+impl FromRequest for Vec<u8> {
+    fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
+        Ok(request.body().clone().into_bytes())
+    }
+}
+
+impl FromRequest for String {
+    fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
+        match request.body() {
+            Body::Empty => Ok(String::new()),
+            Body::Text(text) => Ok(text.clone()),
+            Body::Json(value) => serde_json::to_string(value)
+                .map_err(|err| RequestExtractError::InvalidBody(err.to_string())),
+            Body::Bytes(bytes) => String::from_utf8(bytes.clone())
+                .map_err(|err| RequestExtractError::InvalidBody(err.to_string())),
+        }
+    }
+}
+
+impl FromRequest for serde_json::Value {
+    fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
+        match request.body() {
+            Body::Empty => Err(RequestExtractError::MissingBody),
+            Body::Text(text) => serde_json::from_str(text)
+                .map_err(|err| RequestExtractError::InvalidBody(err.to_string())),
+            Body::Json(value) => Ok(value.clone()),
+            Body::Bytes(bytes) => serde_json::from_slice(bytes)
+                .map_err(|err| RequestExtractError::InvalidBody(err.to_string())),
+        }
+    }
+}
+
+impl<T> FromRequest for Json<T>
+where
+    T: DeserializeOwned,
+{
+    fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
+        let value = match request.body() {
+            Body::Empty => return Err(RequestExtractError::MissingBody),
+            Body::Text(text) => serde_json::from_str(text)
+                .map_err(|err| RequestExtractError::InvalidBody(err.to_string()))?,
+            Body::Json(value) => value.clone(),
+            Body::Bytes(bytes) => serde_json::from_slice(bytes)
+                .map_err(|err| RequestExtractError::InvalidBody(err.to_string()))?,
+        };
+
+        serde_json::from_value(value)
+            .map(Json)
+            .map_err(|err| RequestExtractError::InvalidBody(err.to_string()))
+    }
+}
+
+impl<T> FromRequest for Query<T>
+where
+    T: DeserializeOwned,
+{
+    fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
+        let Some(query) = request.uri().query() else {
+            return Err(RequestExtractError::InvalidQuery("missing query string".into()));
+        };
+
+        let mut values = serde_json::Map::new();
+        for pair in query.split('&').filter(|segment| !segment.is_empty()) {
+            let (key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
+            let value = serde_json::from_str::<serde_json::Value>(raw_value)
+                .unwrap_or_else(|_| serde_json::Value::String(raw_value.to_string()));
+            values.insert(key.to_string(), value);
+        }
+
+        serde_json::from_value(serde_json::Value::Object(values))
+            .map(Query)
+            .map_err(|err| RequestExtractError::InvalidQuery(err.to_string()))
     }
 }
 
@@ -257,6 +424,18 @@ impl From<Response<Body>> for NivasaResponse {
 impl From<NivasaResponse> for Response<Body> {
     fn from(value: NivasaResponse) -> Self {
         value.into_inner()
+    }
+}
+
+impl IntoResponse for NivasaResponseBuilder {
+    fn into_response(self) -> NivasaResponse {
+        self.build()
+    }
+}
+
+impl IntoResponse for StatusCode {
+    fn into_response(self) -> NivasaResponse {
+        NivasaResponse::new(self, Body::empty())
     }
 }
 
@@ -362,6 +541,17 @@ impl IntoResponse for serde_json::Value {
     }
 }
 
+impl<T> IntoResponse for Json<T>
+where
+    T: Serialize,
+{
+    fn into_response(self) -> NivasaResponse {
+        NivasaResponse::json(
+            serde_json::to_value(self.0).expect("JSON response value must serialize"),
+        )
+    }
+}
+
 impl<T> IntoResponse for (StatusCode, T)
 where
     T: IntoResponse,
@@ -371,6 +561,19 @@ where
         let mut response = value.into_response();
         *response.inner.status_mut() = status;
         response
+    }
+}
+
+impl<T, E> IntoResponse for Result<T, E>
+where
+    T: IntoResponse,
+    E: IntoResponse,
+{
+    fn into_response(self) -> NivasaResponse {
+        match self {
+            Ok(value) => value.into_response(),
+            Err(error) => error.into_response(),
+        }
     }
 }
 

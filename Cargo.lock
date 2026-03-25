@@ -442,6 +442,7 @@ dependencies = [
  "http",
  "nivasa-common",
  "nivasa-statechart",
+ "serde",
  "serde_json",
 ]
 

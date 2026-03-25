@@ -10,4 +10,5 @@ license.workspace = true
 http = { workspace = true }
 nivasa-common = { path = "../nivasa-common" }
 nivasa-statechart = { path = "../nivasa-statechart" }
+serde = { workspace = true }
 serde_json = { workspace = true }
