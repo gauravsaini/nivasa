@@ -1,7 +1,13 @@
 use http::{Method, Request};
-use nivasa_http::{Body, FromRequest, Json, NivasaRequest, Query, RequestPipeline};
+use nivasa_http::{
+    run_controller_action, Body, ControllerResponse, FromRequest, Json, NivasaRequest, Query,
+    RequestPipeline,
+};
 use nivasa_macros::{controller, impl_controller};
-use nivasa_routing::{Controller, RouteDispatchRegistry, RouteMethod, RoutePattern, RoutePathCaptures};
+use nivasa_routing::{
+    Controller, RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod, RoutePathCaptures,
+    RoutePattern,
+};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -104,7 +110,10 @@ fn path_parameter_extraction_supports_typed_values() {
     pipeline.complete_middleware().unwrap();
 
     let outcome = pipeline.match_route(&routes).unwrap();
-    assert!(matches!(outcome, nivasa_routing::RouteDispatchOutcome::Matched(_)));
+    assert!(matches!(
+        outcome,
+        nivasa_routing::RouteDispatchOutcome::Matched(_)
+    ));
 
     let request = pipeline.request();
     assert_eq!(request.path_params().unwrap().get("id"), Some("42"));
@@ -124,6 +133,28 @@ impl VersionedReportsController {
     #[nivasa_macros::http_code(204)]
     #[nivasa_macros::header("x-controller-version", "v1")]
     fn summary(&self) {}
+}
+
+#[controller("/responses")]
+struct ResponseController;
+
+#[impl_controller]
+impl ResponseController {
+    #[nivasa_macros::get("/:id")]
+    fn show(
+        &self,
+        request: &NivasaRequest,
+        #[nivasa_macros::res] response: &mut ControllerResponse,
+    ) {
+        let id = request
+            .path_param("id")
+            .expect("route matching must attach captures before controller execution");
+
+        response
+            .status(http::StatusCode::CREATED)
+            .header("x-controller-mode", "res")
+            .json(serde_json::json!({ "id": id }));
+    }
 }
 
 #[test]
@@ -167,17 +198,59 @@ fn versioned_controller_routes_and_response_metadata_are_exposed() {
     pipeline.complete_middleware().unwrap();
 
     let outcome = pipeline.match_route(&registry).unwrap();
-    assert!(matches!(outcome, nivasa_routing::RouteDispatchOutcome::Matched(_)));
+    assert!(matches!(
+        outcome,
+        nivasa_routing::RouteDispatchOutcome::Matched(_)
+    ));
 
     let request = pipeline.request();
     assert_eq!(request.path_params().unwrap().len(), 0);
 
     assert_eq!(
         VersionedReportsController::__nivasa_controller_response_metadata(),
-        vec![(
-            "summary",
-            Some(204),
-            vec![("x-controller-version", "v1")],
-        )]
+        vec![("summary", Some(204), vec![("x-controller-version", "v1")],)]
+    );
+}
+
+#[test]
+fn controller_res_runtime_runs_only_after_route_matching() {
+    let mut routes = RouteDispatchRegistry::new();
+    let controller = ResponseController;
+    let route = ResponseController::__nivasa_controller_routes()
+        .into_iter()
+        .next()
+        .expect("response controller must expose a route");
+
+    routes
+        .register_pattern(
+            RouteMethod::from(route.0),
+            route.1,
+            move |request: &NivasaRequest| {
+                run_controller_action(request, |request, response| {
+                    controller.show(request, response)
+                })
+            },
+        )
+        .expect("controller response route must register");
+
+    let request = NivasaRequest::new(Method::GET, "/responses/42", Body::empty());
+    let mut pipeline = RequestPipeline::new(request);
+    pipeline.parse_request().unwrap();
+    pipeline.complete_middleware().unwrap();
+
+    let outcome = pipeline.match_route(&routes).unwrap();
+    assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
+    assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+
+    let response = match outcome {
+        RouteDispatchOutcome::Matched(entry) => (entry.value)(pipeline.request()),
+        _ => panic!("route must match"),
+    };
+
+    assert_eq!(response.status(), http::StatusCode::CREATED);
+    assert_eq!(response.headers().get("x-controller-mode").unwrap(), "res");
+    assert_eq!(
+        response.body(),
+        &Body::json(serde_json::json!({ "id": "42" }))
     );
 }

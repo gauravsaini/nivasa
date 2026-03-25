@@ -2,7 +2,10 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, Empty, Full};
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use hyper_util::rt::TokioExecutor;
-use nivasa_http::{Body, NivasaResponse, NivasaServer};
+use nivasa_http::{
+    run_controller_action, Body, ControllerResponse, NivasaRequest, NivasaResponse, NivasaServer,
+};
+use nivasa_macros::{controller, impl_controller};
 use nivasa_routing::RouteMethod;
 use std::{
     error::Error,
@@ -13,7 +16,32 @@ use std::{
     },
     time::Duration,
 };
-use tokio::{sync::oneshot, time::{sleep, timeout}};
+use tokio::{
+    sync::oneshot,
+    time::{sleep, timeout},
+};
+
+#[controller("/controller")]
+struct RuntimeResponseController;
+
+#[impl_controller]
+impl RuntimeResponseController {
+    #[nivasa_macros::get("/:id")]
+    fn show(
+        &self,
+        request: &NivasaRequest,
+        #[nivasa_macros::res] response: &mut ControllerResponse,
+    ) {
+        let user_id = request
+            .path_param("id")
+            .expect("server pipeline must attach route captures before handler execution");
+
+        response
+            .status(http::StatusCode::ACCEPTED)
+            .header("x-controller-runtime", "res")
+            .text(format!("controller-{user_id}"));
+    }
+}
 
 fn free_port() -> u16 {
     StdTcpListener::bind("127.0.0.1:0")
@@ -49,17 +77,17 @@ async fn server_dispatches_through_request_pipeline() -> Result<(), Box<dyn Erro
                 .path_param("id")
                 .expect("pipeline must attach route captures");
 
-            NivasaResponse::new(
-                http::StatusCode::OK,
-                Body::text(format!("user-{user_id}")),
-            )
+            NivasaResponse::new(http::StatusCode::OK, Body::text(format!("user-{user_id}")))
         })
         .expect("route must register")
         .shutdown_signal(shutdown_rx)
         .build();
 
     let server_task = tokio::spawn(async move {
-        server.listen("127.0.0.1", port).await.expect("server must stop cleanly");
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
     });
 
     wait_for_server(port).await;
@@ -80,7 +108,60 @@ async fn server_dispatches_through_request_pipeline() -> Result<(), Box<dyn Erro
 }
 
 #[tokio::test]
-async fn server_dispatches_header_versioned_routes_through_request_pipeline() -> Result<(), Box<dyn Error>> {
+async fn server_dispatches_controller_res_runtime_through_request_pipeline(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let controller = RuntimeResponseController;
+    let route = RuntimeResponseController::__nivasa_controller_routes()
+        .into_iter()
+        .next()
+        .expect("controller runtime route must exist");
+
+    let server = NivasaServer::builder()
+        .route(route.0, route.1, move |request| {
+            run_controller_action(request, |request, response| {
+                controller.show(request, response)
+            })
+        })
+        .expect("route must register")
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Empty<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let uri = format!("http://127.0.0.1:{port}/controller/42").parse()?;
+    let response = client.get(uri).await?;
+    assert_eq!(response.status(), http::StatusCode::ACCEPTED);
+    assert_eq!(
+        response
+            .headers()
+            .get("x-controller-runtime")
+            .expect("response header must exist"),
+        "res"
+    );
+
+    let body = response.into_body().collect().await?.to_bytes();
+    assert_eq!(body, Bytes::from_static(b"controller-42"));
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_dispatches_header_versioned_routes_through_request_pipeline(
+) -> Result<(), Box<dyn Error>> {
     let port = free_port();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
@@ -97,7 +178,10 @@ async fn server_dispatches_header_versioned_routes_through_request_pipeline() ->
         .build();
 
     let server_task = tokio::spawn(async move {
-        server.listen("127.0.0.1", port).await.expect("server must stop cleanly");
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
     });
 
     wait_for_server(port).await;
@@ -128,7 +212,8 @@ async fn server_dispatches_header_versioned_routes_through_request_pipeline() ->
 }
 
 #[tokio::test]
-async fn server_dispatches_media_type_versioned_routes_through_request_pipeline() -> Result<(), Box<dyn Error>> {
+async fn server_dispatches_media_type_versioned_routes_through_request_pipeline(
+) -> Result<(), Box<dyn Error>> {
     let port = free_port();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
@@ -145,7 +230,10 @@ async fn server_dispatches_media_type_versioned_routes_through_request_pipeline(
         .build();
 
     let server_task = tokio::spawn(async move {
-        server.listen("127.0.0.1", port).await.expect("server must stop cleanly");
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
     });
 
     wait_for_server(port).await;
@@ -193,7 +281,10 @@ async fn server_enforces_request_body_size_limit() -> Result<(), Box<dyn Error>>
         .build();
 
     let server_task = tokio::spawn(async move {
-        server.listen("127.0.0.1", port).await.expect("server must stop cleanly");
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
     });
 
     wait_for_server(port).await;
@@ -233,7 +324,10 @@ async fn server_times_out_slow_handlers() -> Result<(), Box<dyn Error>> {
         .build();
 
     let server_task = tokio::spawn(async move {
-        server.listen("127.0.0.1", port).await.expect("server must stop cleanly");
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
     });
 
     wait_for_server(port).await;
@@ -261,12 +355,13 @@ async fn server_shutdown_signal_stops_accepting_connections() -> Result<(), Box<
     let port = free_port();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
-    let server = NivasaServer::builder()
-        .shutdown_signal(shutdown_rx)
-        .build();
+    let server = NivasaServer::builder().shutdown_signal(shutdown_rx).build();
 
     let server_task = tokio::spawn(async move {
-        server.listen("127.0.0.1", port).await.expect("server must stop cleanly");
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
     });
 
     let _ = shutdown_tx.send(());

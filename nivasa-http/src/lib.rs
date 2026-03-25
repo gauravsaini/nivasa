@@ -578,6 +578,73 @@ pub struct NivasaResponse {
     inner: Response<Body>,
 }
 
+/// Mutable controller response handle for the first `#[res]` runtime slice.
+#[derive(Debug, Clone)]
+pub struct ControllerResponse {
+    status: StatusCode,
+    headers: HeaderMap,
+    body: Body,
+}
+
+impl Default for ControllerResponse {
+    fn default() -> Self {
+        Self {
+            status: StatusCode::OK,
+            headers: HeaderMap::new(),
+            body: Body::empty(),
+        }
+    }
+}
+
+impl ControllerResponse {
+    /// Create a new mutable controller response handle.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the response status code.
+    pub fn status(&mut self, status: StatusCode) -> &mut Self {
+        self.status = status;
+        self
+    }
+
+    /// Add or replace a response header.
+    pub fn header(&mut self, name: impl AsRef<str>, value: impl AsRef<str>) -> &mut Self {
+        let name = HeaderName::from_bytes(name.as_ref().as_bytes())
+            .expect("response header name must be valid");
+        let value =
+            HeaderValue::from_str(value.as_ref()).expect("response header value must be valid");
+        self.headers.insert(name, value);
+        self
+    }
+
+    /// Replace the current response body.
+    pub fn body(&mut self, body: impl Into<Body>) -> &mut Self {
+        self.body = body.into();
+        self
+    }
+
+    /// Set a text response body.
+    pub fn text(&mut self, text: impl Into<String>) -> &mut Self {
+        self.body(Body::text(text))
+    }
+
+    /// Set an HTML response body.
+    pub fn html(&mut self, html: impl Into<String>) -> &mut Self {
+        self.body(Body::html(html))
+    }
+
+    /// Set a JSON response body.
+    pub fn json(&mut self, value: impl Into<serde_json::Value>) -> &mut Self {
+        self.body(Body::json(value))
+    }
+
+    /// Set a raw byte response body.
+    pub fn bytes(&mut self, bytes: impl Into<Vec<u8>>) -> &mut Self {
+        self.body(Body::bytes(bytes))
+    }
+}
+
 impl NivasaResponse {
     /// Create a response with a status code and body.
     pub fn new(status: StatusCode, body: impl Into<Body>) -> Self {
@@ -748,9 +815,39 @@ pub trait IntoResponse {
     fn into_response(self) -> NivasaResponse;
 }
 
+/// Execute a controller-style action with mutable response access.
+///
+/// This is intentionally narrow: it only wires up the `#[res]`-style response
+/// handle and leaves later SCXML handler-execution stages for future work.
+pub fn run_controller_action<F>(request: &NivasaRequest, action: F) -> NivasaResponse
+where
+    F: FnOnce(&NivasaRequest, &mut ControllerResponse),
+{
+    let mut response = ControllerResponse::new();
+    action(request, &mut response);
+    response.into_response()
+}
+
 impl IntoResponse for NivasaResponse {
     fn into_response(self) -> NivasaResponse {
         self
+    }
+}
+
+impl IntoResponse for ControllerResponse {
+    fn into_response(self) -> NivasaResponse {
+        let Self {
+            status,
+            headers,
+            body,
+        } = self;
+
+        NivasaResponseBuilder {
+            status,
+            headers,
+            body,
+        }
+        .build()
     }
 }
 
@@ -856,9 +953,8 @@ impl StreamBody {
             content_type,
         } = self;
 
-        let content_type = content_type.or_else(|| {
-            infer_stream_content_type(&chunks).map(std::borrow::ToOwned::to_owned)
-        });
+        let content_type = content_type
+            .or_else(|| infer_stream_content_type(&chunks).map(std::borrow::ToOwned::to_owned));
 
         let mut body = Vec::new();
         for chunk in chunks {
