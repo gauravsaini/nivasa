@@ -1,0 +1,5 @@
+error: controller response status code must be between 100 and 599
+ --> tests/trybuild/controller_response_metadata_invalid_http_code.rs:9:32
+  |
+9 |     #[nivasa_macros::http_code(99)]
+  |                                ^^
