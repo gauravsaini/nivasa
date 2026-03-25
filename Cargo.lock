@@ -439,6 +439,7 @@ dependencies = [
 name = "nivasa-http"
 version = "0.1.0"
 dependencies = [
+ "http",
  "nivasa-common",
  "nivasa-statechart",
  "serde_json",
