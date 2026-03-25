@@ -164,17 +164,17 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `nivasa statechart inspect --port 3000` — query running app's statechart state
 
 ### 0.5.9 — SCXML Engine Tests
-- [ ] Test: Application lifecycle — Created → Bootstrapping → Running → ShuttingDown → Terminated
+- [x] Test: Application lifecycle — Created → Bootstrapping → Running → ShuttingDown → Terminated
 - [ ] Test: Invalid event in Created state → panic (debug) / Err (release)
-- [ ] Test: Module lifecycle — full happy path
-- [ ] Test: Module lifecycle — load failure transitions to FailedState
-- [ ] Test: Provider lifecycle — full happy path
-- [ ] Test: Request pipeline — happy path through all states
-- [ ] Test: Request pipeline — guard denied → ErrorHandling → Response
+- [x] Test: Module lifecycle — full happy path
+- [x] Test: Module lifecycle — load failure transitions to FailedState
+- [x] Test: Provider lifecycle — full happy path
+- [x] Test: Request pipeline — happy path through all states
+- [x] Test: Request pipeline — guard denied → ErrorHandling → Response
 - [ ] Test: Request pipeline — validation error → ErrorHandling → Response
 - [ ] Test: Request pipeline — handler error → ErrorHandling → Response
 - [ ] Test: StatechartTracer receives all transition events
-- [ ] Test: Generated code parity — round-trip: parse SCXML → generate Rust → compile → validate transitions match
+- [x] Test: Generated code parity — round-trip: parse SCXML → generate Rust → compile → validate transitions match
 
 ---
 
@@ -218,14 +218,14 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Write tests for lazy dependency resolution
 
 #### 1.1.5 — `#[injectable]` Attribute Macro (in `nivasa-macros`)
-- [ ] Parse struct definition annotated with `#[injectable]`
-- [ ] Parse optional scope: `#[injectable(scope = "transient")]`
-- [ ] Extract `#[inject]` fields and their types
-- [ ] Generate `impl Injectable for T` with `fn build(container: &Container) -> Result<Self>`
+- [x] Parse struct definition annotated with `#[injectable]`
+- [x] Parse optional scope: `#[injectable(scope = "transient")]`
+- [x] Extract `#[inject]` fields and their types
+- [x] Generate `impl Injectable for T` with `fn build(container: &Container) -> Result<Self>`
 - [ ] Generate provider registration code (auto-register with container)
 - [ ] Handle generics in injectable structs (bounded or monomorphized)
-- [ ] Emit clear compile error if `#[inject]` is used on non-Arc field
-- [ ] Write macro expansion tests using `trybuild`
+- [x] Emit clear compile error if `#[inject]` is used on non-Arc field
+- [x] Write macro expansion tests using `trybuild`
 
 #### 1.1.6 — DI Container Unit Tests
 - [x] Test basic singleton registration and resolution
