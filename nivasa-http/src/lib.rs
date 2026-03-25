@@ -9,6 +9,7 @@ use http::{
     header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE},
     Method, Request, Response, StatusCode, Uri,
 };
+use nivasa_common::HttpException;
 use nivasa_routing::RoutePathCaptures;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
@@ -755,6 +756,17 @@ impl IntoResponse for Vec<u8> {
 impl IntoResponse for serde_json::Value {
     fn into_response(self) -> NivasaResponse {
         NivasaResponse::json(self)
+    }
+}
+
+impl IntoResponse for HttpException {
+    fn into_response(self) -> NivasaResponse {
+        let status = StatusCode::from_u16(self.status_code)
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        NivasaResponse::new(
+            status,
+            serde_json::to_value(self).expect("HttpException must serialize"),
+        )
     }
 }
 

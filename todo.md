@@ -366,7 +366,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement file download response
 - [x] Implement redirect response (301, 302, 307, 308)
 - [ ] Implement `HttpStatus` enum for all standard status codes
-- [ ] Implement `Result<T, HttpException>` return type handling
+- [x] Implement `Result<T, HttpException>` return type handling
 - [x] Implement `#[http_code(201)]` to override default status code
 - [x] Implement `#[header("key", "value")]` to set response headers
 
