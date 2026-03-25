@@ -17,5 +17,6 @@ quick-xml = { workspace = true }
 
 [dev-dependencies]
 nivasa-core = { path = "../nivasa-core" }
+nivasa-routing = { path = "../nivasa-routing" }
 async-trait = { workspace = true }
 trybuild = "1"

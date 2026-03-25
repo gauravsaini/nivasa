@@ -1,15 +1,17 @@
-#[path = "src/types.rs"]
-mod types;
-#[path = "src/parser.rs"]
-mod parser;
-#[path = "src/validator.rs"]
-mod validator;
 #[path = "src/codegen.rs"]
 mod codegen;
+#[path = "src/parser.rs"]
+mod parser;
+#[path = "src/schema.rs"]
+mod schema;
+#[path = "src/types.rs"]
+mod types;
+#[path = "src/validator.rs"]
+mod validator;
 
 use parser::ScxmlDocument;
-use std::fmt::Write;
 use std::env;
+use std::fmt::Write;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -22,7 +24,8 @@ struct GeneratedChart {
 }
 
 fn main() {
-    let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("missing CARGO_MANIFEST_DIR"));
+    let manifest_dir =
+        PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("missing CARGO_MANIFEST_DIR"));
     let statecharts_dir = manifest_dir.join("../statecharts");
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("missing OUT_DIR"));
 
@@ -40,6 +43,14 @@ fn main() {
             .and_then(|name| name.to_str())
             .expect("invalid SCXML file name")
             .to_string();
+        schema::validate_scxml_schema(&source_path).unwrap_or_else(|err| {
+            panic!(
+                "schema validation failed for {}: {}",
+                source_path.display(),
+                err
+            )
+        });
+
         let source = fs::read_to_string(&source_path)
             .unwrap_or_else(|err| panic!("failed to read {}: {}", source_path.display(), err));
         let document = ScxmlDocument::from_str(&source)

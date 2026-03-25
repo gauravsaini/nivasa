@@ -75,7 +75,7 @@
 - [x] Write `statecharts/nivasa.module.scxml` — module lifecycle template (Unloaded → Loading → Loaded → Initialized → Active → Destroying → Destroyed)
 - [x] Write `statecharts/nivasa.provider.scxml` — DI provider lifecycle (Unregistered → Registered → Resolving → Constructing → Resolved → Disposing → Disposed)
 - [x] Write `statecharts/nivasa.request.scxml` — HTTP request pipeline (Received → Middleware → Routing → Guards → InterceptorPre → Pipes → Handler → InterceptorPost → ErrorHandling → Response → Done)
-- [ ] Validate all SCXML files against W3C SCXML XSD schema
+- [x] Validate all SCXML files against W3C SCXML XSD schema
 - [x] Verify each statechart: no unreachable states, no dead-ends without `<final>`, deterministic transitions
 - [x] Commit these files as the first meaningful commit — _the statecharts are the spec_
 
@@ -151,18 +151,18 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `StatechartTracer` trait: `fn on_transition(from, event, to)`
 - [x] Implement `LoggingTracer` — logs every transition via `tracing`
 - [x] Build serializable debug snapshot helpers for current state, raw SCXML, and recent transitions
-- [ ] Implement debug endpoint: `GET /_nivasa/statechart` — returns current state config as JSON
-- [ ] Implement debug endpoint: `GET /_nivasa/statechart/scxml` — returns raw SCXML document
-- [ ] Implement debug endpoint: `GET /_nivasa/statechart/transitions` — returns recent transition log
-- [ ] All introspection endpoints gated behind `#[cfg(debug_assertions)]` — zero cost in release
+- [x] Implement debug endpoint: `GET /_nivasa/statechart` — returns current state config as JSON
+- [x] Implement debug endpoint: `GET /_nivasa/statechart/scxml` — returns raw SCXML document
+- [x] Implement debug endpoint: `GET /_nivasa/statechart/transitions` — returns recent transition log
+- [x] All introspection endpoints gated behind `#[cfg(debug_assertions)]` — zero cost in release
 
 ### 0.5.8 — CLI: `nivasa statechart` Commands (`nivasa-cli`)
 - [x] Implement `nivasa statechart validate --all` — validate all SCXML files
 - [x] Implement `nivasa statechart validate <file>` — validate one SCXML file
 - [x] Implement `nivasa statechart parity` — verify generated Rust matches current SCXML
-- [ ] Implement `nivasa statechart visualize --format svg` — generate SVG diagrams from SCXML
-- [ ] Implement `nivasa statechart diff HEAD~1` — show statechart changes between commits
-- [ ] Implement `nivasa statechart inspect --port 3000` — query running app's statechart state
+- [x] Implement `nivasa statechart visualize --format svg` — generate SVG diagrams from SCXML
+- [x] Implement `nivasa statechart diff HEAD~1` — show statechart changes between commits
+- [x] Implement `nivasa statechart inspect --port 3000` — query running app's statechart state
 
 ### 0.5.9 — SCXML Engine Tests
 - [x] Test: Application lifecycle — Created → Bootstrapping → Running → ShuttingDown → Terminated
@@ -187,10 +187,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Define `Provider` trait (interface for all providers)
 - [x] Define `ProviderScope` enum: `Singleton`, `Scoped`, `Transient`
 - [x] Define `ProviderMetadata` struct (type id, scope, factory fn, dependencies list)
-- [ ] Implement `ProviderRegistry` to store provider metadata keyed by `TypeId`
+- [x] Implement `ProviderRegistry` to store provider metadata keyed by `TypeId`
 - [x] Define `FactoryProvider` — register a provider via closure/factory fn
 - [x] Define `ValueProvider` — register a pre-built instance directly
-- [ ] Define `ClassProvider` — register a type to be constructed by the container
+- [x] Define `ClassProvider` — register a type to be constructed by the container
 
 #### 1.1.2 — Dependency Container
 - [x] Implement `DependencyContainer` struct
@@ -213,18 +213,18 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Write unit tests: simple cycle, transitive cycle, diamond (no cycle), self-cycle
 
 #### 1.1.4 — Optional & Lazy Dependencies
-- [ ] Support `Option<Arc<T>>` injection (resolves to `None` if missing)
-- [ ] Support `Lazy<Arc<T>>` injection (resolves on first access, breaks cycles)
-- [ ] Write tests for optional dependency resolution
-- [ ] Write tests for lazy dependency resolution
+- [x] Support `Option<Arc<T>>` injection (resolves to `None` if missing)
+- [x] Support `Lazy<Arc<T>>` injection (resolves on first access, breaks cycles)
+- [x] Write tests for optional dependency resolution
+- [x] Write tests for lazy dependency resolution
 
 #### 1.1.5 — `#[injectable]` Attribute Macro (in `nivasa-macros`)
 - [x] Parse struct definition annotated with `#[injectable]`
 - [x] Parse optional scope: `#[injectable(scope = "transient")]`
 - [x] Extract `#[inject]` fields and their types
 - [x] Generate `impl Injectable for T` with `fn build(container: &Container) -> Result<Self>`
-- [ ] Generate provider registration code (auto-register with container)
-- [ ] Handle generics in injectable structs (bounded or monomorphized)
+- [x] Generate provider registration code (auto-register with container)
+- [x] Handle generics in injectable structs (bounded or monomorphized)
 - [x] Emit clear compile error if `#[inject]` is used on non-Arc field
 - [x] Write macro expansion tests using `trybuild`
 
@@ -232,11 +232,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test basic singleton registration and resolution
 - [x] Test scoped provider — same instance within scope, different across scopes
 - [x] Test transient provider — new instance every resolve
-- [ ] Test resolution failure with clear error when provider not registered
-- [ ] Test optional dependency resolves `None` when missing, `Some` when present
-- [ ] Test multiple providers depending on shared singleton (diamond pattern)
-- [ ] Test `register_value` with pre-built instance
-- [ ] Test `register_factory` with closure
+- [x] Test resolution failure with clear error when provider not registered
+- [x] Test optional dependency resolves `None` when missing, `Some` when present
+- [x] Test multiple providers depending on shared singleton (diamond pattern)
+- [x] Test `register_value` with pre-built instance
+- [x] Test `register_factory` with closure
 
 ### 1.2 — Module System (`nivasa-core` + `nivasa-macros`)
 
@@ -247,10 +247,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 1.2.1 — Module Trait
 - [ ] Define `Module` trait with `fn configure(&self, container: &mut DependencyContainer)`
 - [x] Define `ModuleMetadata` struct: `imports`, `controllers`, `providers`, `exports`
-- [ ] Define `OnModuleInit` trait with `async fn on_module_init(&self)`
-- [ ] Define `OnModuleDestroy` trait with `async fn on_module_destroy(&self)`
-- [ ] Define `OnApplicationBootstrap` trait (fires after all modules init)
-- [ ] Define `OnApplicationShutdown` trait (fires before modules destroy)
+- [x] Define `OnModuleInit` trait with `async fn on_module_init(&self)`
+- [x] Define `OnModuleDestroy` trait with `async fn on_module_destroy(&self)`
+- [x] Define `OnApplicationBootstrap` trait (fires after all modules init)
+- [x] Define `OnApplicationShutdown` trait (fires before modules destroy)
 
 #### 1.2.2 — `#[module]` Attribute Macro (in `nivasa-macros`)
 - [x] Parse `#[module({ imports: [...], controllers: [...], providers: [...], exports: [...] })]`
@@ -275,33 +275,33 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Build module dependency graph from `imports` lists
 - [x] Resolve initialization order via topological sort
 - [x] Detect circular module imports and emit clear error
-- [ ] Support `@Global()` equivalent — module's exports available everywhere
+- [x] Support `@Global()` equivalent — module's exports available everywhere
 
 #### 1.2.5 — Module Initialization Lifecycle (driven by `nivasa.module.scxml`)
-- [ ] Create a `StatechartEngine<ModuleStatechart>` per module instance
-- [ ] Implement ordered module initialization (deepest dependency first)
-- [ ] Module enters `Loading` state → engine sends `module.load` event
-- [ ] Call `OnModuleInit` hooks as the `<onentry>` of the `Initialized` state
-- [ ] Call `OnApplicationBootstrap` after ALL module engines reach `Active` state
-- [ ] On shutdown: engine sends `module.destroy` event → `Destroying` state → `<onentry>` calls `OnModuleDestroy`
-- [ ] Call `OnModuleDestroy` hooks in reverse initialization order
-- [ ] Implement module-scoped DI containers (provider encapsulation)
-- [ ] **Verify:** invalid lifecycle transitions (e.g., `Active` → `Loading`) are rejected by the engine
+- [x] Create a `StatechartEngine<ModuleStatechart>` per module instance
+- [x] Implement ordered module initialization (deepest dependency first)
+- [x] Module enters `Loading` state → engine sends `module.load` event
+- [x] Call `OnModuleInit` hooks as the `<onentry>` of the `Initialized` state
+- [x] Call `OnApplicationBootstrap` after ALL module engines reach `Active` state
+- [x] On shutdown: engine sends `module.destroy` event → `Destroying` state → `<onentry>` calls `OnModuleDestroy`
+- [x] Call `OnModuleDestroy` hooks in reverse initialization order
+- [x] Implement module-scoped DI containers (provider encapsulation)
+- [x] **Verify:** invalid lifecycle transitions (e.g., `Active` → `Loading`) are rejected by the engine
 
 #### 1.2.6 — Import / Export Resolution
-- [ ] Implement export filtering — non-exported providers are invisible to importers
-- [ ] Implement transitive import resolution
-- [ ] Test importing a module and accessing its exported provider
-- [ ] Test that non-exported providers are NOT accessible (compile/runtime error)
-- [ ] Test re-exporting an imported module's provider
+- [x] Implement export filtering — non-exported providers are invisible to importers
+- [x] Implement transitive import resolution
+- [x] Test importing a module and accessing its exported provider
+- [x] Test that non-exported providers are NOT accessible (compile/runtime error)
+- [x] Test re-exporting an imported module's provider
 
 #### 1.2.7 — Module System Unit Tests
-- [ ] Test simple module with one provider
-- [ ] Test module with imports and exports
-- [ ] Test nested modules (A imports B imports C)
-- [ ] Test lifecycle hooks fire in correct order
+- [x] Test simple module with one provider
+- [x] Test module with imports and exports
+- [x] Test nested modules (A imports B imports C)
+- [x] Test lifecycle hooks fire in correct order
 - [x] Test circular module import detection
-- [ ] Test global module (available everywhere without explicit import)
+- [x] Test global module (available everywhere without explicit import)
 - [ ] Test dynamic module via `for_root`
 
 ---
@@ -311,29 +311,30 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 2.1 — Controller System (`nivasa-routing` + `nivasa-macros`)
 
 #### 2.1.1 — `#[controller]` Attribute Macro
-- [ ] Parse `#[controller("/path")]` on struct
-- [ ] Store route prefix metadata on the struct
-- [ ] Support versioned controller: `#[controller({ path: "/users", version: "1" })]`
-- [ ] Generate controller trait impl with prefix accessor
+- [x] Parse `#[controller("/path")]` on struct
+- [x] Store route prefix metadata on the struct
+- [x] Support versioned controller: `#[controller({ path: "/users", version: "1" })]`
+- [x] Generate controller trait impl with prefix accessor
 
 #### 2.1.2 — HTTP Method Attributes
-- [ ] Implement `#[get("/path")]` attribute macro
-- [ ] Implement `#[post("/path")]` attribute macro
-- [ ] Implement `#[put("/path")]` attribute macro
-- [ ] Implement `#[delete("/path")]` attribute macro
-- [ ] Implement `#[patch("/path")]` attribute macro
-- [ ] Implement `#[head("/path")]` attribute macro
-- [ ] Implement `#[options("/path")]` attribute macro
-- [ ] Implement `#[all("/path")]` (match any HTTP method)
+- [x] Implement `#[get("/path")]` attribute macro
+- [x] Implement `#[post("/path")]` attribute macro
+- [x] Implement `#[put("/path")]` attribute macro
+- [x] Implement `#[delete("/path")]` attribute macro
+- [x] Implement `#[patch("/path")]` attribute macro
+- [x] Implement `#[head("/path")]` attribute macro
+- [x] Implement `#[options("/path")]` attribute macro
+- [x] Implement `#[all("/path")]` (match any HTTP method)
 
 #### 2.1.3 — `#[impl_controller]` Macro
-- [ ] Parse `impl` block annotated with `#[impl_controller]`
-- [ ] Discover all methods with HTTP method attributes
-- [ ] Generate route registration for each handler method
-- [ ] Combine controller prefix with method path
-- [ ] Validate no duplicate routes within a controller
+- [x] Parse `impl` block annotated with `#[impl_controller]`
+- [x] Discover all methods with HTTP method attributes
+- [x] Generate route registration for each handler method
+- [x] Combine controller prefix with method path
+- [x] Validate no duplicate routes within a controller
 
 #### 2.1.4 — Parameter Extraction
+- [x] Strip and record controller parameter extractor metadata in `#[impl_controller]`
 - [ ] Implement `#[body]` extractor — deserialize JSON request body to typed DTO
 - [ ] Implement `#[param("name")]` extractor — extract path parameter
 - [ ] Implement `#[query]` extractor — deserialize full query string to struct
@@ -348,14 +349,14 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Support custom parameter decorators: `#[custom_param(MyExtractor)]`
 
 #### 2.1.5 — Route Registration & Matching
-- [ ] Implement `RouteRegistry` to store all routes
-- [ ] Implement path matching: static segments (`/users`)
-- [ ] Implement path matching: named parameters (`/users/:id`)
-- [ ] Implement path matching: wildcard / catch-all (`/files/*path`)
-- [ ] Implement path matching: optional segments (`/users/:id?`)
-- [ ] Implement route conflict detection (duplicate routes → startup error)
-- [ ] Implement route ordering (static > parameterized > wildcard)
-- [ ] Implement route prefix merging: global prefix + controller prefix + method path
+- [x] Implement `RouteRegistry` to store all routes
+- [x] Implement path matching: static segments (`/users`)
+- [x] Implement path matching: named parameters (`/users/:id`)
+- [x] Implement path matching: wildcard / catch-all (`/files/*path`)
+- [x] Implement path matching: optional segments (`/users/:id?`)
+- [x] Implement route conflict detection (duplicate routes → startup error)
+- [x] Implement route ordering (static > parameterized > optional > wildcard)
+- [x] Implement route prefix merging: global prefix + controller prefix + method path
 
 #### 2.1.6 — Response Types
 - [ ] Implement JSON response (auto-serialize via Serde)
@@ -370,23 +371,23 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[header("key", "value")]` to set response headers
 
 #### 2.1.7 — API Versioning
-- [ ] Support URI versioning: `/v1/users`, `/v2/users`
+- [x] Support URI versioning: `/v1/users`, `/v2/users`
 - [ ] Support header versioning: `X-API-Version: 1`
 - [ ] Support media type versioning: `Accept: application/vnd.app.v1+json`
 - [ ] Implement `VersioningOptions` config on `NestApplication`
-- [ ] Test versioned routes resolve correctly
+- [x] Test versioned routes resolve correctly
 
 #### 2.1.8 — Controller System Tests
-- [ ] Test basic GET route registration and invocation
+- [x] Test basic GET route registration and invocation
 - [ ] Test POST route with JSON body extraction
 - [ ] Test path parameter extraction and type coercion
 - [ ] Test query parameter extraction (single + struct)
-- [ ] Test multiple routes on one controller
-- [ ] Test controller prefix concatenation
-- [ ] Test 404 for unmatched routes
-- [ ] Test 405 for wrong HTTP method on existing path
-- [ ] Test route conflict detection at startup
-- [ ] Test versioned routes
+- [x] Test multiple routes on one controller
+- [x] Test controller prefix concatenation
+- [x] Test 404 for unmatched routes
+- [x] Test 405 for wrong HTTP method on existing path
+- [x] Test route conflict detection at startup
+- [x] Test versioned routes
 
 ### 2.2 — HTTP Server Integration (`nivasa-http`)
 
@@ -400,11 +401,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement optional TLS via `rustls` (feature-gated)
 
 #### 2.2.2 — Request / Response Wrappers
-- [ ] Implement `NivasaRequest` wrapping `http::Request<Body>` with convenience methods
-- [ ] Implement `NivasaResponse` wrapping `http::Response<Body>` with builder
-- [ ] Implement `FromRequest` trait for custom extractors
-- [ ] Implement `IntoResponse` trait for custom response types
-- [ ] Implement `Body` abstraction (streaming, collected, empty)
+- [x] Implement `NivasaRequest` wrapping `http::Request<Body>` with convenience methods
+- [x] Implement `NivasaResponse` wrapping `http::Response<Body>` with builder
+- [x] Implement `FromRequest` trait for custom extractors
+- [x] Implement `IntoResponse` trait for custom response types
+- [x] Implement `Body` abstraction (streaming, collected, empty)
 
 #### 2.2.3 — Request Pipeline (Execution Order — driven by `nivasa.request.scxml`)
 
@@ -413,12 +414,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 > Each handler returns a `RequestEvent` which drives the transition. The engine rejects invalid transitions.
 
 - [ ] Document the full request lifecycle (reference the SCXML statechart diagram)
-- [ ] Create a `StatechartEngine<RequestStatechart>` per incoming request
-- [ ] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` → ...
+- [x] Create a `StatechartEngine<RequestStatechart>` per incoming request
+- [x] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` → ...
 - [ ] Each pipeline stage handler returns a `RequestEvent` that the engine uses to transition
 - [ ] Pipeline short-circuits are SCXML transitions: GuardDenied → `ErrorHandling` (not ad-hoc if/else)
 - [ ] Errors at any stage raise `error.*` events → engine transitions to `ErrorHandling` state
-- [ ] **Verify:** attempting to skip a pipeline stage (e.g., jump from Middleware to Handler) is rejected by the engine
+- [x] **Verify:** attempting to skip a pipeline stage (e.g., jump from Middleware to Handler) is rejected by the engine
 
 #### 2.2.4 — Multipart / File Upload
 - [ ] Add `multer` crate dependency for multipart parsing

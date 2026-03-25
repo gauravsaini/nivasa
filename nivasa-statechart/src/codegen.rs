@@ -62,6 +62,10 @@ pub fn generate_rust_with_spec_path(doc: &ScxmlDocument, spec_path: &str) -> Str
     out.push_str(&generate_valid_events_fn(&chart_name, doc, &states, &events));
     out.push('\n');
 
+    // enter_initial_state
+    out.push_str(&generate_enter_initial_state_fn(&chart_name, doc));
+    out.push('\n');
+
     // is_final
     out.push_str(&generate_is_final_fn(&chart_name, &states, doc));
     out.push('\n');
@@ -240,6 +244,44 @@ fn generate_is_final_fn(chart_name: &str, states: &[String], doc: &ScxmlDocument
     out
 }
 
+fn generate_enter_initial_state_fn(chart_name: &str, doc: &ScxmlDocument) -> String {
+    let state_type = format!("{}State", chart_name);
+    let mut cases = Vec::new();
+
+    for state_id in collect_states(doc) {
+        let Some(state) = doc.states.get(&state_id) else {
+            continue;
+        };
+
+        if let Some(initial) = &state.initial {
+            cases.push(format!(
+                "        {}::{} => {}_enter_initial_state({}::{}),\n",
+                state_type,
+                state.id.to_pascal_case(),
+                chart_name.to_snake_case(),
+                state_type,
+                initial.to_pascal_case(),
+            ));
+        }
+    }
+
+    let mut out = format!(
+        "pub fn {}_enter_initial_state(state: {}) -> {} {{\n\
+             match state {{\n",
+        chart_name.to_snake_case(),
+        state_type,
+        state_type
+    );
+
+    for case in cases {
+        out.push_str(&case);
+    }
+
+    out.push_str("        state => state,\n");
+    out.push_str("    }\n}\n");
+    out
+}
+
 fn generate_handler_trait(chart_name: &str, entry_states: &[String]) -> String {
     let mut out = format!(
         "#[async_trait::async_trait]\n\
@@ -274,6 +316,9 @@ fn generate_spec_impl(chart_name: &str, hash: &str, _initial: &str, spec_path: &
              fn valid_events_for(state: &Self::State) -> Vec<Self::Event> {{\n\
                  {}_valid_events(state)\n\
              }}\n\n\
+             fn enter_initial_state(state: Self::State) -> Self::State {{\n\
+                 {}_enter_initial_state(state)\n\
+             }}\n\n\
              fn is_final(state: &Self::State) -> bool {{\n\
                  {}_is_final(state)\n\
              }}\n\n\
@@ -289,6 +334,7 @@ fn generate_spec_impl(chart_name: &str, hash: &str, _initial: &str, spec_path: &
         chart_name,
         state_type,
         event_type,
+        chart_name.to_snake_case(),
         chart_name.to_snake_case(),
         chart_name.to_snake_case(),
         chart_name.to_snake_case(),
@@ -424,5 +470,24 @@ mod tests {
             .expect("missing transition for state b");
 
         assert!(a_transition < b_transition);
+    }
+
+    #[test]
+    fn test_codegen_enters_compound_initial_child() {
+        let scxml = r#"<?xml version="1.0"?>
+<scxml version="1.0" name="compound" initial="parent" xmlns="http://www.w3.org/2005/07/scxml">
+  <state id="parent" initial="child">
+    <state id="child">
+      <transition event="next" target="done"/>
+    </state>
+  </state>
+  <final id="done"/>
+</scxml>"#;
+
+        let doc = ScxmlDocument::from_str(scxml).unwrap();
+        let code = generate_rust(&doc);
+
+        assert!(code.contains("compound_enter_initial_state"));
+        assert!(code.contains("CompoundState::Parent => compound_enter_initial_state(CompoundState::Child)"));
     }
 }

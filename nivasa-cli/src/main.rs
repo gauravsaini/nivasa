@@ -1,10 +1,14 @@
 //! Nivasa CLI tool.
 
+mod statechart;
+
 use clap::Parser;
-use nivasa_statechart::{codegen, validator, ScxmlDocument};
-use std::collections::{HashMap, HashSet};
+use statechart::{
+    collect_statechart_files, diff_statecharts, inspect_statechart, registry_map,
+    render_statechart_svg, resolve_statechart_path, statecharts_dir, validate_statechart_file,
+    DiagramFormat,
+};
 use std::fs;
-use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "nivasa", about = "CLI tool for the Nivasa framework")]
@@ -36,6 +40,29 @@ enum StatechartAction {
     },
     /// Check generated code matches SCXML
     Parity,
+    /// Render SCXML diagrams
+    Visualize {
+        /// Diagram format
+        #[arg(long, value_enum, default_value_t = DiagramFormat::Svg)]
+        format: DiagramFormat,
+        /// Render a specific SCXML file
+        file: Option<String>,
+    },
+    /// Show SCXML changes between commits
+    Diff {
+        /// Git revision to compare against
+        #[arg(default_value = "HEAD~1")]
+        rev: String,
+    },
+    /// Inspect a running app's debug statechart endpoint
+    Inspect {
+        /// Hostname of the running app
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// Port of the running app
+        #[arg(long, default_value_t = 3000)]
+        port: u16,
+    },
 }
 
 fn main() {
@@ -53,12 +80,11 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         Commands::Statechart { action } => match action {
-            StatechartAction::Validate { all, file } => {
-                validate_command(all, file)
-            }
-            StatechartAction::Parity => {
-                parity_command()
-            }
+            StatechartAction::Validate { all, file } => validate_command(all, file),
+            StatechartAction::Parity => parity_command(),
+            StatechartAction::Visualize { format, file } => visualize_command(format, file),
+            StatechartAction::Diff { rev } => diff_command(&rev),
+            StatechartAction::Inspect { host, port } => inspect_command(&host, port),
         },
     }
 }
@@ -71,11 +97,14 @@ fn validate_command(all: bool, file: Option<String>) -> Result<(), String> {
     let files = if all || file.is_none() {
         collect_statechart_files(&statecharts_dir())?
     } else {
-        vec![resolve_statechart_path(file.as_ref().unwrap())?]
+        vec![resolve_statechart_path(
+            &statecharts_dir(),
+            file.as_ref().unwrap(),
+        )?]
     };
 
     for path in files {
-        validate_single_file(&path)?;
+        println!("{}", validate_statechart_file(&path)?);
     }
 
     Ok(())
@@ -84,9 +113,8 @@ fn validate_command(all: bool, file: Option<String>) -> Result<(), String> {
 fn parity_command() -> Result<(), String> {
     let statecharts_dir = statecharts_dir();
     let files = collect_statechart_files(&statecharts_dir)?;
-
     let compiled = registry_map();
-    let mut seen = HashSet::new();
+    let mut seen = std::collections::HashSet::new();
 
     for path in files {
         let source_name = path
@@ -95,16 +123,13 @@ fn parity_command() -> Result<(), String> {
             .ok_or_else(|| format!("invalid SCXML file name: {}", path.display()))?;
         let source = fs::read_to_string(&path)
             .map_err(|err| format!("failed to read {}: {}", path.display(), err))?;
-        let document = ScxmlDocument::from_str(&source)
+        let document = nivasa_statechart::ScxmlDocument::from_str(&source)
             .map_err(|err| format!("failed to parse {}: {}", path.display(), err))?;
 
-        let generated = codegen::generate_rust(&document);
-        let compiled_entry = compiled.get(source_name).ok_or_else(|| {
-            format!(
-                "missing compiled SCXML artifact for {}",
-                source_name
-            )
-        })?;
+        let generated = nivasa_statechart::codegen::generate_rust(&document);
+        let compiled_entry = compiled
+            .get(source_name)
+            .ok_or_else(|| format!("missing compiled SCXML artifact for {}", source_name))?;
 
         if compiled_entry.scxml_hash != document.content_hash() {
             return Err(format!(
@@ -138,67 +163,40 @@ fn parity_command() -> Result<(), String> {
     Ok(())
 }
 
-fn validate_single_file(path: &Path) -> Result<(), String> {
-    let source = fs::read_to_string(path)
-        .map_err(|err| format!("failed to read {}: {}", path.display(), err))?;
-    let document = ScxmlDocument::from_str(&source)
-        .map_err(|err| format!("failed to parse {}: {}", path.display(), err))?;
-    let result = validator::validate(&document);
+fn visualize_command(format: DiagramFormat, file: Option<String>) -> Result<(), String> {
+    match format {
+        DiagramFormat::Svg => {
+            let outputs = if let Some(file) = file {
+                let path = resolve_statechart_path(&statecharts_dir(), &file)?;
+                let svg = render_statechart_svg(&path)?;
+                vec![(path, svg)]
+            } else {
+                collect_statechart_files(&statecharts_dir())?
+                    .into_iter()
+                    .map(|path| render_statechart_svg(&path).map(|svg| (path, svg)))
+                    .collect::<Result<Vec<_>, _>>()?
+            };
 
-    for warning in &result.warnings {
-        println!("warning: {}: {}", path.display(), warning.message);
-    }
-
-    if !result.errors.is_empty() {
-        for error in &result.errors {
-            println!("error: {}: {}", path.display(), error.message);
+            for (index, (path, svg)) in outputs.into_iter().enumerate() {
+                if index > 0 {
+                    println!();
+                }
+                println!("<!-- {} -->", path.display());
+                print!("{svg}");
+            }
+            Ok(())
         }
-        return Err(format!("{}: validation failed", path.display()));
     }
+}
 
-    println!("{}: valid", path.display());
+fn diff_command(rev: &str) -> Result<(), String> {
+    let diff = diff_statecharts(rev)?;
+    println!("{diff}");
     Ok(())
 }
 
-fn collect_statechart_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut files = Vec::new();
-    let entries = fs::read_dir(dir)
-        .map_err(|err| format!("failed to read {}: {}", dir.display(), err))?;
-
-    for entry in entries {
-        let entry = entry.map_err(|err| format!("failed to read {}: {}", dir.display(), err))?;
-        let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) == Some("scxml") {
-            files.push(path);
-        }
-    }
-
-    files.sort();
-    Ok(files)
-}
-
-fn resolve_statechart_path(file: &str) -> Result<PathBuf, String> {
-    let candidate = PathBuf::from(file);
-    if candidate.exists() {
-        return Ok(candidate);
-    }
-
-    let from_statecharts = statecharts_dir().join(file);
-    if from_statecharts.exists() {
-        Ok(from_statecharts)
-    } else {
-        Err(format!("statechart file not found: {file}"))
-    }
-}
-
-fn statecharts_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../statecharts")
-}
-
-fn registry_map() -> HashMap<&'static str, &'static nivasa_statechart::GeneratedStatechart> {
-    let mut map = HashMap::new();
-    for entry in nivasa_statechart::GENERATED_STATECHARTS {
-        map.insert(entry.file_name, entry);
-    }
-    map
+fn inspect_command(host: &str, port: u16) -> Result<(), String> {
+    let report = inspect_statechart(host, port)?;
+    println!("{report}");
+    Ok(())
 }

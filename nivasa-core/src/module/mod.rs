@@ -1,11 +1,15 @@
 pub mod lifecycle;
+pub mod orchestrator;
 pub mod registry;
+pub mod runtime;
 
 use crate::di::DependencyContainer;
 use async_trait::async_trait;
 use std::any::TypeId;
 
 pub use registry::{ModuleEntry, ModuleRegistry, ModuleRegistryError};
+pub use orchestrator::{ModuleHookSet, ModuleOrchestrator, ModuleOrchestratorError};
+pub use runtime::{ModuleLifecycleError, ModuleRuntime};
 
 /// Metadata for a Nivasa module.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -14,6 +18,7 @@ pub struct ModuleMetadata {
     pub providers: Vec<TypeId>,
     pub controllers: Vec<TypeId>,
     pub exports: Vec<TypeId>,
+    pub is_global: bool,
 }
 
 impl ModuleMetadata {
@@ -38,6 +43,11 @@ impl ModuleMetadata {
 
     pub fn with_exports(mut self, exports: Vec<TypeId>) -> Self {
         self.exports = exports;
+        self
+    }
+
+    pub fn with_global(mut self, is_global: bool) -> Self {
+        self.is_global = is_global;
         self
     }
 }

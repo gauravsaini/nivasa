@@ -8,6 +8,7 @@ use crate::di::graph::DependencyGraph;
 use crate::di::provider::{
     ClassProvider, FactoryProvider, LifecycleProvider, Provider, ProviderScope, ValueProvider,
 };
+use crate::di::registry::ProviderRegistry;
 
 #[derive(Clone)]
 struct CachedInstance {
@@ -16,7 +17,7 @@ struct CachedInstance {
 }
 
 struct DependencyContainerInner {
-    providers: RwLock<HashMap<TypeId, Arc<dyn Provider>>>,
+    providers: RwLock<ProviderRegistry>,
     singletons: RwLock<HashMap<TypeId, CachedInstance>>,
     versions: RwLock<HashMap<TypeId, u64>>,
 }
@@ -24,7 +25,16 @@ struct DependencyContainerInner {
 /// The core Dependency Injection Container.
 pub struct DependencyContainer {
     inner: Arc<DependencyContainerInner>,
-    scoped: RwLock<HashMap<TypeId, CachedInstance>>,
+    scoped: Arc<RwLock<HashMap<TypeId, CachedInstance>>>,
+}
+
+impl Clone for DependencyContainer {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+            scoped: Arc::clone(&self.scoped),
+        }
+    }
 }
 
 impl Default for DependencyContainer {
@@ -37,11 +47,11 @@ impl DependencyContainer {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(DependencyContainerInner {
-                providers: RwLock::new(HashMap::new()),
+                providers: RwLock::new(ProviderRegistry::new()),
                 singletons: RwLock::new(HashMap::new()),
                 versions: RwLock::new(HashMap::new()),
             }),
-            scoped: RwLock::new(HashMap::new()),
+            scoped: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -50,7 +60,7 @@ impl DependencyContainer {
     pub fn create_scope(&self) -> Self {
         Self {
             inner: Arc::clone(&self.inner),
-            scoped: RwLock::new(HashMap::new()),
+            scoped: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -77,7 +87,7 @@ impl DependencyContainer {
 
         {
             let mut providers = self.inner.providers.write().await;
-            providers.insert(type_id, provider);
+            providers.insert::<T>(provider);
         }
 
         {
@@ -137,7 +147,7 @@ impl DependencyContainer {
 
         {
             let mut providers = self.inner.providers.write().await;
-            providers.insert(type_id, provider);
+            providers.insert::<T>(provider);
         }
 
         {
@@ -166,7 +176,7 @@ impl DependencyContainer {
 
         {
             let mut providers = self.inner.providers.write().await;
-            providers.insert(type_id, inner_provider);
+            providers.insert::<T>(inner_provider);
         }
 
         {
@@ -203,9 +213,8 @@ impl DependencyContainer {
 
     /// Check if a type is registered.
     pub async fn has<T: 'static>(&self) -> bool {
-        let type_id = TypeId::of::<T>();
         let providers = self.inner.providers.read().await;
-        providers.contains_key(&type_id)
+        providers.contains::<T>()
     }
 
     /// Remove a provider and invalidate any cached instances for that type.
@@ -213,7 +222,7 @@ impl DependencyContainer {
         let type_id = TypeId::of::<T>();
         let removed = {
             let mut providers = self.inner.providers.write().await;
-            providers.remove(&type_id).is_some()
+            providers.remove::<T>().is_some()
         };
 
         if removed {
@@ -239,7 +248,7 @@ impl DependencyContainer {
         let version = self.current_version(type_id).await;
         let provider = {
             let providers = self.inner.providers.read().await;
-            providers.get(&type_id).cloned()
+            providers.get::<T>()
         };
 
         let provider = match provider {
@@ -372,9 +381,9 @@ impl DependencyContainer {
         // 1. Build the graph from all registered providers
         {
             let providers = self.inner.providers.read().await;
-            for (type_id, provider) in providers.iter() {
+            for (type_id, provider, _) in providers.snapshot() {
                 let meta = provider.metadata();
-                graph.add_node(*type_id, meta.type_name, meta.dependencies.clone());
+                graph.add_node(type_id, meta.type_name, meta.dependencies.clone());
             }
         }
 
@@ -387,7 +396,7 @@ impl DependencyContainer {
         for type_id in resolution_order {
             let provider_opt = {
                 let providers = self.inner.providers.read().await;
-                providers.get(&type_id).cloned()
+                providers.get_by_id(type_id)
             };
 
             if let Some(provider) = provider_opt {
@@ -402,9 +411,8 @@ impl DependencyContainer {
                     };
 
                     if !is_cached {
-                        let instance_any = self
-                            .build_provider_with_lifecycle(provider.clone())
-                            .await?;
+                        let instance_any =
+                            self.build_provider_with_lifecycle(provider.clone()).await?;
                         let latest_version = self.current_version(type_id).await;
                         if latest_version == version {
                             self.cache_singleton(type_id, version, instance_any).await;

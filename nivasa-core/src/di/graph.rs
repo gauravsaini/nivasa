@@ -28,8 +28,19 @@ impl DependencyGraph {
     }
 
     /// Add a provider to the graph.
-    pub fn add_node(&mut self, type_id: TypeId, type_name: &'static str, dependencies: Vec<TypeId>) {
-        self.nodes.insert(type_id, Node { type_name, dependencies });
+    pub fn add_node(
+        &mut self,
+        type_id: TypeId,
+        type_name: &'static str,
+        dependencies: Vec<TypeId>,
+    ) {
+        self.nodes.insert(
+            type_id,
+            Node {
+                type_name,
+                dependencies,
+            },
+        );
     }
 
     /// Run a topological sort to determine initialization order and detect cycles.
@@ -99,13 +110,17 @@ mod tests {
     #[test]
     fn test_valid_graph_resolution() {
         let mut graph = DependencyGraph::new();
-        graph.add_node(TypeId::of::<A>(), "A", vec![TypeId::of::<B>(), TypeId::of::<C>()]);
+        graph.add_node(
+            TypeId::of::<A>(),
+            "A",
+            vec![TypeId::of::<B>(), TypeId::of::<C>()],
+        );
         graph.add_node(TypeId::of::<B>(), "B", vec![TypeId::of::<D>()]);
         graph.add_node(TypeId::of::<C>(), "C", vec![TypeId::of::<D>()]);
         graph.add_node(TypeId::of::<D>(), "D", vec![]);
 
         let order = graph.resolve_order().unwrap();
-        
+
         // D must come first
         assert_eq!(order[0], TypeId::of::<D>());
         // A must come last
@@ -121,9 +136,13 @@ mod tests {
 
         let result = graph.resolve_order();
         assert!(result.is_err());
-        
+
         if let Err(DiError::CircularDependency(msg)) = result {
-            assert!(msg.contains("A -> B -> C -> A") || msg.contains("B -> C -> A -> B") || msg.contains("C -> A -> B -> C"));
+            assert!(
+                msg.contains("A -> B -> C -> A")
+                    || msg.contains("B -> C -> A -> B")
+                    || msg.contains("C -> A -> B -> C")
+            );
         } else {
             panic!("Expected CircularDependency error");
         }

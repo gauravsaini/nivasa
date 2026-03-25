@@ -1,3 +1,4 @@
+use nivasa_core::di::DependencyContainer;
 use std::sync::Arc;
 
 use nivasa_macros::injectable;
@@ -14,5 +15,7 @@ struct Service {
 }
 
 fn main() {
+    let container = DependencyContainer::new();
     let _ = Service::__NIVASA_INJECTABLE_SCOPE;
+    let _future = Service::__nivasa_register(&container);
 }

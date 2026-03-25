@@ -89,12 +89,25 @@ fn application_bootstrap_path_reaches_running() {
             ),
             (
                 NivasaApplicationEvent::AppStart,
-                NivasaApplicationState::Running,
+                NivasaApplicationState::Listening,
             ),
         ],
     );
 
     assert!(!engine.is_in_final_state());
+}
+
+#[test]
+fn application_container_state_enters_its_initial_child() {
+    let engine = StatechartEngine::<NivasaApplicationStatechart>::new(
+        NivasaApplicationState::Running,
+    );
+
+    assert_eq!(engine.current_state(), NivasaApplicationState::Listening);
+    assert_eq!(
+        engine.valid_events(),
+        vec![NivasaApplicationEvent::AppShutdown],
+    );
 }
 
 #[test]
@@ -123,12 +136,16 @@ fn application_failure_path_reaches_terminated() {
 #[test]
 fn module_happy_path_reaches_destroyed() {
     let mut engine = StatechartEngine::<NivasaModuleStatechart>::new(
-        NivasaModuleState::ResolvingImports,
+        NivasaModuleState::Unloaded,
     );
 
     drive(
         &mut engine,
         &[
+            (
+                NivasaModuleEvent::ModuleLoad,
+                NivasaModuleState::ResolvingImports,
+            ),
             (
                 NivasaModuleEvent::ImportsResolved,
                 NivasaModuleState::RegisteringProviders,
@@ -166,12 +183,16 @@ fn module_happy_path_reaches_destroyed() {
 #[test]
 fn module_load_failure_short_circuits_to_failed() {
     let mut engine = StatechartEngine::<NivasaModuleStatechart>::new(
-        NivasaModuleState::ResolvingImports,
+        NivasaModuleState::Unloaded,
     );
 
     drive(
         &mut engine,
         &[
+            (
+                NivasaModuleEvent::ModuleLoad,
+                NivasaModuleState::ResolvingImports,
+            ),
             (
                 NivasaModuleEvent::ErrorImportMissing,
                 NivasaModuleState::LoadFailed,
@@ -184,6 +205,14 @@ fn module_load_failure_short_circuits_to_failed() {
     );
 
     assert!(engine.is_in_final_state());
+}
+
+#[test]
+fn module_container_state_enters_its_initial_child() {
+    let engine = StatechartEngine::<NivasaModuleStatechart>::new(NivasaModuleState::Loading);
+
+    assert_eq!(engine.current_state(), NivasaModuleState::ResolvingImports);
+    assert_eq!(engine.valid_events(), vec![NivasaModuleEvent::ImportsResolved, NivasaModuleEvent::ErrorImportMissing]);
 }
 
 #[test]

@@ -1,0 +1,5 @@
+error: extractor name cannot be empty
+ --> tests/trybuild/controller_parameter_extractors_invalid.rs:9:38
+  |
+9 |     fn create(#[nivasa_macros::param("")] id: String) {
+  |                                      ^^
