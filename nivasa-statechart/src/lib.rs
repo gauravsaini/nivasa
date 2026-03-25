@@ -24,7 +24,10 @@ pub mod parser;
 pub mod types;
 pub mod validator;
 
-pub use engine::{InvalidTransitionError, StatechartEngine, StatechartSpec, StatechartTracer};
+pub use engine::{
+    InvalidTransitionError, LoggingTracer, StatechartEngine, StatechartSnapshot, StatechartSpec,
+    StatechartTracer, TransitionKind, TransitionRecord,
+};
 pub use parser::ScxmlDocument;
 pub use types::*;
 
@@ -32,4 +35,3 @@ pub use types::*;
 // These are generated from .scxml files by build.rs
 #[cfg(not(test))]
 include!(concat!(env!("OUT_DIR"), "/mod.rs"));
-

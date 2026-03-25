@@ -1,13 +1,14 @@
 use nivasa_statechart::codegen;
 use nivasa_statechart::parser::ScxmlDocument;
 use nivasa_statechart::{
-    GENERATED_STATECHARTS, StatechartEngine,
+    GENERATED_STATECHARTS, StatechartEngine, StatechartTracer,
     NivasaApplicationEvent, NivasaApplicationState, NivasaApplicationStatechart,
     NivasaModuleEvent, NivasaModuleState, NivasaModuleStatechart,
     NivasaProviderEvent, NivasaProviderState, NivasaProviderStatechart,
     NivasaRequestEvent, NivasaRequestState, NivasaRequestStatechart,
 };
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 fn statecharts_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../statecharts")
@@ -331,4 +332,115 @@ fn request_guard_denied_short_circuits_to_done() {
     );
 
     assert!(engine.is_in_final_state());
+}
+
+#[test]
+#[should_panic(expected = "SCXML violation")]
+fn invalid_event_in_generated_application_state_panics_in_debug() {
+    let mut engine =
+        StatechartEngine::<NivasaApplicationStatechart>::new(NivasaApplicationState::Created);
+    let _ = engine.send_event(NivasaApplicationEvent::AppStart);
+}
+
+#[test]
+fn request_validation_error_short_circuits_to_done() {
+    let mut engine = StatechartEngine::<NivasaRequestStatechart>::new(
+        NivasaRequestState::PipeTransform,
+    );
+
+    drive(
+        &mut engine,
+        &[
+            (
+                NivasaRequestEvent::ErrorValidation,
+                NivasaRequestState::ErrorHandling,
+            ),
+            (
+                NivasaRequestEvent::FilterHandled,
+                NivasaRequestState::SendingResponse,
+            ),
+            (
+                NivasaRequestEvent::ErrorSend,
+                NivasaRequestState::Done,
+            ),
+        ],
+    );
+
+    assert!(engine.is_in_final_state());
+}
+
+#[test]
+fn request_handler_error_short_circuits_to_done() {
+    let mut engine = StatechartEngine::<NivasaRequestStatechart>::new(
+        NivasaRequestState::HandlerExecution,
+    );
+
+    drive(
+        &mut engine,
+        &[
+            (
+                NivasaRequestEvent::ErrorHandler,
+                NivasaRequestState::ErrorHandling,
+            ),
+            (
+                NivasaRequestEvent::FilterHandled,
+                NivasaRequestState::SendingResponse,
+            ),
+            (
+                NivasaRequestEvent::ErrorSend,
+                NivasaRequestState::Done,
+            ),
+        ],
+    );
+
+    assert!(engine.is_in_final_state());
+}
+
+#[test]
+fn tracer_receives_generated_request_transitions() {
+    #[derive(Clone, Default)]
+    struct RecordingTracer {
+        events: Arc<Mutex<Vec<(String, String, String)>>>,
+    }
+
+    impl StatechartTracer for RecordingTracer {
+        fn on_transition(&self, from: &str, event: &str, to: &str) {
+            self.events.lock().unwrap().push((
+                from.to_string(),
+                event.to_string(),
+                to.to_string(),
+            ));
+        }
+
+        fn on_invalid_transition(&self, _from: &str, _event: &str, _valid: &[String]) {}
+    }
+
+    let tracer = RecordingTracer::default();
+    let events = tracer.events.clone();
+    let mut engine = StatechartEngine::<NivasaRequestStatechart>::with_tracer(
+        NivasaRequestState::Received,
+        Box::new(tracer),
+    );
+
+    drive(
+        &mut engine,
+        &[
+            (
+                NivasaRequestEvent::RequestParsed,
+                NivasaRequestState::MiddlewareChain,
+            ),
+            (
+                NivasaRequestEvent::MiddlewareComplete,
+                NivasaRequestState::RouteMatching,
+            ),
+        ],
+    );
+
+    let log = events.lock().unwrap();
+    assert_eq!(log.len(), 2);
+    assert_eq!(log[0].0, "Received");
+    assert_eq!(log[0].1, "RequestParsed");
+    assert_eq!(log[0].2, "MiddlewareChain");
+    assert_eq!(log[1].2, "RouteMatching");
+    assert_eq!(engine.recent_transitions().len(), 2);
 }

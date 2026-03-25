@@ -148,8 +148,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Write trybuild tests: valid annotation compiles, invalid state name fails
 
 ### 0.5.7 — Statechart Introspection (Debug Mode)
-- [ ] Implement `StatechartTracer` trait: `fn on_transition(from, event, to)`
-- [ ] Implement `LoggingTracer` — logs every transition via `tracing`
+- [x] Implement `StatechartTracer` trait: `fn on_transition(from, event, to)`
+- [x] Implement `LoggingTracer` — logs every transition via `tracing`
+- [x] Build serializable debug snapshot helpers for current state, raw SCXML, and recent transitions
 - [ ] Implement debug endpoint: `GET /_nivasa/statechart` — returns current state config as JSON
 - [ ] Implement debug endpoint: `GET /_nivasa/statechart/scxml` — returns raw SCXML document
 - [ ] Implement debug endpoint: `GET /_nivasa/statechart/transitions` — returns recent transition log
@@ -165,15 +166,15 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 0.5.9 — SCXML Engine Tests
 - [x] Test: Application lifecycle — Created → Bootstrapping → Running → ShuttingDown → Terminated
-- [ ] Test: Invalid event in Created state → panic (debug) / Err (release)
+- [x] Test: Invalid event in Created state → panic (debug) / Err (release)
 - [x] Test: Module lifecycle — full happy path
 - [x] Test: Module lifecycle — load failure transitions to FailedState
 - [x] Test: Provider lifecycle — full happy path
 - [x] Test: Request pipeline — happy path through all states
 - [x] Test: Request pipeline — guard denied → ErrorHandling → Response
-- [ ] Test: Request pipeline — validation error → ErrorHandling → Response
-- [ ] Test: Request pipeline — handler error → ErrorHandling → Response
-- [ ] Test: StatechartTracer receives all transition events
+- [x] Test: Request pipeline — validation error → ErrorHandling → Response
+- [x] Test: Request pipeline — handler error → ErrorHandling → Response
+- [x] Test: StatechartTracer receives all transition events
 - [x] Test: Generated code parity — round-trip: parse SCXML → generate Rust → compile → validate transitions match
 
 ---
