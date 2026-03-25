@@ -21,6 +21,21 @@ pub fn controller(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn get(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::get(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn post(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::post(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn impl_controller(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::impl_controller(attr, item)
+}
+
+#[proc_macro_attribute]
 pub fn scxml_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
     scxml_handler::scxml_handler_impl(_attr, item)
 }
