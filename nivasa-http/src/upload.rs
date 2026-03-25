@@ -75,6 +75,7 @@ pub struct MultipartLimits {
     per_field: Option<u64>,
     field_limits: BTreeMap<String, u64>,
     allowed_fields: Vec<String>,
+    allowed_mime_types: Vec<String>,
 }
 
 impl MultipartLimits {
@@ -111,6 +112,16 @@ impl MultipartLimits {
         self
     }
 
+    /// Restrict multipart parsing to a known set of MIME types.
+    pub fn allowed_mime_types<I, S>(mut self, mime_types: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.allowed_mime_types = mime_types.into_iter().map(Into::into).collect();
+        self
+    }
+
     /// Borrow the whole-stream limit.
     pub fn whole_stream_limit(&self) -> Option<u64> {
         self.whole_stream
@@ -129,6 +140,22 @@ impl MultipartLimits {
     /// Borrow the allowed field list.
     pub fn allowed_fields_list(&self) -> &[String] {
         &self.allowed_fields
+    }
+
+    /// Borrow the allowed MIME type list.
+    pub fn allowed_mime_types_list(&self) -> &[String] {
+        &self.allowed_mime_types
+    }
+
+    /// Whether the provided MIME type is allowed by this configuration.
+    pub fn allows_mime_type(&self, mime_type: Option<&str>) -> bool {
+        if self.allowed_mime_types.is_empty() {
+            return true;
+        }
+
+        mime_type
+            .map(|mime_type| self.allowed_mime_types.iter().any(|item| item == mime_type))
+            .unwrap_or(false)
     }
 
     /// Convert the configured limits into `multer` constraints.
@@ -204,6 +231,19 @@ mod tests {
             limits.allowed_fields_list(),
             &["avatar".to_string(), "bio".to_string()]
         );
+    }
+
+    #[test]
+    fn multipart_limits_track_allowed_mime_types() {
+        let limits = MultipartLimits::new().allowed_mime_types(["image/png", "image/jpeg"]);
+
+        assert_eq!(
+            limits.allowed_mime_types_list(),
+            &["image/png".to_string(), "image/jpeg".to_string()]
+        );
+        assert!(limits.allows_mime_type(Some("image/png")));
+        assert!(!limits.allows_mime_type(Some("text/plain")));
+        assert!(limits.allows_mime_type(None));
     }
 
     #[test]

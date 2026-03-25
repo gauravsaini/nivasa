@@ -6,7 +6,8 @@ fn multipart_limits_keep_the_builder_shape() {
         .whole_stream(4096)
         .per_field(1024)
         .field_limit("avatar", 256)
-        .allowed_fields(["avatar", "resume"]);
+        .allowed_fields(["avatar", "resume"])
+        .allowed_mime_types(["image/png", "image/jpeg"]);
 
     assert_eq!(limits.whole_stream_limit(), Some(4096));
     assert_eq!(limits.per_field_limit(), Some(1024));
@@ -15,6 +16,12 @@ fn multipart_limits_keep_the_builder_shape() {
         limits.allowed_fields_list(),
         &["avatar".to_string(), "resume".to_string()]
     );
+    assert_eq!(
+        limits.allowed_mime_types_list(),
+        &["image/png".to_string(), "image/jpeg".to_string()]
+    );
+    assert!(limits.allows_mime_type(Some("image/png")));
+    assert!(!limits.allows_mime_type(Some("text/plain")));
 }
 
 #[test]
