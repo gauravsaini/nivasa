@@ -198,11 +198,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `register_factory<T>(factory: F)` — register a factory closure
 - [x] Implement `resolve<T>() -> Result<Arc<T>, DiError>` — resolve a provider
 - [x] Implement singleton caching (resolve once, return `Arc` clone)
-- [ ] Implement scoped provider support (per-request `ScopeGuard`)
-- [ ] Implement transient provider support (new instance per `resolve`)
+- [x] Implement scoped provider support (per-request `ScopeGuard`)
+- [x] Implement transient provider support (new instance per `resolve`)
 - [x] Implement `has<T>() -> bool` — check if provider is registered
-- [ ] Implement `remove<T>()` — deregister a provider
-- [ ] Implement `Container::create_scope()` — create child scope for request-scoped DI
+- [x] Implement `remove<T>()` — deregister a provider
+- [x] Implement `Container::create_scope()` — create child scope for request-scoped DI
 
 #### 1.1.3 — Circular Dependency Detection
 - [x] Build dependency graph from provider registrations (adjacency list)
@@ -228,9 +228,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Write macro expansion tests using `trybuild`
 
 #### 1.1.6 — DI Container Unit Tests
-- [ ] Test basic singleton registration and resolution
-- [ ] Test scoped provider — same instance within scope, different across scopes
-- [ ] Test transient provider — new instance every resolve
+- [x] Test basic singleton registration and resolution
+- [x] Test scoped provider — same instance within scope, different across scopes
+- [x] Test transient provider — new instance every resolve
 - [ ] Test resolution failure with clear error when provider not registered
 - [ ] Test optional dependency resolves `None` when missing, `Some` when present
 - [ ] Test multiple providers depending on shared singleton (diamond pattern)
