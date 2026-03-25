@@ -372,8 +372,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 2.1.7 — API Versioning
 - [x] Support URI versioning: `/v1/users`, `/v2/users`
-- [ ] Support header versioning: `X-API-Version: 1`
-- [ ] Support media type versioning: `Accept: application/vnd.app.v1+json`
+- [x] Support header versioning: `X-API-Version: 1`
+- [x] Support media type versioning: `Accept: application/vnd.app.v1+json`
 - [ ] Implement `VersioningOptions` config on `NestApplication`
 - [x] Test versioned routes resolve correctly
 
