@@ -11,6 +11,8 @@ use nivasa_routing::{
 };
 use std::{future::Future, io, net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
 use tokio::{net::TcpListener, sync::oneshot, task::JoinSet};
+#[cfg(feature = "tls")]
+use tokio_rustls::TlsAcceptor;
 
 type RouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
 
@@ -20,6 +22,8 @@ pub struct NivasaServer {
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
     shutdown: Option<oneshot::Receiver<()>>,
+    #[cfg(feature = "tls")]
+    tls_config: Option<Arc<rustls::ServerConfig>>,
 }
 
 /// Builder for [`NivasaServer`].
@@ -28,6 +32,8 @@ pub struct NivasaServerBuilder {
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
     shutdown: Option<oneshot::Receiver<()>>,
+    #[cfg(feature = "tls")]
+    tls_config: Option<Arc<rustls::ServerConfig>>,
 }
 
 impl NivasaServer {
@@ -44,6 +50,8 @@ impl NivasaServer {
         let routes = self.routes;
         let request_timeout = self.request_timeout;
         let request_body_size_limit = self.request_body_size_limit;
+        #[cfg(feature = "tls")]
+        let tls_config = self.tls_config;
         let mut connections = JoinSet::new();
 
         loop {
@@ -54,38 +62,20 @@ impl NivasaServer {
                 accept = listener.accept() => {
                     let (stream, _) = accept?;
                     let routes = routes.clone();
+                    #[cfg(feature = "tls")]
+                    let tls_config = tls_config.clone();
 
                     connections.spawn(async move {
-                        let io = TokioIo::new(stream);
-                        let service = service_fn(move |request| {
-                            let routes = routes.clone();
-                            let request_timeout = request_timeout;
-                            let request_body_size_limit = request_body_size_limit;
-                            async move {
-                                if let Some(timeout) = request_timeout {
-                                    match tokio::time::timeout(
-                                        timeout,
-                                        handle_request(request, routes, request_body_size_limit),
-                                    )
-                                    .await
-                                    {
-                                        Ok(result) => result,
-                                        Err(_) => Ok(build_response(
-                                            StatusCode::REQUEST_TIMEOUT,
-                                            NivasaResponse::new(
-                                                StatusCode::REQUEST_TIMEOUT,
-                                                Body::text("request timed out"),
-                                            ),
-                                        )),
-                                    }
-                                } else {
-                                    handle_request(request, routes, request_body_size_limit).await
-                                }
+                        #[cfg(feature = "tls")]
+                        if let Some(tls_config) = tls_config {
+                            let acceptor = TlsAcceptor::from(tls_config);
+                            if let Ok(stream) = acceptor.accept(stream).await {
+                                serve_connection(stream, routes, request_timeout, request_body_size_limit).await;
                             }
-                        });
+                            return;
+                        }
 
-                        let builder = AutoBuilder::new(TokioExecutor::new());
-                        let _ = builder.serve_connection(io, service).await;
+                        serve_connection(stream, routes, request_timeout, request_body_size_limit).await;
                     });
                 }
             }
@@ -103,6 +93,8 @@ impl NivasaServerBuilder {
             request_timeout: None,
             request_body_size_limit: None,
             shutdown: None,
+            #[cfg(feature = "tls")]
+            tls_config: None,
         }
     }
 
@@ -158,6 +150,13 @@ impl NivasaServerBuilder {
         self
     }
 
+    /// Configure rustls transport for accepted connections.
+    #[cfg(feature = "tls")]
+    pub fn tls_config(mut self, config: rustls::ServerConfig) -> Self {
+        self.tls_config = Some(Arc::new(config));
+        self
+    }
+
     /// Provide a custom shutdown signal for tests or embeddings.
     pub fn shutdown_signal(mut self, shutdown: oneshot::Receiver<()>) -> Self {
         self.shutdown = Some(shutdown);
@@ -171,8 +170,50 @@ impl NivasaServerBuilder {
             request_timeout: self.request_timeout,
             request_body_size_limit: self.request_body_size_limit,
             shutdown: self.shutdown,
+            #[cfg(feature = "tls")]
+            tls_config: self.tls_config,
         }
     }
+}
+
+async fn serve_connection<S>(
+    stream: S,
+    routes: RouteDispatchRegistry<RouteHandler>,
+    request_timeout: Option<Duration>,
+    request_body_size_limit: Option<usize>,
+) where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    let io = TokioIo::new(stream);
+    let service = service_fn(move |request| {
+        let routes = routes.clone();
+        let request_timeout = request_timeout;
+        let request_body_size_limit = request_body_size_limit;
+        async move {
+            if let Some(timeout) = request_timeout {
+                match tokio::time::timeout(
+                    timeout,
+                    handle_request(request, routes, request_body_size_limit),
+                )
+                .await
+                {
+                    Ok(result) => result,
+                    Err(_) => Ok(build_response(
+                        StatusCode::REQUEST_TIMEOUT,
+                        NivasaResponse::new(
+                            StatusCode::REQUEST_TIMEOUT,
+                            Body::text("request timed out"),
+                        ),
+                    )),
+                }
+            } else {
+                handle_request(request, routes, request_body_size_limit).await
+            }
+        }
+    });
+
+    let builder = AutoBuilder::new(TokioExecutor::new());
+    let _ = builder.serve_connection(io, service).await;
 }
 
 async fn handle_request(
@@ -246,13 +287,13 @@ async fn handle_request(
         Ok(RouteDispatchOutcome::NotFound) => {
             NivasaResponse::new(StatusCode::NOT_FOUND, Body::text("not found"))
         }
-        Ok(RouteDispatchOutcome::MethodNotAllowed { allowed_methods, .. }) => {
-            NivasaResponse::new(
-                StatusCode::METHOD_NOT_ALLOWED,
-                Body::text("method not allowed"),
-            )
-            .with_header(ALLOW.as_str(), allowed_methods.join(", "))
-        }
+        Ok(RouteDispatchOutcome::MethodNotAllowed {
+            allowed_methods, ..
+        }) => NivasaResponse::new(
+            StatusCode::METHOD_NOT_ALLOWED,
+            Body::text("method not allowed"),
+        )
+        .with_header(ALLOW.as_str(), allowed_methods.join(", ")),
         Err(_) => NivasaResponse::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             Body::text("request pipeline route transition failed"),

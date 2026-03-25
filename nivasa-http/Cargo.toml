@@ -6,6 +6,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = []
+tls = ["dep:rustls", "dep:tokio-rustls"]
+
 [dependencies]
 bytes = { workspace = true }
 http-body-util = { workspace = true }
@@ -18,6 +22,9 @@ nivasa-statechart = { path = "../nivasa-statechart" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std"] }
+tokio-rustls = { version = "0.26", optional = true }
 
 [dev-dependencies]
 nivasa-macros = { path = "../nivasa-macros" }
+rustls-pemfile = "2"

@@ -363,9 +363,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement plain text response
 - [x] Implement HTML response
 - [ ] Implement stream/SSE response
-- [ ] Implement file download response
+- [x] Implement file download response
 - [x] Implement redirect response (301, 302, 307, 308)
-- [ ] Implement `HttpStatus` enum for all standard status codes
+- [x] Implement `HttpStatus` enum for all standard status codes
 - [x] Implement `Result<T, HttpException>` return type handling
 - [x] Implement `#[http_code(201)]` to override default status code
 - [x] Implement `#[header("key", "value")]` to set response headers
@@ -398,7 +398,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement graceful shutdown via `tokio::signal` (SIGTERM, SIGINT, Ctrl+C)
 - [x] Implement configurable request body size limit
 - [x] Implement configurable request timeout
-- [ ] Implement optional TLS via `rustls` (feature-gated)
+- [x] Implement optional TLS via `rustls` (feature-gated)
 
 #### 2.2.2 — Request / Response Wrappers
 - [x] Implement `NivasaRequest` wrapping `http::Request<Body>` with convenience methods
