@@ -90,20 +90,40 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         #input
 
         impl #name {
+            pub fn __nivasa_module_imports() -> Vec<std::any::TypeId> {
+                vec![#(std::any::TypeId::of::<#imports>()),*]
+            }
+
+            pub fn __nivasa_module_controllers() -> Vec<std::any::TypeId> {
+                vec![#(std::any::TypeId::of::<#controllers>()),*]
+            }
+
+            pub fn __nivasa_module_providers() -> Vec<std::any::TypeId> {
+                vec![#(std::any::TypeId::of::<#providers>()),*]
+            }
+
+            pub fn __nivasa_module_exports() -> Vec<std::any::TypeId> {
+                vec![#(std::any::TypeId::of::<#exports>()),*]
+            }
+
             pub fn __nivasa_module_middlewares() -> Vec<std::any::TypeId> {
                 vec![#(std::any::TypeId::of::<#middlewares>()),*]
+            }
+
+            pub fn __nivasa_module_metadata() -> nivasa_core::module::ModuleMetadata {
+                nivasa_core::module::ModuleMetadata::new()
+                    .with_imports(Self::__nivasa_module_imports())
+                    .with_providers(Self::__nivasa_module_providers())
+                    .with_controllers(Self::__nivasa_module_controllers())
+                    .with_exports(Self::__nivasa_module_exports())
+                    .with_global(false)
             }
         }
 
         #[async_trait::async_trait]
         impl nivasa_core::module::Module for #name {
             fn metadata(&self) -> nivasa_core::module::ModuleMetadata {
-                nivasa_core::module::ModuleMetadata::new()
-                    .with_imports(vec![#(std::any::TypeId::of::<#imports>()),*])
-                    .with_providers(vec![#(std::any::TypeId::of::<#providers>()),*])
-                    .with_controllers(vec![#(std::any::TypeId::of::<#controllers>()),*])
-                    .with_exports(vec![#(std::any::TypeId::of::<#exports>()),*])
-                    .with_global(false)
+                Self::__nivasa_module_metadata()
             }
 
             async fn configure(&self, container: &nivasa_core::di::container::DependencyContainer) -> Result<(), nivasa_core::di::error::DiError> {
