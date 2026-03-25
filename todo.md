@@ -377,7 +377,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support URI versioning: `/v1/users`, `/v2/users`
 - [x] Support header versioning: `X-API-Version: 1`
 - [x] Support media type versioning: `Accept: application/vnd.app.v1+json`
-- [ ] Implement `VersioningOptions` config on `NestApplication`
+- [x] Expose `VersioningOptions` on the bootstrap/config surface via `AppBootstrapConfig`
 - [x] Test versioned routes resolve correctly
 
 #### 2.1.8 — Controller System Tests
@@ -425,16 +425,16 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] **Verify:** attempting to skip a pipeline stage (e.g., jump from Middleware to Handler) is rejected by the engine
 
 #### 2.2.4 — Multipart / File Upload
-- [ ] Add `multer` crate dependency for multipart parsing
-- [ ] Implement `UploadedFile` struct (filename, content_type, bytes)
+- [x] Add `multer` crate dependency for multipart parsing
+- [x] Implement `UploadedFile` struct (filename, content_type, bytes)
 - [ ] Implement `FileInterceptor` (single file)
 - [ ] Implement `FilesInterceptor` (multiple files)
-- [ ] Implement configurable file size limits
+- [x] Implement configurable file size limits
 - [ ] Implement configurable allowed MIME types
 
 #### 2.2.5 — HTTP Server Tests
 - [x] Test server starts and responds to GET /
-- [ ] Test graceful shutdown completes in-flight requests
+- [x] Test graceful shutdown completes in-flight requests
 - [x] Test request body parsing (JSON)
 - [x] Test response serialization (JSON, text, HTML)
 - [x] Test 404 for unknown routes

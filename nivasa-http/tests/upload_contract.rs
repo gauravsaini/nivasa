@@ -2,7 +2,11 @@ use nivasa_http::UploadedFile;
 
 #[test]
 fn uploaded_file_supports_public_contract_accessors() {
-    let file = UploadedFile::new("avatar.png", Some("image/png".to_string()), vec![1, 2, 3, 4]);
+    let file = UploadedFile::new(
+        "avatar.png",
+        Some("image/png".to_string()),
+        vec![1, 2, 3, 4],
+    );
 
     assert_eq!(file.filename(), "avatar.png");
     assert_eq!(file.content_type(), Some("image/png"));
