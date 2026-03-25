@@ -8,5 +8,7 @@
 //! - DTO marker traits
 
 pub mod exceptions;
+pub mod http_status;
 
 pub use exceptions::HttpException;
+pub use http_status::HttpStatus;

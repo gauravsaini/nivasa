@@ -163,6 +163,17 @@ impl From<serde_json::Value> for Body {
     }
 }
 
+fn escape_content_disposition_filename(filename: &str) -> String {
+    let mut escaped = String::with_capacity(filename.len());
+    for ch in filename.chars() {
+        if matches!(ch, '\\' | '"') {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
+}
+
 /// Errors raised when extracting values from a request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequestExtractError {
@@ -319,15 +330,15 @@ impl NivasaRequest {
             return Err(RequestExtractError::MissingHeader { name });
         };
 
-        let raw = raw.to_str().map_err(|error| RequestExtractError::InvalidHeader {
-            name: name.clone(),
-            error: error.to_string(),
-        })?;
+        let raw = raw
+            .to_str()
+            .map_err(|error| RequestExtractError::InvalidHeader {
+                name: name.clone(),
+                error: error.to_string(),
+            })?;
 
-        deserialize_scalar_value(raw).map_err(|error| RequestExtractError::InvalidHeader {
-            name,
-            error,
-        })
+        deserialize_scalar_value(raw)
+            .map_err(|error| RequestExtractError::InvalidHeader { name, error })
     }
 
     /// Look up a single query parameter by name.
@@ -355,10 +366,8 @@ impl NivasaRequest {
             return Err(RequestExtractError::MissingQueryParameter { name });
         };
 
-        deserialize_scalar_value(raw).map_err(|error| RequestExtractError::InvalidQueryParameter {
-            name,
-            error,
-        })
+        deserialize_scalar_value(raw)
+            .map_err(|error| RequestExtractError::InvalidQueryParameter { name, error })
     }
 
     /// Request body.
@@ -403,10 +412,8 @@ impl NivasaRequest {
             return Err(RequestExtractError::MissingPathParameter { name });
         };
 
-        deserialize_path_value(raw).map_err(|error| RequestExtractError::InvalidPathParameter {
-            name,
-            error,
-        })
+        deserialize_path_value(raw)
+            .map_err(|error| RequestExtractError::InvalidPathParameter { name, error })
     }
 
     /// Consume the wrapper and return the inner request.
@@ -522,7 +529,9 @@ where
 {
     fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
         let Some(query) = request.uri().query() else {
-            return Err(RequestExtractError::InvalidQuery("missing query string".into()));
+            return Err(RequestExtractError::InvalidQuery(
+                "missing query string".into(),
+            ));
         };
 
         let mut values = serde_json::Map::new();
@@ -574,6 +583,17 @@ impl NivasaResponse {
     /// Create an OK response from raw bytes.
     pub fn bytes(bytes: impl Into<Vec<u8>>) -> Self {
         Self::new(StatusCode::OK, Body::bytes(bytes))
+    }
+
+    /// Create an OK attachment response from raw bytes.
+    pub fn download(filename: impl Into<String>, bytes: impl Into<Vec<u8>>) -> Self {
+        let filename = filename.into();
+        let disposition = format!(
+            "attachment; filename=\"{}\"",
+            escape_content_disposition_filename(&filename)
+        );
+
+        Self::bytes(bytes).with_header(http::header::CONTENT_DISPOSITION.as_str(), disposition)
     }
 
     /// Access the response status.
@@ -689,10 +709,9 @@ impl NivasaResponseBuilder {
 
         if response.headers().get(CONTENT_TYPE).is_none() {
             if let Some(content_type) = content_type {
-                response.headers_mut().insert(
-                    CONTENT_TYPE,
-                    HeaderValue::from_static(content_type),
-                );
+                response
+                    .headers_mut()
+                    .insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
             }
         }
 
@@ -753,6 +772,28 @@ impl IntoResponse for Vec<u8> {
     }
 }
 
+/// File download response helper backed by the existing byte body surface.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Download {
+    filename: String,
+    bytes: Vec<u8>,
+}
+
+impl Download {
+    pub fn attachment(filename: impl Into<String>, bytes: impl Into<Vec<u8>>) -> Self {
+        Self {
+            filename: filename.into(),
+            bytes: bytes.into(),
+        }
+    }
+}
+
+impl IntoResponse for Download {
+    fn into_response(self) -> NivasaResponse {
+        NivasaResponse::download(self.filename, self.bytes)
+    }
+}
+
 impl IntoResponse for serde_json::Value {
     fn into_response(self) -> NivasaResponse {
         NivasaResponse::json(self)
@@ -761,8 +802,8 @@ impl IntoResponse for serde_json::Value {
 
 impl IntoResponse for HttpException {
     fn into_response(self) -> NivasaResponse {
-        let status = StatusCode::from_u16(self.status_code)
-            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let status =
+            StatusCode::from_u16(self.status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         NivasaResponse::new(
             status,
             serde_json::to_value(self).expect("HttpException must serialize"),
