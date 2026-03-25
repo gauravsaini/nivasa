@@ -1,4 +1,5 @@
 mod injectable;
+mod controller;
 mod module_macro;
 mod scxml_handler;
 
@@ -15,8 +16,8 @@ pub fn injectable(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn controller(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    item
+pub fn controller(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::controller_impl(attr, item)
 }
 
 #[proc_macro_attribute]

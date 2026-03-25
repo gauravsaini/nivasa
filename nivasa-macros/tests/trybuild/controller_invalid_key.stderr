@@ -1,0 +1,5 @@
+error: unknown `#[controller]` key `route`; expected `path` or `version`
+ --> tests/trybuild/controller_invalid_key.rs:3:16
+  |
+3 | #[controller({ route: "/users" })]
+  |                ^^^^^
