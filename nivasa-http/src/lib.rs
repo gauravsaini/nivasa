@@ -6,8 +6,10 @@ mod pipeline;
 mod server;
 pub mod upload;
 
+pub use http::header::HeaderMap;
+
 use http::{
-    header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE},
+    header::{HeaderName, HeaderValue, CONTENT_TYPE},
     Method, Request, Response, StatusCode, Uri,
 };
 use nivasa_common::HttpException;
