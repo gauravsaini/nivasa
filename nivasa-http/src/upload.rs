@@ -55,6 +55,14 @@ impl UploadedFile {
     pub fn into_bytes(self) -> Vec<u8> {
         self.bytes
     }
+
+    /// Consume the value and return the underlying upload parts.
+    ///
+    /// This keeps multipart parsing out of the request pipeline while still
+    /// giving adapters a lightweight way to move the file metadata around.
+    pub fn into_parts(self) -> (String, Option<String>, Vec<u8>) {
+        (self.filename, self.content_type, self.bytes)
+    }
 }
 
 #[cfg(test)]
