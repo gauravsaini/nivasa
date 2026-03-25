@@ -339,7 +339,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[param("name")]` extractor — extract path parameter
 - [ ] Implement `#[query]` extractor — deserialize full query string to struct
 - [x] Implement `#[query("name")]` extractor — extract single query param
-- [ ] Implement `#[headers]` extractor — access all request headers as map
+- [x] Implement `#[headers]` extractor — access all request headers as map
 - [x] Implement `#[header("name")]` extractor — extract single header value
 - [ ] Implement `#[req]` extractor — raw `NivasaRequest` access
 - [ ] Implement `#[res]` extractor — raw response builder access
@@ -967,6 +967,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `.build() -> Result<App>` — resolve all modules, DI, and routes
 - [ ] Implement `.listen(ServerOptions) -> Result<()>` — start HTTP server
 - [x] Implement `ServerOptions` struct: `port`, `host`, `cors`, `global_prefix`, `versioning`
+- [x] Introduce `AppBootstrapConfig` boundary for server-only bootstrap config
 - [ ] Implement `.set_global_prefix("/api")` — prefix all routes
 - [ ] Implement `.use_global_guard(Guard)` — apply guard to all routes
 - [ ] Implement `.use_global_interceptor(Interceptor)` — apply interceptor globally
