@@ -441,6 +441,7 @@ version = "0.1.0"
 dependencies = [
  "http",
  "nivasa-common",
+ "nivasa-routing",
  "nivasa-statechart",
  "serde",
  "serde_json",

@@ -414,12 +414,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 > Each handler returns a `RequestEvent` which drives the transition. The engine rejects invalid transitions.
 
 - [ ] Document the full request lifecycle (reference the SCXML statechart diagram)
-- [ ] Create a `StatechartEngine<RequestStatechart>` per incoming request
-- [ ] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` → ...
+- [x] Create a `StatechartEngine<RequestStatechart>` per incoming request
+- [x] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` → ...
 - [ ] Each pipeline stage handler returns a `RequestEvent` that the engine uses to transition
 - [ ] Pipeline short-circuits are SCXML transitions: GuardDenied → `ErrorHandling` (not ad-hoc if/else)
 - [ ] Errors at any stage raise `error.*` events → engine transitions to `ErrorHandling` state
-- [ ] **Verify:** attempting to skip a pipeline stage (e.g., jump from Middleware to Handler) is rejected by the engine
+- [x] **Verify:** attempting to skip a pipeline stage (e.g., jump from Middleware to Handler) is rejected by the engine
 
 #### 2.2.4 — Multipart / File Upload
 - [ ] Add `multer` crate dependency for multipart parsing

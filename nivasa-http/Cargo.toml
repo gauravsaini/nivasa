@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 http = { workspace = true }
 nivasa-common = { path = "../nivasa-common" }
+nivasa-routing = { path = "../nivasa-routing" }
 nivasa-statechart = { path = "../nivasa-statechart" }
 serde = { workspace = true }
 serde_json = { workspace = true }

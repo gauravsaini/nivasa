@@ -2,6 +2,8 @@
 //!
 //! Nivasa framework HTTP primitives.
 
+mod pipeline;
+
 use http::{
     header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE},
     Method, Request, Response, StatusCode, Uri,
@@ -576,6 +578,8 @@ where
         }
     }
 }
+
+pub use pipeline::RequestPipeline;
 
 #[cfg(debug_assertions)]
 pub mod debug {
