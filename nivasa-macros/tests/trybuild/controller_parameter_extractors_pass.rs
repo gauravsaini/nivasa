@@ -16,6 +16,10 @@ impl UsersController {
         #[nivasa_macros::req("request")] request: String,
         #[nivasa_macros::res("response")] response: String,
         #[nivasa_macros::custom_param(MyExtractor)] extractor: String,
+        #[nivasa_macros::ip] ip: String,
+        #[nivasa_macros::session] session: String,
+        #[nivasa_macros::file] file: String,
+        #[nivasa_macros::files] files: String,
     ) {
         let _ = (
             body,
@@ -27,6 +31,10 @@ impl UsersController {
             request,
             response,
             extractor,
+            ip,
+            session,
+            file,
+            files,
         );
     }
 }
@@ -46,6 +54,10 @@ fn main() {
                 ("req", Some("request")),
                 ("res", Some("response")),
                 ("custom_param", Some("MyExtractor")),
+                ("ip", None),
+                ("session", None),
+                ("file", None),
+                ("files", None),
             ],
         )],
     );

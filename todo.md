@@ -343,9 +343,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[header("name")]` extractor — extract single header value
 - [ ] Implement `#[req]` extractor — raw `NivasaRequest` access
 - [ ] Implement `#[res]` extractor — raw response builder access
-- [ ] Implement `#[ip]` extractor — client IP address
-- [ ] Implement `#[session]` extractor — session data (if session module loaded)
-- [ ] Implement `#[file]` / `#[files]` extractor — multipart file upload
+- [x] Implement `#[ip]` extractor — client IP address
+- [x] Implement `#[session]` extractor — session data (if session module loaded)
+- [x] Implement `#[file]` / `#[files]` extractor — multipart file upload
 - [x] Support custom parameter decorators: `#[custom_param(MyExtractor)]`
 
 #### 2.1.5 — Route Registration & Matching

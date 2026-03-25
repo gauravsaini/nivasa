@@ -47,6 +47,10 @@ enum ParameterExtractorKind {
     Req,
     Res,
     CustomParam,
+    Ip,
+    Session,
+    File,
+    Files,
 }
 
 impl ControllerArgs {
@@ -84,6 +88,10 @@ impl ParameterExtractorKind {
             ParameterExtractorKind::Req => "req",
             ParameterExtractorKind::Res => "res",
             ParameterExtractorKind::CustomParam => "custom_param",
+            ParameterExtractorKind::Ip => "ip",
+            ParameterExtractorKind::Session => "session",
+            ParameterExtractorKind::File => "file",
+            ParameterExtractorKind::Files => "files",
         }
     }
 
@@ -94,6 +102,26 @@ impl ParameterExtractorKind {
                 | ParameterExtractorKind::Query
                 | ParameterExtractorKind::Header
                 | ParameterExtractorKind::CustomParam
+        )
+    }
+
+    fn accepts_optional_name(self) -> bool {
+        matches!(
+            self,
+            ParameterExtractorKind::Body
+                | ParameterExtractorKind::Headers
+                | ParameterExtractorKind::Req
+                | ParameterExtractorKind::Res
+        )
+    }
+
+    fn rejects_arguments(self) -> bool {
+        matches!(
+            self,
+            ParameterExtractorKind::Ip
+                | ParameterExtractorKind::Session
+                | ParameterExtractorKind::File
+                | ParameterExtractorKind::Files
         )
     }
 }
@@ -272,6 +300,14 @@ fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding
         Some(ParameterExtractorKind::Res)
     } else if attr_path_matches(attr, "custom_param") {
         Some(ParameterExtractorKind::CustomParam)
+    } else if attr_path_matches(attr, "ip") {
+        Some(ParameterExtractorKind::Ip)
+    } else if attr_path_matches(attr, "session") {
+        Some(ParameterExtractorKind::Session)
+    } else if attr_path_matches(attr, "file") {
+        Some(ParameterExtractorKind::File)
+    } else if attr_path_matches(attr, "files") {
+        Some(ParameterExtractorKind::Files)
     } else {
         None
     };
@@ -308,7 +344,7 @@ fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding
             kind: kind.as_str(),
             name: Some(name),
         }
-    } else {
+    } else if kind.accepts_optional_name() {
         match &attr.meta {
             Meta::Path(_) => ParameterBinding {
                 kind: kind.as_str(),
@@ -330,6 +366,21 @@ fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding
                 name: None,
             },
         }
+    } else if kind.rejects_arguments() {
+        match &attr.meta {
+            Meta::Path(_) => ParameterBinding {
+                kind: kind.as_str(),
+                name: None,
+            },
+            _ => {
+                return Err(Error::new(
+                    attr.span(),
+                    format!("`#[{}]` does not take arguments", kind.as_str()),
+                ));
+            }
+        }
+    } else {
+        unreachable!("unsupported extractor kind")
     };
 
     Ok(Some(binding))

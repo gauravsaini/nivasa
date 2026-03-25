@@ -109,3 +109,23 @@ pub fn res(_attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn custom_param(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
+
+#[proc_macro_attribute]
+pub fn ip(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn session(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn file(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn files(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
