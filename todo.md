@@ -380,7 +380,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 2.1.8 — Controller System Tests
 - [x] Test basic GET route registration and invocation
 - [x] Test POST route with JSON body extraction
-- [ ] Test path parameter extraction and type coercion
+- [x] Test path parameter extraction and type coercion
 - [x] Test query parameter extraction (single + struct)
 - [x] Test multiple routes on one controller
 - [x] Test controller prefix concatenation
@@ -392,10 +392,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 2.2 — HTTP Server Integration (`nivasa-http`)
 
 #### 2.2.1 — Server Core
-- [ ] Add `hyper` + `hyper-util` dependencies
-- [ ] Implement `NivasaServer` struct with builder pattern
-- [ ] Implement `listen(port, host)` to start HTTP server on Tokio runtime
-- [ ] Implement graceful shutdown via `tokio::signal` (SIGTERM, SIGINT, Ctrl+C)
+- [x] Add `hyper` + `hyper-util` dependencies
+- [x] Implement `NivasaServer` struct with builder pattern
+- [x] Implement `listen(port, host)` to start HTTP server on Tokio runtime
+- [x] Implement graceful shutdown via `tokio::signal` (SIGTERM, SIGINT, Ctrl+C)
 - [ ] Implement configurable request body size limit
 - [ ] Implement configurable request timeout
 - [ ] Implement optional TLS via `rustls` (feature-gated)
@@ -997,6 +997,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Write module system deep-dive documentation
 - [ ] Write DI container documentation (scopes, custom providers, lifecycle)
 - [ ] Write controllers & routing documentation (all extractors, response types)
+- [x] Write API versioning documentation
 - [ ] Write guards documentation (including Reflector and metadata)
 - [ ] Write interceptors documentation (with caching, logging examples)
 - [ ] Write pipes documentation (built-in pipes, custom pipes)
