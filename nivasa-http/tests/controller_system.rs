@@ -1,7 +1,7 @@
-use http::Method;
+use http::{Method, Request};
 use nivasa_http::{Body, FromRequest, Json, NivasaRequest, Query, RequestPipeline};
 use nivasa_macros::{controller, impl_controller};
-use nivasa_routing::{RouteDispatchRegistry, RouteMethod, RoutePathCaptures};
+use nivasa_routing::{RouteDispatchRegistry, RouteMethod, RoutePattern, RoutePathCaptures};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -31,23 +31,32 @@ impl UsersController {
 fn post_route_registration_supports_json_and_query_extraction() {
     let mut routes = RouteDispatchRegistry::new();
     for (method, path, handler) in UsersController::__nivasa_controller_routes() {
+        let pattern = RoutePattern::parse(&path).expect("controller route pattern must parse");
         routes
-            .register_pattern(RouteMethod::from(method), path, handler)
+            .register(RouteMethod::from(method), pattern, handler)
             .expect("controller route must register");
     }
 
     let controller = UsersController;
     controller.create();
 
-    let request = NivasaRequest::new(
-        Method::POST,
-        "/users/create?page=2&active=true",
-        Body::json(serde_json::json!({ "name": "Ada" })),
-    );
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/users/create?page=2&active=true")
+        .header("x-request-id", "abc123")
+        .header("x-retry-count", "3")
+        .body(Body::json(serde_json::json!({ "name": "Ada" })))
+        .expect("request must build");
+    let request = NivasaRequest::from_http(request);
 
     assert!(routes.resolve_match("POST", request.path()).is_some());
-    assert_eq!(request.query("page"), Some("2"));
-    assert_eq!(request.query("active"), Some("true"));
+    assert_eq!(request.query_typed::<u32>("page").unwrap(), 2);
+    assert_eq!(request.query_typed::<bool>("active").unwrap(), true);
+    assert_eq!(
+        request.header_typed::<String>("x-request-id").unwrap(),
+        "abc123"
+    );
+    assert_eq!(request.header_typed::<u32>("x-retry-count").unwrap(), 3);
 
     let body = Json::<CreateUser>::from_request(&request).unwrap();
     assert_eq!(
@@ -79,8 +88,9 @@ fn post_route_registration_supports_json_and_query_extraction() {
 fn path_parameter_extraction_supports_typed_values() {
     let mut routes = RouteDispatchRegistry::new();
     for (method, path, handler) in UsersController::__nivasa_controller_routes() {
+        let pattern = RoutePattern::parse(&path).expect("controller route pattern must parse");
         routes
-            .register_pattern(RouteMethod::from(method), path, handler)
+            .register(RouteMethod::from(method), pattern, handler)
             .expect("controller route must register");
     }
 
