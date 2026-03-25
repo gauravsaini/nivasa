@@ -4,7 +4,7 @@ This page documents the controller parameter surface that the macros recognize t
 
 ## Compile-Time Surface
 
-`#[impl_controller]` recognizes these parameter markers when it scans handler signatures:
+`#[impl_controller]` recognizes these parameter markers when it scans handler signatures on routed controller methods:
 
 - `#[body]`
 - `#[param("name")]`
@@ -20,6 +20,20 @@ This page documents the controller parameter surface that the macros recognize t
 - `#[custom_param(MyExtractor)]`
 
 The macro records them as controller metadata, but it does not automatically execute an argument binder at runtime yet.
+
+The current compile-time guardrails are:
+
+- A handler parameter can use only one extractor attribute.
+- `#[param]`, `#[query]`, `#[header]`, and `#[custom_param]` require a non-empty argument.
+- `#[body]`, `#[headers]`, `#[req]`, and `#[res]` may appear with or without an optional string label.
+- `#[ip]`, `#[session]`, `#[file]`, and `#[files]` do not accept arguments.
+- Parameter extractors are only accepted on methods that also have an HTTP route marker such as `#[get]` or `#[post]`; otherwise `#[impl_controller]` rejects the method with `controller metadata requires an HTTP method attribute`.
+
+The macro also validates the obvious shape errors up front:
+
+- Empty extractor names are rejected.
+- `#[custom_param(...)]` must name a type.
+- Invalid attribute forms fail during macro expansion instead of leaking into runtime.
 
 ## Runtime Extraction Today
 
