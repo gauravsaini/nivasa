@@ -265,6 +265,7 @@ impl ModuleOrchestrator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ModuleMetadata;
     use crate::module::lifecycle::NivasaModuleState;
     use std::sync::{Arc, Mutex};
 
