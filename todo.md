@@ -973,7 +973,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `.use_global_interceptor(Interceptor)` — apply interceptor globally
 - [ ] Implement `.use_global_pipe(Pipe)` — apply pipe globally (e.g., ValidationPipe)
 - [ ] Implement `.use_global_filter(Filter)` — apply exception filter globally
-- [ ] Implement `.enable_cors(CorsOptions)` — CORS configuration shorthand
+- [ ] Implement `.enable_cors()` — CORS config-only toggle on `ServerOptions`
 - [ ] Implement `.enable_versioning(VersioningOptions)` — API versioning config
 - [ ] Implement `.use_(Middleware)` — apply global middleware
 - [ ] Implement startup banner with ASCII art + version
