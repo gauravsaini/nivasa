@@ -1,11 +1,13 @@
 pub mod lifecycle;
 pub mod registry;
+pub mod runtime;
 
 use crate::di::DependencyContainer;
 use async_trait::async_trait;
 use std::any::TypeId;
 
 pub use registry::{ModuleEntry, ModuleRegistry, ModuleRegistryError};
+pub use runtime::{ModuleLifecycleError, ModuleRuntime};
 
 /// Metadata for a Nivasa module.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]

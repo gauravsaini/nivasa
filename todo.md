@@ -187,10 +187,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Define `Provider` trait (interface for all providers)
 - [x] Define `ProviderScope` enum: `Singleton`, `Scoped`, `Transient`
 - [x] Define `ProviderMetadata` struct (type id, scope, factory fn, dependencies list)
-- [ ] Implement `ProviderRegistry` to store provider metadata keyed by `TypeId`
+- [x] Implement `ProviderRegistry` to store provider metadata keyed by `TypeId`
 - [x] Define `FactoryProvider` — register a provider via closure/factory fn
 - [x] Define `ValueProvider` — register a pre-built instance directly
-- [ ] Define `ClassProvider` — register a type to be constructed by the container
+- [x] Define `ClassProvider` — register a type to be constructed by the container
 
 #### 1.1.2 — Dependency Container
 - [x] Implement `DependencyContainer` struct
@@ -213,10 +213,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Write unit tests: simple cycle, transitive cycle, diamond (no cycle), self-cycle
 
 #### 1.1.4 — Optional & Lazy Dependencies
-- [ ] Support `Option<Arc<T>>` injection (resolves to `None` if missing)
-- [ ] Support `Lazy<Arc<T>>` injection (resolves on first access, breaks cycles)
-- [ ] Write tests for optional dependency resolution
-- [ ] Write tests for lazy dependency resolution
+- [x] Support `Option<Arc<T>>` injection (resolves to `None` if missing)
+- [x] Support `Lazy<Arc<T>>` injection (resolves on first access, breaks cycles)
+- [x] Write tests for optional dependency resolution
+- [x] Write tests for lazy dependency resolution
 
 #### 1.1.5 — `#[injectable]` Attribute Macro (in `nivasa-macros`)
 - [x] Parse struct definition annotated with `#[injectable]`
@@ -232,11 +232,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test basic singleton registration and resolution
 - [x] Test scoped provider — same instance within scope, different across scopes
 - [x] Test transient provider — new instance every resolve
-- [ ] Test resolution failure with clear error when provider not registered
-- [ ] Test optional dependency resolves `None` when missing, `Some` when present
-- [ ] Test multiple providers depending on shared singleton (diamond pattern)
-- [ ] Test `register_value` with pre-built instance
-- [ ] Test `register_factory` with closure
+- [x] Test resolution failure with clear error when provider not registered
+- [x] Test optional dependency resolves `None` when missing, `Some` when present
+- [x] Test multiple providers depending on shared singleton (diamond pattern)
+- [x] Test `register_value` with pre-built instance
+- [x] Test `register_factory` with closure
 
 ### 1.2 — Module System (`nivasa-core` + `nivasa-macros`)
 
@@ -247,10 +247,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 1.2.1 — Module Trait
 - [ ] Define `Module` trait with `fn configure(&self, container: &mut DependencyContainer)`
 - [x] Define `ModuleMetadata` struct: `imports`, `controllers`, `providers`, `exports`
-- [ ] Define `OnModuleInit` trait with `async fn on_module_init(&self)`
-- [ ] Define `OnModuleDestroy` trait with `async fn on_module_destroy(&self)`
-- [ ] Define `OnApplicationBootstrap` trait (fires after all modules init)
-- [ ] Define `OnApplicationShutdown` trait (fires before modules destroy)
+- [x] Define `OnModuleInit` trait with `async fn on_module_init(&self)`
+- [x] Define `OnModuleDestroy` trait with `async fn on_module_destroy(&self)`
+- [x] Define `OnApplicationBootstrap` trait (fires after all modules init)
+- [x] Define `OnApplicationShutdown` trait (fires before modules destroy)
 
 #### 1.2.2 — `#[module]` Attribute Macro (in `nivasa-macros`)
 - [x] Parse `#[module({ imports: [...], controllers: [...], providers: [...], exports: [...] })]`
@@ -278,15 +278,15 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support `@Global()` equivalent — module's exports available everywhere
 
 #### 1.2.5 — Module Initialization Lifecycle (driven by `nivasa.module.scxml`)
-- [ ] Create a `StatechartEngine<ModuleStatechart>` per module instance
+- [x] Create a `StatechartEngine<ModuleStatechart>` per module instance
 - [ ] Implement ordered module initialization (deepest dependency first)
-- [ ] Module enters `Loading` state → engine sends `module.load` event
-- [ ] Call `OnModuleInit` hooks as the `<onentry>` of the `Initialized` state
+- [x] Module enters `Loading` state → engine sends `module.load` event
+- [x] Call `OnModuleInit` hooks as the `<onentry>` of the `Initialized` state
 - [ ] Call `OnApplicationBootstrap` after ALL module engines reach `Active` state
-- [ ] On shutdown: engine sends `module.destroy` event → `Destroying` state → `<onentry>` calls `OnModuleDestroy`
+- [x] On shutdown: engine sends `module.destroy` event → `Destroying` state → `<onentry>` calls `OnModuleDestroy`
 - [ ] Call `OnModuleDestroy` hooks in reverse initialization order
-- [ ] Implement module-scoped DI containers (provider encapsulation)
-- [ ] **Verify:** invalid lifecycle transitions (e.g., `Active` → `Loading`) are rejected by the engine
+- [x] Implement module-scoped DI containers (provider encapsulation)
+- [x] **Verify:** invalid lifecycle transitions (e.g., `Active` → `Loading`) are rejected by the engine
 
 #### 1.2.6 — Import / Export Resolution
 - [x] Implement export filtering — non-exported providers are invisible to importers
@@ -299,7 +299,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test simple module with one provider
 - [x] Test module with imports and exports
 - [x] Test nested modules (A imports B imports C)
-- [ ] Test lifecycle hooks fire in correct order
+- [x] Test lifecycle hooks fire in correct order
 - [x] Test circular module import detection
 - [x] Test global module (available everywhere without explicit import)
 - [ ] Test dynamic module via `for_root`
