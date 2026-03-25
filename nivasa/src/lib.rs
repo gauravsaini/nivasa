@@ -18,13 +18,19 @@ pub mod application;
 
 /// The prelude — import everything you need with `use nivasa::prelude::*`.
 pub mod prelude {
-    pub use crate::application::{ServerOptions, VersioningOptions, VersioningStrategy};
+    pub use crate::application::{
+        ServerOptions, ServerOptionsBuilder, VersioningOptions, VersioningOptionsBuilder,
+        VersioningStrategy,
+    };
     pub use nivasa_common::HttpException;
     pub use nivasa_core::DependencyContainer;
     pub use nivasa_statechart::{StatechartEngine, StatechartSpec};
 }
 
-pub use application::{ServerOptions, VersioningOptions, VersioningStrategy};
+pub use application::{
+    ServerOptions, ServerOptionsBuilder, VersioningOptions, VersioningOptionsBuilder,
+    VersioningStrategy,
+};
 pub use nivasa_common;
 pub use nivasa_core;
 pub use nivasa_macros;

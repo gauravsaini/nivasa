@@ -24,6 +24,11 @@ pub struct VersioningOptions {
 }
 
 impl VersioningOptions {
+    /// Start building a versioning configuration.
+    pub fn builder(strategy: VersioningStrategy) -> VersioningOptionsBuilder {
+        VersioningOptionsBuilder::new(strategy)
+    }
+
     /// Create a new versioning configuration for the given strategy.
     pub fn new(strategy: VersioningStrategy) -> Self {
         Self {
@@ -50,6 +55,47 @@ impl Default for VersioningOptions {
     }
 }
 
+/// Fluent builder for [`VersioningOptions`].
+#[derive(Debug, Clone)]
+pub struct VersioningOptionsBuilder {
+    strategy: VersioningStrategy,
+    default_version: Option<String>,
+}
+
+impl VersioningOptionsBuilder {
+    fn new(strategy: VersioningStrategy) -> Self {
+        Self {
+            strategy,
+            default_version: None,
+        }
+    }
+
+    /// Set the default API version.
+    pub fn default_version(mut self, version: impl Into<String>) -> Self {
+        let version = version.into();
+        self.default_version = if version.trim().is_empty() {
+            None
+        } else {
+            Some(normalize_version_token(&version))
+        };
+        self
+    }
+
+    /// Finish constructing the versioning configuration.
+    pub fn build(self) -> VersioningOptions {
+        VersioningOptions {
+            strategy: self.strategy,
+            default_version: self.default_version,
+        }
+    }
+}
+
+impl From<VersioningOptionsBuilder> for VersioningOptions {
+    fn from(builder: VersioningOptionsBuilder) -> Self {
+        builder.build()
+    }
+}
+
 /// Transport-facing server options owned by the umbrella crate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServerOptions {
@@ -61,6 +107,11 @@ pub struct ServerOptions {
 }
 
 impl ServerOptions {
+    /// Start building server options.
+    pub fn builder() -> ServerOptionsBuilder {
+        ServerOptionsBuilder::default()
+    }
+
     /// Create server options with the provided host and port.
     pub fn new(host: impl Into<String>, port: u16) -> Self {
         Self {
@@ -99,6 +150,89 @@ impl ServerOptions {
 impl Default for ServerOptions {
     fn default() -> Self {
         Self::new("127.0.0.1", 3000)
+    }
+}
+
+/// Fluent builder for [`ServerOptions`].
+#[derive(Debug, Clone)]
+pub struct ServerOptionsBuilder {
+    host: String,
+    port: u16,
+    cors: bool,
+    global_prefix: Option<String>,
+    versioning: Option<VersioningOptions>,
+}
+
+impl ServerOptionsBuilder {
+    /// Override the listen host.
+    pub fn host(mut self, host: impl Into<String>) -> Self {
+        self.host = host.into();
+        self
+    }
+
+    /// Override the listen port.
+    pub fn port(mut self, port: u16) -> Self {
+        self.port = port;
+        self
+    }
+
+    /// Enable CORS for the eventual server integration.
+    pub fn enable_cors(mut self) -> Self {
+        self.cors = true;
+        self
+    }
+
+    /// Toggle CORS explicitly.
+    pub fn cors(mut self, cors: bool) -> Self {
+        self.cors = cors;
+        self
+    }
+
+    /// Attach a global route prefix such as `/api`.
+    pub fn global_prefix(mut self, prefix: impl Into<String>) -> Self {
+        let prefix = normalize_path_prefix(prefix.into());
+        self.global_prefix = if prefix.is_empty() {
+            None
+        } else {
+            Some(prefix)
+        };
+        self
+    }
+
+    /// Attach versioning config to the server surface.
+    pub fn versioning(mut self, versioning: VersioningOptions) -> Self {
+        self.versioning = Some(versioning);
+        self
+    }
+
+    /// Finish constructing the server options.
+    pub fn build(self) -> ServerOptions {
+        ServerOptions {
+            host: self.host,
+            port: self.port,
+            cors: self.cors,
+            global_prefix: self.global_prefix,
+            versioning: self.versioning,
+        }
+    }
+}
+
+impl Default for ServerOptionsBuilder {
+    fn default() -> Self {
+        let defaults = ServerOptions::default();
+        Self {
+            host: defaults.host,
+            port: defaults.port,
+            cors: defaults.cors,
+            global_prefix: defaults.global_prefix,
+            versioning: defaults.versioning,
+        }
+    }
+}
+
+impl From<ServerOptionsBuilder> for ServerOptions {
+    fn from(builder: ServerOptionsBuilder) -> Self {
+        builder.build()
     }
 }
 
@@ -160,5 +294,27 @@ mod tests {
 
         assert_eq!(options.strategy, VersioningStrategy::Header);
         assert_eq!(options.default_version.as_deref(), Some("v1"));
+    }
+
+    #[test]
+    fn builders_construct_the_same_config_surface() {
+        let versioning = VersioningOptions::builder(VersioningStrategy::MediaType)
+            .default_version(" /v3/ ")
+            .build();
+        let options = ServerOptions::builder()
+            .host("0.0.0.0")
+            .port(8080)
+            .enable_cors()
+            .global_prefix(" api/ ")
+            .versioning(versioning.clone())
+            .build();
+
+        assert_eq!(versioning.strategy, VersioningStrategy::MediaType);
+        assert_eq!(versioning.default_version.as_deref(), Some("v3"));
+        assert_eq!(options.host, "0.0.0.0");
+        assert_eq!(options.port, 8080);
+        assert!(options.cors);
+        assert_eq!(options.global_prefix.as_deref(), Some("/api"));
+        assert_eq!(options.versioning, Some(versioning));
     }
 }
