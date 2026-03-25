@@ -1,0 +1,5 @@
+error: unexpected end of input, expected identifier
+ --> tests/trybuild/controller_custom_param_invalid.rs:9:45
+  |
+9 |     fn create(#[nivasa_macros::custom_param()] extractor: String) {
+  |                                             ^

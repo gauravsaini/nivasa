@@ -10,4 +10,5 @@ fn controller_macro_validation() {
     t.compile_fail("tests/trybuild/controller_invalid_key.rs");
     t.compile_fail("tests/trybuild/controller_missing_path.rs");
     t.compile_fail("tests/trybuild/controller_parameter_extractors_invalid.rs");
+    t.compile_fail("tests/trybuild/controller_custom_param_invalid.rs");
 }

@@ -15,6 +15,7 @@ impl UsersController {
         #[nivasa_macros::header("x-request-id")] request_id: String,
         #[nivasa_macros::req("request")] request: String,
         #[nivasa_macros::res("response")] response: String,
+        #[nivasa_macros::custom_param(MyExtractor)] extractor: String,
     ) {
         let _ = (
             body,
@@ -25,6 +26,7 @@ impl UsersController {
             request_id,
             request,
             response,
+            extractor,
         );
     }
 }
@@ -43,6 +45,7 @@ fn main() {
                 ("header", Some("x-request-id")),
                 ("req", Some("request")),
                 ("res", Some("response")),
+                ("custom_param", Some("MyExtractor")),
             ],
         )],
     );

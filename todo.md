@@ -346,7 +346,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[ip]` extractor — client IP address
 - [ ] Implement `#[session]` extractor — session data (if session module loaded)
 - [ ] Implement `#[file]` / `#[files]` extractor — multipart file upload
-- [ ] Support custom parameter decorators: `#[custom_param(MyExtractor)]`
+- [x] Support custom parameter decorators: `#[custom_param(MyExtractor)]`
 
 #### 2.1.5 — Route Registration & Matching
 - [x] Implement `RouteRegistry` to store all routes

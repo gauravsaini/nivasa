@@ -104,3 +104,8 @@ pub fn req(_attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn res(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
+
+#[proc_macro_attribute]
+pub fn custom_param(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}

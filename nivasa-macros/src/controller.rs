@@ -1,5 +1,5 @@
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
 use std::collections::HashSet;
 use syn::{
     braced,
@@ -7,7 +7,7 @@ use syn::{
     parse_macro_input, parse_quote,
     spanned::Spanned,
     Attribute, Error, Expr, ExprLit, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, ItemStruct,
-    Lit, LitStr, Meta, PatType, Result, Token,
+    Lit, LitStr, Meta, PatType, Path, Result, Token,
 };
 
 const ROUTE_MARKER_PREFIX: &str = "nivasa-route:";
@@ -46,6 +46,7 @@ enum ParameterExtractorKind {
     Header,
     Req,
     Res,
+    CustomParam,
 }
 
 impl ControllerArgs {
@@ -82,6 +83,7 @@ impl ParameterExtractorKind {
             ParameterExtractorKind::Header => "header",
             ParameterExtractorKind::Req => "req",
             ParameterExtractorKind::Res => "res",
+            ParameterExtractorKind::CustomParam => "custom_param",
         }
     }
 
@@ -91,6 +93,7 @@ impl ParameterExtractorKind {
             ParameterExtractorKind::Param
                 | ParameterExtractorKind::Query
                 | ParameterExtractorKind::Header
+                | ParameterExtractorKind::CustomParam
         )
     }
 }
@@ -267,6 +270,8 @@ fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding
         Some(ParameterExtractorKind::Req)
     } else if attr_path_matches(attr, "res") {
         Some(ParameterExtractorKind::Res)
+    } else if attr_path_matches(attr, "custom_param") {
+        Some(ParameterExtractorKind::CustomParam)
     } else {
         None
     };
@@ -275,7 +280,25 @@ fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding
         return Ok(None);
     };
 
-    let binding = if kind.takes_name() {
+    let binding = if kind == ParameterExtractorKind::CustomParam {
+        let path: Path = attr.parse_args()?;
+        let rendered = path
+            .to_token_stream()
+            .to_string()
+            .replace(' ', "");
+
+        if rendered.is_empty() {
+            return Err(Error::new(
+                attr.span(),
+                "`#[custom_param]` requires a parameter extractor type",
+            ));
+        }
+
+        ParameterBinding {
+            kind: kind.as_str(),
+            name: Some(LitStr::new(&rendered, path.span())),
+        }
+    } else if kind.takes_name() {
         let name: LitStr = attr.parse_args()?;
         if name.value().trim().is_empty() {
             return Err(Error::new(name.span(), "extractor name cannot be empty"));
