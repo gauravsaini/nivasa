@@ -1,6 +1,13 @@
 use crate::{Body, NivasaRequest, NivasaResponse, RequestPipeline};
 use bytes::{Bytes, BytesMut};
-use http::{header::ALLOW, Request, Response, StatusCode};
+use http::{
+    header::{
+        HeaderMap, HeaderValue, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
+        ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_REQUEST_HEADERS, ACCESS_CONTROL_REQUEST_METHOD,
+        ALLOW, ORIGIN,
+    },
+    Method, Request, Response, StatusCode,
+};
 use http_body_util::{BodyExt, Full};
 use hyper::{body::Incoming, service::service_fn};
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -19,6 +26,7 @@ type RouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync +
 /// Minimal HTTP transport shell for Nivasa.
 pub struct NivasaServer {
     routes: RouteDispatchRegistry<RouteHandler>,
+    cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
     shutdown: Option<oneshot::Receiver<()>>,
@@ -29,6 +37,7 @@ pub struct NivasaServer {
 /// Builder for [`NivasaServer`].
 pub struct NivasaServerBuilder {
     routes: RouteDispatchRegistry<RouteHandler>,
+    cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
     shutdown: Option<oneshot::Receiver<()>>,
@@ -48,6 +57,7 @@ impl NivasaServer {
         let listener = TcpListener::bind(addr).await?;
         let mut shutdown = shutdown_future(self.shutdown.take());
         let routes = self.routes;
+        let cors = self.cors;
         let request_timeout = self.request_timeout;
         let request_body_size_limit = self.request_body_size_limit;
         #[cfg(feature = "tls")]
@@ -70,12 +80,26 @@ impl NivasaServer {
                         if let Some(tls_config) = tls_config {
                             let acceptor = TlsAcceptor::from(tls_config);
                             if let Ok(stream) = acceptor.accept(stream).await {
-                                serve_connection(stream, routes, request_timeout, request_body_size_limit).await;
+                                serve_connection(
+                                    stream,
+                                    routes,
+                                    cors,
+                                    request_timeout,
+                                    request_body_size_limit,
+                                )
+                                .await;
                             }
                             return;
                         }
 
-                        serve_connection(stream, routes, request_timeout, request_body_size_limit).await;
+                        serve_connection(
+                            stream,
+                            routes,
+                            cors,
+                            request_timeout,
+                            request_body_size_limit,
+                        )
+                        .await;
                     });
                 }
             }
@@ -90,6 +114,7 @@ impl NivasaServerBuilder {
     fn new() -> Self {
         Self {
             routes: RouteDispatchRegistry::new(),
+            cors: false,
             request_timeout: None,
             request_body_size_limit: None,
             shutdown: None,
@@ -138,6 +163,18 @@ impl NivasaServerBuilder {
         Ok(self)
     }
 
+    /// Enable permissive transport-side CORS handling.
+    pub fn enable_cors(mut self) -> Self {
+        self.cors = true;
+        self
+    }
+
+    /// Toggle permissive transport-side CORS handling explicitly.
+    pub fn cors(mut self, cors: bool) -> Self {
+        self.cors = cors;
+        self
+    }
+
     /// Configure the maximum amount of time allowed for a request.
     pub fn request_timeout(mut self, timeout: Duration) -> Self {
         self.request_timeout = Some(timeout);
@@ -167,6 +204,7 @@ impl NivasaServerBuilder {
     pub fn build(self) -> NivasaServer {
         NivasaServer {
             routes: self.routes,
+            cors: self.cors,
             request_timeout: self.request_timeout,
             request_body_size_limit: self.request_body_size_limit,
             shutdown: self.shutdown,
@@ -179,6 +217,7 @@ impl NivasaServerBuilder {
 async fn serve_connection<S>(
     stream: S,
     routes: RouteDispatchRegistry<RouteHandler>,
+    cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
 ) where
@@ -187,27 +226,28 @@ async fn serve_connection<S>(
     let io = TokioIo::new(stream);
     let service = service_fn(move |request| {
         let routes = routes.clone();
+        let cors = cors;
         let request_timeout = request_timeout;
         let request_body_size_limit = request_body_size_limit;
         async move {
             if let Some(timeout) = request_timeout {
                 match tokio::time::timeout(
                     timeout,
-                    handle_request(request, routes, request_body_size_limit),
+                    handle_request(request, routes, cors, request_body_size_limit),
                 )
                 .await
                 {
                     Ok(result) => result,
-                    Err(_) => Ok(build_response(
-                        StatusCode::REQUEST_TIMEOUT,
+                    Err(_) => Ok(finalize_response(
                         NivasaResponse::new(
                             StatusCode::REQUEST_TIMEOUT,
                             Body::text("request timed out"),
                         ),
+                        cors,
                     )),
                 }
             } else {
-                handle_request(request, routes, request_body_size_limit).await
+                handle_request(request, routes, cors, request_body_size_limit).await
             }
         }
     });
@@ -219,24 +259,29 @@ async fn serve_connection<S>(
 async fn handle_request(
     request: hyper::Request<Incoming>,
     routes: RouteDispatchRegistry<RouteHandler>,
+    cors: bool,
     request_body_size_limit: Option<usize>,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
     let (parts, body) = request.into_parts();
+    if cors && is_cors_preflight(&parts.headers, &parts.method) {
+        return Ok(build_cors_preflight_response(&parts.headers));
+    }
+
     let body = match collect_request_body(body, request_body_size_limit).await {
         Ok(body) => body,
         Err(BodyCollectionError::TooLarge) => {
-            return Ok(build_response(
-                StatusCode::PAYLOAD_TOO_LARGE,
+            return Ok(finalize_response(
                 NivasaResponse::new(
                     StatusCode::PAYLOAD_TOO_LARGE,
                     Body::text("request body too large"),
                 ),
+                cors,
             ));
         }
         Err(BodyCollectionError::Invalid) => {
-            return Ok(build_response(
-                StatusCode::BAD_REQUEST,
+            return Ok(finalize_response(
                 NivasaResponse::new(StatusCode::BAD_REQUEST, Body::text("invalid request body")),
+                cors,
             ));
         }
     };
@@ -251,22 +296,22 @@ async fn handle_request(
     let mut pipeline = RequestPipeline::new(request);
 
     if pipeline.parse_request().is_err() {
-        return Ok(build_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
+        return Ok(finalize_response(
             NivasaResponse::new(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Body::text("request pipeline parse transition failed"),
             ),
+            cors,
         ));
     }
 
     if pipeline.complete_middleware().is_err() {
-        return Ok(build_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
+        return Ok(finalize_response(
             NivasaResponse::new(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Body::text("request pipeline middleware transition failed"),
             ),
+            cors,
         ));
     }
 
@@ -300,7 +345,7 @@ async fn handle_request(
         ),
     };
 
-    Ok(build_response(response.status(), response))
+    Ok(finalize_response(response, cors))
 }
 
 async fn collect_request_body(
@@ -387,6 +432,69 @@ fn build_response(status: StatusCode, response: NivasaResponse) -> Response<Full
     *hyper_response.status_mut() = status;
     *hyper_response.headers_mut() = response.headers().clone();
     hyper_response
+}
+
+fn finalize_response(response: NivasaResponse, cors: bool) -> Response<Full<Bytes>> {
+    let mut response = build_response(response.status(), response);
+    if cors {
+        apply_cors_headers(response.headers_mut());
+    }
+    response
+}
+
+fn is_cors_preflight(headers: &HeaderMap, method: &Method) -> bool {
+    *method == Method::OPTIONS
+        && headers.contains_key(ORIGIN)
+        && headers.contains_key(ACCESS_CONTROL_REQUEST_METHOD)
+}
+
+fn build_cors_preflight_response(headers: &HeaderMap) -> Response<Full<Bytes>> {
+    let mut response = Response::new(Full::new(Bytes::new()));
+    *response.status_mut() = StatusCode::NO_CONTENT;
+    apply_cors_headers(response.headers_mut());
+
+    if let Some(value) = allow_methods_header_value(headers) {
+        response
+            .headers_mut()
+            .insert(ACCESS_CONTROL_ALLOW_METHODS, value);
+    }
+
+    if let Some(value) = echo_request_headers(headers) {
+        response
+            .headers_mut()
+            .insert(ACCESS_CONTROL_ALLOW_HEADERS, value);
+    }
+
+    response
+}
+
+fn apply_cors_headers(headers: &mut HeaderMap) {
+    headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+}
+
+fn allow_methods_header_value(headers: &HeaderMap) -> Option<HeaderValue> {
+    let requested_method = headers
+        .get(ACCESS_CONTROL_REQUEST_METHOD)
+        .and_then(|value| value.to_str().ok())?
+        .trim();
+    if requested_method.is_empty() {
+        return None;
+    }
+
+    let methods = if requested_method.eq_ignore_ascii_case("OPTIONS") {
+        "OPTIONS".to_string()
+    } else {
+        format!("{requested_method}, OPTIONS")
+    };
+
+    HeaderValue::from_str(&methods).ok()
+}
+
+fn echo_request_headers(headers: &HeaderMap) -> Option<HeaderValue> {
+    headers
+        .get(ACCESS_CONTROL_REQUEST_HEADERS)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| HeaderValue::from_str(value).ok())
 }
 
 fn socket_addr(host: &str, port: u16) -> io::Result<SocketAddr> {
