@@ -1,5 +1,5 @@
-mod injectable;
 mod controller;
+mod injectable;
 mod module_macro;
 mod scxml_handler;
 
@@ -28,6 +28,16 @@ pub fn get(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn post(attr: TokenStream, item: TokenStream) -> TokenStream {
     controller::post(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn put(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::put(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn delete(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::delete(attr, item)
 }
 
 #[proc_macro_attribute]

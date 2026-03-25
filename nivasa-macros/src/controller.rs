@@ -1,14 +1,14 @@
 use proc_macro::TokenStream;
 use quote::quote;
+use std::collections::HashSet;
 use syn::{
     braced,
-    parse_quote,
     parse::{Parse, ParseStream},
-    parse_macro_input,
+    parse_macro_input, parse_quote,
     spanned::Spanned,
-    Attribute, Error, Expr, ExprLit, Ident, ImplItem, ImplItemFn, ItemImpl, ItemStruct, Lit, LitStr, Meta, Result, Token,
+    Attribute, Error, Expr, ExprLit, Ident, ImplItem, ImplItemFn, ItemImpl, ItemStruct, Lit,
+    LitStr, Meta, Result, Token,
 };
-use std::collections::HashSet;
 
 const ROUTE_MARKER_PREFIX: &str = "nivasa-route:";
 
@@ -27,7 +27,10 @@ struct RouteBinding {
 impl ControllerArgs {
     fn set_path(&mut self, key: &Ident, value: LitStr) -> Result<()> {
         if self.path.is_some() {
-            return Err(Error::new(key.span(), "duplicate `path` entry in `#[controller]`"));
+            return Err(Error::new(
+                key.span(),
+                "duplicate `path` entry in `#[controller]`",
+            ));
         }
         self.path = Some(value);
         Ok(())
@@ -35,7 +38,10 @@ impl ControllerArgs {
 
     fn set_version(&mut self, key: &Ident, value: LitStr) -> Result<()> {
         if self.version.is_some() {
-            return Err(Error::new(key.span(), "duplicate `version` entry in `#[controller]`"));
+            return Err(Error::new(
+                key.span(),
+                "duplicate `version` entry in `#[controller]`",
+            ));
         }
         self.version = Some(value);
         Ok(())
@@ -132,7 +138,10 @@ fn expand_controller(args: ControllerArgs, input: ItemStruct) -> Result<proc_mac
     let path = args
         .path
         .ok_or_else(|| Error::new(name.span(), "missing controller path"))?;
-    let version = args.version.map(|value| quote!(Some(#value))).unwrap_or_else(|| quote!(None));
+    let version = args
+        .version
+        .map(|value| quote!(Some(#value)))
+        .unwrap_or_else(|| quote!(None));
 
     Ok(quote! {
         #input
@@ -186,9 +195,9 @@ fn parse_route_marker(attr: &Attribute) -> Result<Option<RouteBinding>> {
     };
 
     let Expr::Lit(ExprLit {
-        lit: Lit::Str(doc),
-        ..
-    }) = &meta.value else {
+        lit: Lit::Str(doc), ..
+    }) = &meta.value
+    else {
         return Ok(None);
     };
 
@@ -199,25 +208,21 @@ fn parse_route_marker(attr: &Attribute) -> Result<Option<RouteBinding>> {
 
     let rest = rest.trim();
     let Some((method, path)) = rest.split_once(' ') else {
-        return Err(Error::new(
-            doc.span(),
-            "invalid controller route marker",
-        ));
+        return Err(Error::new(doc.span(), "invalid controller route marker"));
     };
 
     let method = method.trim();
     let path = path.trim();
     if method.is_empty() || path.is_empty() {
-        return Err(Error::new(
-            doc.span(),
-            "invalid controller route marker",
-        ));
+        return Err(Error::new(doc.span(), "invalid controller route marker"));
     }
 
     let path = LitStr::new(path, doc.span());
     let method = match method {
         "GET" => "GET",
         "POST" => "POST",
+        "PUT" => "PUT",
+        "DELETE" => "DELETE",
         other => {
             return Err(Error::new(
                 doc.span(),
@@ -234,6 +239,10 @@ fn parse_route_binding(attr: &Attribute) -> Result<Option<RouteBinding>> {
         Some("GET")
     } else if attr_path_matches(attr, "post") {
         Some("POST")
+    } else if attr_path_matches(attr, "put") {
+        Some("PUT")
+    } else if attr_path_matches(attr, "delete") {
+        Some("DELETE")
     } else {
         None
     };
@@ -303,11 +312,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                 ));
             }
 
-            routes.push((
-                binding.method,
-                binding.path,
-                method.sig.ident.to_string(),
-            ));
+            routes.push((binding.method, binding.path, method.sig.ident.to_string()));
         }
     }
 
@@ -373,11 +378,28 @@ pub fn post(attr: TokenStream, item: TokenStream) -> TokenStream {
     quote!(#method).into()
 }
 
+pub fn put(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let path = parse_macro_input!(attr as LitStr);
+    let mut method = parse_macro_input!(item as ImplItemFn);
+    method.attrs.insert(0, route_marker_attr("PUT", &path));
+    quote!(#method).into()
+}
+
+pub fn delete(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let path = parse_macro_input!(attr as LitStr);
+    let mut method = parse_macro_input!(item as ImplItemFn);
+    method.attrs.insert(0, route_marker_attr("DELETE", &path));
+    quote!(#method).into()
+}
+
 pub fn impl_controller(attr: TokenStream, item: TokenStream) -> TokenStream {
     if !attr.is_empty() {
-        return Error::new(proc_macro2::Span::call_site(), "#[impl_controller] takes no arguments")
-            .to_compile_error()
-            .into();
+        return Error::new(
+            proc_macro2::Span::call_site(),
+            "#[impl_controller] takes no arguments",
+        )
+        .to_compile_error()
+        .into();
     }
 
     let input = parse_macro_input!(item as ItemImpl);

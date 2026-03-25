@@ -10,6 +10,12 @@ impl UsersController {
 
     #[nivasa_macros::post("create")]
     fn create(&self) {}
+
+    #[nivasa_macros::put("/profile")]
+    fn update_profile(&self) {}
+
+    #[nivasa_macros::delete("/archive")]
+    fn archive(&self) {}
 }
 
 fn main() {
@@ -18,6 +24,8 @@ fn main() {
         vec![
             ("GET", "/users/list".to_string(), "list"),
             ("POST", "/users/create".to_string(), "create"),
+            ("PUT", "/users/profile".to_string(), "update_profile"),
+            ("DELETE", "/users/archive".to_string(), "archive"),
         ],
     );
 }
