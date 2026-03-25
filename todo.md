@@ -416,7 +416,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 - [x] Document the full request lifecycle (reference the SCXML statechart diagram)
 - [x] Create a `StatechartEngine<RequestStatechart>` per incoming request
-- [x] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` → ...
+- [x] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` (route dispatch is the current stop; controller execution and later SCXML stages remain future work) → ...
 - [x] Each pipeline stage handler returns a `RequestEvent` that the engine uses to transition
 - [ ] Pipeline short-circuits are SCXML transitions: GuardDenied → `ErrorHandling` (not ad-hoc if/else)
 - [ ] Errors at any stage raise `error.*` events → engine transitions to `ErrorHandling` state

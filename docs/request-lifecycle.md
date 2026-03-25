@@ -16,6 +16,8 @@ The codebase currently exercises the early request stages that are wired into `n
 1. `MiddlewareChain`
 1. `RouteMatching`
 
+That is the current runtime boundary: requests stop at route dispatch, and controller execution plus the later SCXML stages remain future work.
+
 The implemented coordinator in `nivasa-http` now:
 
 1. Starts each request in `Received`.
