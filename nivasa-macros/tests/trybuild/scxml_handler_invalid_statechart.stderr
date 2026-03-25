@@ -1,0 +1,5 @@
+error: `statechart` must be a bare SCXML name like `request`, not a path or dotted value
+ --> tests/trybuild/scxml_handler_invalid_statechart.rs:3:30
+  |
+3 | #[scxml_handler(statechart = "request/../../evil", state = "guard_chain")]
+  |                              ^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,5 @@
+error: SCXML file not found for `statechart = "does_not_exist"`; expected `$WORKSPACE/statecharts/nivasa.does_not_exist.scxml`
+ --> tests/trybuild/scxml_handler_missing_file.rs:3:30
+  |
+3 | #[scxml_handler(statechart = "does_not_exist", state = "guard_chain")]
+  |                              ^^^^^^^^^^^^^^^^

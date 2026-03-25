@@ -15,5 +15,12 @@ sha2 = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 
+[build-dependencies]
+quick-xml = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+sha2 = { workspace = true }
+
 [dev-dependencies]
 tokio-test = { workspace = true }

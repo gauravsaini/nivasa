@@ -1,5 +1,6 @@
 mod injectable;
 mod module_macro;
+mod scxml_handler;
 
 use proc_macro::TokenStream;
 
@@ -20,5 +21,5 @@ pub fn controller(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn scxml_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    item
+    scxml_handler::scxml_handler_impl(_attr, item)
 }

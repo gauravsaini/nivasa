@@ -42,7 +42,7 @@
 - [x] Create `nivasa-cli/` — CLI scaffolding tool
 - [x] Create `statecharts/` directory — all `.scxml` definitions live here (the source of truth)
 - [x] Each crate: add `lib.rs` with module doc comment and basic exports
-- [ ] Verify `cargo check --workspace` passes on empty crates
+- [x] Verify `cargo check --workspace` passes on empty crates
 
 ### 0.3 — CI / Tooling
 - [ ] Set up GitHub Actions CI: `cargo check`, `cargo test`, `cargo clippy`, `cargo fmt --check`
@@ -116,9 +116,9 @@ This is the **primary enforcement mechanism.** The `.scxml` files are read at bu
 - [x] **Generate valid_events_for():** returns the set of valid events for each state (for error messages and introspection)
 - [x] **Generate `StatechartSpec` trait impl:** ties State enum, Event enum, Handler trait, and transition fn together
 - [x] Embed SCXML content hash in generated code (`const SCXML_HASH: &str = "sha256:..."`) for parity checking
-- [ ] Write generated files to `OUT_DIR` and include via `include!(concat!(env!("OUT_DIR"), "/request.rs"))`
-- [ ] Implement `build.rs` that scans `statecharts/` directory and triggers codegen for each `.scxml` file
-- [ ] Add `cargo:rerun-if-changed=statecharts/` to rebuild on any SCXML change
+- [x] Write generated files to `OUT_DIR` and include via `include!(concat!(env!("OUT_DIR"), "/request.rs"))`
+- [x] Implement `build.rs` that scans `statecharts/` directory and triggers codegen for each `.scxml` file
+- [x] Add `cargo:rerun-if-changed=statecharts/` to rebuild on any SCXML change
 - [x] Unit tests: given a known SCXML, verify the generated Rust code compiles and has the correct enums/variants
 
 ### 0.5.5 — Statechart Runtime Engine (`nivasa-statechart::engine`)
@@ -141,11 +141,11 @@ The engine is the **only way to transition state at runtime.** There is no `set_
 
 Compile-time validation that user-annotated handlers correspond to real SCXML states.
 
-- [ ] Implement `#[scxml_handler(statechart = "request", state = "guard_chain")]` attribute macro
-- [ ] At macro expansion time: load the referenced SCXML file, verify `state` exists
-- [ ] Emit compile error if the referenced state does not exist in the SCXML
-- [ ] Emit compile error if the referenced statechart file does not exist
-- [ ] Write trybuild tests: valid annotation compiles, invalid state name fails
+- [x] Implement `#[scxml_handler(statechart = "request", state = "guard_chain")]` attribute macro
+- [x] At macro expansion time: load the referenced SCXML file, verify `state` exists
+- [x] Emit compile error if the referenced state does not exist in the SCXML
+- [x] Emit compile error if the referenced statechart file does not exist
+- [x] Write trybuild tests: valid annotation compiles, invalid state name fails
 
 ### 0.5.7 — Statechart Introspection (Debug Mode)
 - [ ] Implement `StatechartTracer` trait: `fn on_transition(from, event, to)`
@@ -156,9 +156,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] All introspection endpoints gated behind `#[cfg(debug_assertions)]` — zero cost in release
 
 ### 0.5.8 — CLI: `nivasa statechart` Commands (`nivasa-cli`)
-- [ ] Implement `nivasa statechart validate --all` — validate all SCXML files
-- [ ] Implement `nivasa statechart validate <file>` — validate one SCXML file
-- [ ] Implement `nivasa statechart parity` — verify generated Rust matches current SCXML
+- [x] Implement `nivasa statechart validate --all` — validate all SCXML files
+- [x] Implement `nivasa statechart validate <file>` — validate one SCXML file
+- [x] Implement `nivasa statechart parity` — verify generated Rust matches current SCXML
 - [ ] Implement `nivasa statechart visualize --format svg` — generate SVG diagrams from SCXML
 - [ ] Implement `nivasa statechart diff HEAD~1` — show statechart changes between commits
 - [ ] Implement `nivasa statechart inspect --port 3000` — query running app's statechart state

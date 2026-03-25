@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemStruct, Meta, MetaList, parse::{Parse, ParseStream}, Token, Expr, Member, Type};
+use syn::{parse_macro_input, parse::{Parse, ParseStream}, ItemStruct, Token, Type};
 use std::collections::HashMap;
 
 struct ModuleArgs {
