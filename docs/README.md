@@ -1,3 +1,5 @@
 # Docs
 
-Placeholder documentation root for the Nivasa project.
+Documentation root for the Nivasa project.
+
+- [Request Lifecycle](./request-lifecycle.md)
