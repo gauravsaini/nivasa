@@ -1,0 +1,5 @@
+error: `#[header]` expects exactly two string arguments
+ --> tests/trybuild/controller_response_metadata_invalid.rs:9:5
+  |
+9 |     #[nivasa_macros::header("x-request-id")]
+  |     ^
