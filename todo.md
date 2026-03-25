@@ -21,8 +21,8 @@
 - [x] Define workspace-level dependency versions (`[workspace.dependencies]`) for: `tokio`, `serde`, `hyper`, `tower`, `tracing`, `thiserror`, `uuid`, `bytes`, `http`, `quick-xml`
 - [x] Decide and document Minimum Supported Rust Version (MSRV) — recommend 1.75+
 - [x] Set up `rustfmt.toml` with project formatting rules
-- [ ] Set up `clippy.toml` / `.clippy.toml` with lint policy
-- [ ] Set up `deny.toml` (cargo-deny) for license and vulnerability auditing
+- [x] Set up `clippy.toml` / `.clippy.toml` with lint policy
+- [x] Set up `deny.toml` (cargo-deny) for license and vulnerability auditing
 
 ### 0.2 — Crate Scaffolding
 - [x] Create `nivasa/` — main umbrella re-export crate
@@ -45,15 +45,15 @@
 - [x] Verify `cargo check --workspace` passes on empty crates
 
 ### 0.3 — CI / Tooling
-- [ ] Set up GitHub Actions CI: `cargo check`, `cargo test`, `cargo clippy`, `cargo fmt --check`
+- [x] Set up GitHub Actions CI: `cargo check`, `cargo test`, `cargo clippy`, `cargo fmt --check`
 - [ ] Set up code coverage reporting (tarpaulin or llvm-cov)
 - [ ] Set up `cargo doc` generation in CI
-- [ ] **Add SCXML CI step:** `nivasa statechart validate --all` — validates all `.scxml` files are well-formed
-- [ ] **Add SCXML CI step:** `nivasa statechart parity` — verifies generated Rust code matches current `.scxml` files
+- [x] **Add SCXML CI step:** `nivasa statechart validate --all` — validates all `.scxml` files are well-formed
+- [x] **Add SCXML CI step:** `nivasa statechart parity` — verifies generated Rust code matches current `.scxml` files
 - [ ] **Add CI step:** `git diff --exit-code src/generated/` — fails if codegen output is stale
-- [ ] Create `examples/` directory with placeholder READMEs for `basic/`, `auth/`, `websocket/`
-- [ ] Create `tests/` directory for workspace-level integration tests
-- [ ] Create `docs/` directory for book-style documentation
+- [x] Create `examples/` directory with placeholder READMEs for `basic/`, `auth/`, `websocket/`
+- [x] Create `tests/` directory for workspace-level integration tests
+- [x] Create `docs/` directory for book-style documentation
 
 ### 0.4 — Umbrella Crate Re-export Strategy
 - [ ] Design `nivasa::prelude::*` — users should only need one import
