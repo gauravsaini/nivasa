@@ -121,8 +121,12 @@ pub enum RequestExtractError {
     MissingBody,
     MissingPathParameters,
     MissingPathParameter { name: String },
+    MissingQueryParameter { name: String },
+    MissingHeader { name: String },
     InvalidBody(String),
     InvalidPathParameter { name: String, error: String },
+    InvalidQueryParameter { name: String, error: String },
+    InvalidHeader { name: String, error: String },
     InvalidQuery(String),
 }
 
@@ -136,9 +140,21 @@ impl fmt::Display for RequestExtractError {
             RequestExtractError::MissingPathParameter { name } => {
                 write!(f, "request is missing path parameter `{name}`")
             }
+            RequestExtractError::MissingQueryParameter { name } => {
+                write!(f, "request is missing query parameter `{name}`")
+            }
+            RequestExtractError::MissingHeader { name } => {
+                write!(f, "request is missing header `{name}`")
+            }
             RequestExtractError::InvalidBody(err) => write!(f, "invalid request body: {err}"),
             RequestExtractError::InvalidPathParameter { name, error } => {
                 write!(f, "invalid path parameter `{name}`: {error}")
+            }
+            RequestExtractError::InvalidQueryParameter { name, error } => {
+                write!(f, "invalid query parameter `{name}`: {error}")
+            }
+            RequestExtractError::InvalidHeader { name, error } => {
+                write!(f, "invalid header `{name}`: {error}")
             }
             RequestExtractError::InvalidQuery(err) => write!(f, "invalid query string: {err}"),
         }
@@ -179,6 +195,13 @@ where
     serde_json::from_str(raw)
         .or_else(|_| serde_json::from_value(serde_json::Value::String(raw.to_string())))
         .map_err(|err| err.to_string())
+}
+
+fn deserialize_scalar_value<T>(raw: &str) -> Result<T, String>
+where
+    T: DeserializeOwned,
+{
+    deserialize_path_value(raw)
 }
 
 /// Request wrapper used by the HTTP layer.
@@ -238,6 +261,27 @@ impl NivasaRequest {
             .and_then(|name| self.inner.headers().get(name))
     }
 
+    /// Look up and coerce a single header value by name.
+    pub fn header_typed<T>(&self, name: impl AsRef<str>) -> Result<T, RequestExtractError>
+    where
+        T: DeserializeOwned,
+    {
+        let name = name.as_ref().to_string();
+        let Some(raw) = self.header(&name) else {
+            return Err(RequestExtractError::MissingHeader { name });
+        };
+
+        let raw = raw.to_str().map_err(|error| RequestExtractError::InvalidHeader {
+            name: name.clone(),
+            error: error.to_string(),
+        })?;
+
+        deserialize_scalar_value(raw).map_err(|error| RequestExtractError::InvalidHeader {
+            name,
+            error,
+        })
+    }
+
     /// Look up a single query parameter by name.
     pub fn query(&self, name: impl AsRef<str>) -> Option<&str> {
         let name = name.as_ref();
@@ -250,6 +294,22 @@ impl NivasaRequest {
                     None
                 }
             })
+        })
+    }
+
+    /// Look up and coerce a single query parameter by name.
+    pub fn query_typed<T>(&self, name: impl AsRef<str>) -> Result<T, RequestExtractError>
+    where
+        T: DeserializeOwned,
+    {
+        let name = name.as_ref().to_string();
+        let Some(raw) = self.query(&name) else {
+            return Err(RequestExtractError::MissingQueryParameter { name });
+        };
+
+        deserialize_scalar_value(raw).map_err(|error| RequestExtractError::InvalidQueryParameter {
+            name,
+            error,
         })
     }
 

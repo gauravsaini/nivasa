@@ -2,6 +2,7 @@ use http::header::HeaderMap;
 use http::{Method, Request, StatusCode};
 use nivasa_http::{
     Body, FromRequest, IntoResponse, Json, NivasaRequest, NivasaResponse, Query,
+    RequestExtractError,
 };
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod, RoutePathCaptures};
 use serde::Deserialize;
@@ -60,6 +61,36 @@ fn request_extraction_supports_query_headers_and_json() {
             name: "Ada".to_string(),
         }
     );
+}
+
+#[test]
+fn request_extraction_supports_single_query_and_header_values() {
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri("/users?page=2&active=true")
+        .header("x-retry-count", "3")
+        .header("x-request-id", "abc123")
+        .body(Body::empty())
+        .expect("request must build");
+
+    let request = NivasaRequest::from_http(request);
+
+    assert_eq!(request.query_typed::<u32>("page").unwrap(), 2);
+    assert_eq!(request.query_typed::<bool>("active").unwrap(), true);
+    assert_eq!(request.header_typed::<u32>("x-retry-count").unwrap(), 3);
+    assert_eq!(
+        request.header_typed::<String>("x-request-id").unwrap(),
+        "abc123"
+    );
+
+    assert!(matches!(
+        request.query_typed::<u32>("missing"),
+        Err(RequestExtractError::MissingQueryParameter { .. })
+    ));
+    assert!(matches!(
+        request.header_typed::<u32>("missing"),
+        Err(RequestExtractError::MissingHeader { .. })
+    ));
 }
 
 #[test]

@@ -338,9 +338,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[body]` extractor — deserialize JSON request body to typed DTO
 - [ ] Implement `#[param("name")]` extractor — extract path parameter
 - [ ] Implement `#[query]` extractor — deserialize full query string to struct
-- [ ] Implement `#[query("name")]` extractor — extract single query param
+- [x] Implement `#[query("name")]` extractor — extract single query param
 - [ ] Implement `#[headers]` extractor — access all request headers as map
-- [ ] Implement `#[header("name")]` extractor — extract single header value
+- [x] Implement `#[header("name")]` extractor — extract single header value
 - [ ] Implement `#[req]` extractor — raw `NivasaRequest` access
 - [ ] Implement `#[res]` extractor — raw response builder access
 - [x] Implement `#[ip]` extractor — client IP address
