@@ -153,6 +153,31 @@ impl Default for ServerOptions {
     }
 }
 
+/// App-only bootstrap boundary that stays as pure configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppBootstrapConfig {
+    pub server: ServerOptions,
+}
+
+impl AppBootstrapConfig {
+    /// Create bootstrap config from server options.
+    pub fn new(server: ServerOptions) -> Self {
+        Self { server }
+    }
+}
+
+impl Default for AppBootstrapConfig {
+    fn default() -> Self {
+        Self::new(ServerOptions::default())
+    }
+}
+
+impl From<ServerOptions> for AppBootstrapConfig {
+    fn from(server: ServerOptions) -> Self {
+        Self::new(server)
+    }
+}
+
 /// Fluent builder for [`ServerOptions`].
 #[derive(Debug, Clone)]
 pub struct ServerOptionsBuilder {
@@ -316,5 +341,18 @@ mod tests {
         assert!(options.cors);
         assert_eq!(options.global_prefix.as_deref(), Some("/api"));
         assert_eq!(options.versioning, Some(versioning));
+    }
+
+    #[test]
+    fn bootstrap_config_wraps_the_server_surface_without_runtime_behavior() {
+        let server = ServerOptions::builder()
+            .host("0.0.0.0")
+            .port(8080)
+            .global_prefix("api")
+            .build();
+        let bootstrap = AppBootstrapConfig::from(server.clone());
+
+        assert_eq!(bootstrap.server, server);
+        assert_eq!(AppBootstrapConfig::default().server, ServerOptions::default());
     }
 }

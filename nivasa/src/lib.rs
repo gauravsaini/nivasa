@@ -19,8 +19,8 @@ pub mod application;
 /// The prelude — import everything you need with `use nivasa::prelude::*`.
 pub mod prelude {
     pub use crate::application::{
-        ServerOptions, ServerOptionsBuilder, VersioningOptions, VersioningOptionsBuilder,
-        VersioningStrategy,
+        AppBootstrapConfig, ServerOptions, ServerOptionsBuilder, VersioningOptions,
+        VersioningOptionsBuilder, VersioningStrategy,
     };
     pub use nivasa_common::HttpException;
     pub use nivasa_core::DependencyContainer;
@@ -28,8 +28,8 @@ pub mod prelude {
 }
 
 pub use application::{
-    ServerOptions, ServerOptionsBuilder, VersioningOptions, VersioningOptionsBuilder,
-    VersioningStrategy,
+    AppBootstrapConfig, ServerOptions, ServerOptionsBuilder, VersioningOptions,
+    VersioningOptionsBuilder, VersioningStrategy,
 };
 pub use nivasa_common;
 pub use nivasa_core;

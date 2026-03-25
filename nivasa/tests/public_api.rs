@@ -60,3 +60,18 @@ fn builder_defaults_match_the_existing_config_surface() {
     assert_eq!(server.global_prefix, None);
     assert_eq!(server.versioning, None);
 }
+
+#[test]
+fn crate_root_reexports_bootstrap_config_as_pure_data() {
+    let server = ServerOptions::builder()
+        .host("0.0.0.0")
+        .port(8080)
+        .build();
+    let bootstrap = nivasa::AppBootstrapConfig::from(server.clone());
+
+    assert_eq!(bootstrap.server, server);
+    assert_eq!(
+        nivasa::AppBootstrapConfig::default().server,
+        ServerOptions::default()
+    );
+}
