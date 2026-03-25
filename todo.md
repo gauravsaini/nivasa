@@ -257,7 +257,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Validate attribute syntax and emit helpful errors on typos
 - [x] Generate `impl Module for T` with metadata accessor methods
 - [x] Generate provider registration calls for listed providers
-- [ ] Generate controller registration calls
+- [x] Generate controller registration calls
 - [ ] Generate import resolution (pull in imported module's exported providers)
 - [ ] Generate export filtering (only exports are visible to importing modules)
 - [x] Support `middlewares: [...]` in module config
