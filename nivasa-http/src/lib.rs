@@ -3,8 +3,8 @@
 //! Nivasa framework HTTP primitives.
 
 mod pipeline;
-pub mod upload;
 mod server;
+pub mod upload;
 
 use http::{
     header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE},
@@ -554,18 +554,14 @@ where
     T: DeserializeOwned,
 {
     fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
-        let Some(query) = request.uri().query() else {
-            return Err(RequestExtractError::InvalidQuery(
-                "missing query string".into(),
-            ));
-        };
-
         let mut values = serde_json::Map::new();
-        for pair in query.split('&').filter(|segment| !segment.is_empty()) {
-            let (key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
-            let value = serde_json::from_str::<serde_json::Value>(raw_value)
-                .unwrap_or_else(|_| serde_json::Value::String(raw_value.to_string()));
-            values.insert(key.to_string(), value);
+        if let Some(query) = request.uri().query() {
+            for pair in query.split('&').filter(|segment| !segment.is_empty()) {
+                let (key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
+                let value = serde_json::from_str::<serde_json::Value>(raw_value)
+                    .unwrap_or_else(|_| serde_json::Value::String(raw_value.to_string()));
+                values.insert(key.to_string(), value);
+            }
         }
 
         serde_json::from_value(serde_json::Value::Object(values))
@@ -934,7 +930,10 @@ impl IntoResponse for SseEvent {
 impl IntoResponse for Sse {
     fn into_response(self) -> NivasaResponse {
         NivasaResponse::new(StatusCode::OK, Body::text(self.into_body()))
-            .with_header(http::header::CONTENT_TYPE.as_str(), "text/event-stream; charset=utf-8")
+            .with_header(
+                http::header::CONTENT_TYPE.as_str(),
+                "text/event-stream; charset=utf-8",
+            )
             .with_header(http::header::CACHE_CONTROL.as_str(), "no-cache")
     }
 }
@@ -1053,8 +1052,8 @@ where
 }
 
 pub use pipeline::RequestPipeline;
-pub use upload::UploadedFile;
 pub use server::{NivasaServer, NivasaServerBuilder};
+pub use upload::UploadedFile;
 
 #[cfg(debug_assertions)]
 pub mod debug {
