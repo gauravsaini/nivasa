@@ -314,7 +314,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Parse `#[controller("/path")]` on struct
 - [x] Store route prefix metadata on the struct
 - [x] Support versioned controller: `#[controller({ path: "/users", version: "1" })]`
-- [ ] Generate controller trait impl with prefix accessor
+- [x] Generate controller trait impl with prefix accessor
 
 #### 2.1.2 — HTTP Method Attributes
 - [x] Implement `#[get("/path")]` attribute macro

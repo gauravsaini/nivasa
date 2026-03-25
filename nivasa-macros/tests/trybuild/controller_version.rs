@@ -1,4 +1,5 @@
 use nivasa_macros::controller;
+use nivasa_routing::Controller;
 
 #[controller({ path: "/users", version: "1" })]
 struct UsersV1Controller;
@@ -10,4 +11,8 @@ fn main() {
         UsersV1Controller::__nivasa_controller_metadata(),
         ("/users", Some("1"))
     );
+
+    let metadata = UsersV1Controller.metadata();
+    assert_eq!(metadata.path(), "/users");
+    assert_eq!(metadata.version(), Some("1"));
 }

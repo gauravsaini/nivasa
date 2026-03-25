@@ -138,17 +138,31 @@ fn expand_controller(args: ControllerArgs, input: ItemStruct) -> Result<proc_mac
     let path = args
         .path
         .ok_or_else(|| Error::new(name.span(), "missing controller path"))?;
-    let version = args
-        .version
+    let version = args.version;
+    let version_const = version
+        .as_ref()
         .map(|value| quote!(Some(#value)))
         .unwrap_or_else(|| quote!(None));
+    let metadata_expr = version
+        .as_ref()
+        .map(|value| {
+            quote! {
+                ::nivasa_routing::ControllerMetadata::new(Self::__NIVASA_CONTROLLER_PATH)
+                    .with_version(#value)
+            }
+        })
+        .unwrap_or_else(|| {
+            quote! {
+                ::nivasa_routing::ControllerMetadata::new(Self::__NIVASA_CONTROLLER_PATH)
+            }
+        });
 
     Ok(quote! {
         #input
 
         impl #impl_generics #name #ty_generics #where_clause {
             pub const __NIVASA_CONTROLLER_PATH: &'static str = #path;
-            pub const __NIVASA_CONTROLLER_VERSION: Option<&'static str> = #version;
+            pub const __NIVASA_CONTROLLER_VERSION: Option<&'static str> = #version_const;
 
             pub fn __nivasa_controller_path() -> &'static str {
                 Self::__NIVASA_CONTROLLER_PATH
@@ -163,6 +177,12 @@ fn expand_controller(args: ControllerArgs, input: ItemStruct) -> Result<proc_mac
                     Self::__NIVASA_CONTROLLER_PATH,
                     Self::__NIVASA_CONTROLLER_VERSION,
                 )
+            }
+        }
+
+        impl #impl_generics ::nivasa_routing::Controller for #name #ty_generics #where_clause {
+            fn metadata(&self) -> ::nivasa_routing::ControllerMetadata {
+                #metadata_expr
             }
         }
     })
