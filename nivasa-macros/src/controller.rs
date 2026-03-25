@@ -369,16 +369,12 @@ fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding
                     name: Some(name),
                 }
             }
-            Meta::NameValue(_) if matches!(kind, ParameterExtractorKind::Req | ParameterExtractorKind::Res) => {
+            Meta::NameValue(_) => {
                 return Err(Error::new(
                     attr.span(),
                     format!("`#[{}]` only supports bare or string-list syntax", kind.as_str()),
                 ));
             }
-            Meta::NameValue(_) => ParameterBinding {
-                kind: kind.as_str(),
-                name: None,
-            },
         }
     } else if kind.rejects_arguments() {
         match &attr.meta {
