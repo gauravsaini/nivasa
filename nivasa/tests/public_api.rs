@@ -75,3 +75,14 @@ fn crate_root_reexports_bootstrap_config_as_pure_data() {
         ServerOptions::default()
     );
 }
+
+#[test]
+fn bootstrap_config_exposes_a_normalized_global_prefix_for_route_setup() {
+    let bootstrap = nivasa::AppBootstrapConfig::from(
+        ServerOptions::builder()
+            .global_prefix(" api/ ")
+            .build(),
+    );
+
+    assert_eq!(bootstrap.global_prefix(), Some("/api"));
+}

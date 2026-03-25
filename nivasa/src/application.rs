@@ -164,6 +164,11 @@ impl AppBootstrapConfig {
     pub fn new(server: ServerOptions) -> Self {
         Self { server }
     }
+
+    /// Expose the global route prefix for bootstrap-time route registration.
+    pub fn global_prefix(&self) -> Option<&str> {
+        self.server.global_prefix.as_deref()
+    }
 }
 
 impl Default for AppBootstrapConfig {
