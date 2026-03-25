@@ -362,7 +362,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement JSON response (auto-serialize via Serde)
 - [x] Implement plain text response
 - [x] Implement HTML response
-- [ ] Implement stream/SSE response
+- [ ] Implement streaming response bodies
+- [x] Implement SSE response helper
 - [x] Implement file download response
 - [x] Implement redirect response (301, 302, 307, 308)
 - [x] Implement `HttpStatus` enum for all standard status codes
@@ -965,7 +966,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `NestApplication::create(AppModule)` factory method
 - [ ] Implement `.build() -> Result<App>` — resolve all modules, DI, and routes
 - [ ] Implement `.listen(ServerOptions) -> Result<()>` — start HTTP server
-- [ ] Implement `ServerOptions` struct: `port`, `host`, `cors`, `global_prefix`, `versioning`
+- [x] Implement `ServerOptions` struct: `port`, `host`, `cors`, `global_prefix`, `versioning`
 - [ ] Implement `.set_global_prefix("/api")` — prefix all routes
 - [ ] Implement `.use_global_guard(Guard)` — apply guard to all routes
 - [ ] Implement `.use_global_interceptor(Interceptor)` — apply interceptor globally
