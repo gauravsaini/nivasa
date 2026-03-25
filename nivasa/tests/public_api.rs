@@ -86,3 +86,19 @@ fn bootstrap_config_exposes_a_normalized_global_prefix_for_route_setup() {
 
     assert_eq!(bootstrap.global_prefix(), Some("/api"));
 }
+
+#[test]
+fn bootstrap_config_can_compose_prefixed_route_paths_without_runtime_wiring() {
+    let bootstrap = nivasa::AppBootstrapConfig::from(
+        ServerOptions::builder()
+            .global_prefix("api")
+            .build(),
+    );
+
+    assert_eq!(bootstrap.prefixed_route_path("users"), "/api/users");
+    assert_eq!(bootstrap.prefixed_route_path("/"), "/api");
+    assert_eq!(
+        nivasa::AppBootstrapConfig::default().prefixed_route_path("users"),
+        "/users"
+    );
+}

@@ -169,6 +169,20 @@ impl AppBootstrapConfig {
     pub fn global_prefix(&self) -> Option<&str> {
         self.server.global_prefix.as_deref()
     }
+
+    /// Compose a bootstrap-time route path from the configured global prefix.
+    ///
+    /// This stays as pure string handling so route registration can consume it
+    /// later without implying that runtime wiring already exists.
+    pub fn prefixed_route_path(&self, path: impl AsRef<str>) -> String {
+        let route = normalize_route_path(path.as_ref());
+
+        match self.global_prefix() {
+            Some(prefix) if route == "/" => prefix.to_string(),
+            Some(prefix) => format!("{}{}", prefix, route),
+            None => route,
+        }
+    }
 }
 
 impl Default for AppBootstrapConfig {
@@ -285,6 +299,16 @@ fn normalize_path_prefix(prefix: String) -> String {
     }
 }
 
+fn normalize_route_path(path: &str) -> String {
+    let trimmed = path.trim();
+    if trimmed.is_empty() || trimmed == "/" {
+        return String::from("/");
+    }
+
+    let stripped = trimmed.trim_start_matches('/').trim_end_matches('/');
+    format!("/{}", stripped)
+}
+
 fn normalize_version_token(version: &str) -> String {
     let trimmed = version.trim().trim_matches('/');
     let stripped = trimmed
@@ -359,5 +383,22 @@ mod tests {
 
         assert_eq!(bootstrap.server, server);
         assert_eq!(AppBootstrapConfig::default().server, ServerOptions::default());
+    }
+
+    #[test]
+    fn bootstrap_config_prefixes_route_paths_purely_for_future_bootstrap_use() {
+        let bootstrap = AppBootstrapConfig::from(
+            ServerOptions::builder()
+                .global_prefix(" api/ ")
+                .build(),
+        );
+
+        assert_eq!(bootstrap.prefixed_route_path("users"), "/api/users");
+        assert_eq!(bootstrap.prefixed_route_path("/users/"), "/api/users");
+        assert_eq!(bootstrap.prefixed_route_path("/"), "/api");
+        assert_eq!(
+            AppBootstrapConfig::default().prefixed_route_path(" users/ "),
+            "/users"
+        );
     }
 }
