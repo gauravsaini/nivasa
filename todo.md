@@ -377,15 +377,15 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test versioned routes resolve correctly
 
 #### 2.1.8 — Controller System Tests
-- [ ] Test basic GET route registration and invocation
+- [x] Test basic GET route registration and invocation
 - [ ] Test POST route with JSON body extraction
 - [ ] Test path parameter extraction and type coercion
 - [ ] Test query parameter extraction (single + struct)
-- [ ] Test multiple routes on one controller
-- [ ] Test controller prefix concatenation
-- [ ] Test 404 for unmatched routes
-- [ ] Test 405 for wrong HTTP method on existing path
-- [ ] Test route conflict detection at startup
+- [x] Test multiple routes on one controller
+- [x] Test controller prefix concatenation
+- [x] Test 404 for unmatched routes
+- [x] Test 405 for wrong HTTP method on existing path
+- [x] Test route conflict detection at startup
 - [ ] Test versioned routes
 
 ### 2.2 — HTTP Server Integration (`nivasa-http`)
@@ -400,11 +400,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement optional TLS via `rustls` (feature-gated)
 
 #### 2.2.2 — Request / Response Wrappers
-- [ ] Implement `NivasaRequest` wrapping `http::Request<Body>` with convenience methods
-- [ ] Implement `NivasaResponse` wrapping `http::Response<Body>` with builder
+- [x] Implement `NivasaRequest` wrapping `http::Request<Body>` with convenience methods
+- [x] Implement `NivasaResponse` wrapping `http::Response<Body>` with builder
 - [ ] Implement `FromRequest` trait for custom extractors
-- [ ] Implement `IntoResponse` trait for custom response types
-- [ ] Implement `Body` abstraction (streaming, collected, empty)
+- [x] Implement `IntoResponse` trait for custom response types
+- [x] Implement `Body` abstraction (streaming, collected, empty)
 
 #### 2.2.3 — Request Pipeline (Execution Order — driven by `nivasa.request.scxml`)
 
