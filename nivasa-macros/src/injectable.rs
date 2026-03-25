@@ -3,9 +3,10 @@ use quote::quote;
 use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
+    parse_quote,
     spanned::Spanned,
-    Error, Field, Fields, GenericArgument, Ident, ItemStruct, LitStr, PathArguments, Result, Token,
-    Type,
+    Error, Field, Fields, GenericArgument, Generics, Ident, ItemStruct, LitStr, PathArguments,
+    Result, Token, Type,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,6 +94,14 @@ fn has_inject_attr(field: &Field) -> bool {
 
 fn strip_inject_attr(field: &mut Field) {
     field.attrs.retain(|attr| !attr.path().is_ident("inject"));
+}
+
+fn add_injectable_bounds(generics: &mut Generics) {
+    for param in generics.type_params_mut() {
+        param.bounds.push(parse_quote!(Send));
+        param.bounds.push(parse_quote!(Sync));
+        param.bounds.push(parse_quote!('static));
+    }
 }
 
 fn extract_arc_inner_type(ty: &Type) -> Option<&Type> {
@@ -322,7 +331,8 @@ fn expand_injectable(
     mut input: ItemStruct,
 ) -> Result<proc_macro2::TokenStream> {
     let name = input.ident.clone();
-    let generics = input.generics.clone();
+    let mut generics = input.generics.clone();
+    add_injectable_bounds(&mut generics);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let mut dependency_types: Vec<Type> = Vec::new();
@@ -385,6 +395,19 @@ fn expand_injectable(
 
         impl #impl_generics #name #ty_generics #where_clause {
             pub const __NIVASA_INJECTABLE_SCOPE: nivasa_core::di::ProviderScope = #scope_tokens;
+
+            pub fn __nivasa_register(
+                container: &nivasa_core::di::container::DependencyContainer,
+            ) -> impl ::core::future::Future<Output = ()> + '_ {
+                async move {
+                    container
+                        .register_injectable::<Self>(
+                            Self::__NIVASA_INJECTABLE_SCOPE,
+                            <Self as nivasa_core::di::provider::Injectable>::dependencies(),
+                        )
+                        .await;
+                }
+            }
         }
 
         #[async_trait::async_trait]

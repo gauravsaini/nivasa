@@ -223,8 +223,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Parse optional scope: `#[injectable(scope = "transient")]`
 - [x] Extract `#[inject]` fields and their types
 - [x] Generate `impl Injectable for T` with `fn build(container: &Container) -> Result<Self>`
-- [ ] Generate provider registration code (auto-register with container)
-- [ ] Handle generics in injectable structs (bounded or monomorphized)
+- [x] Generate provider registration code (auto-register with container)
+- [x] Handle generics in injectable structs (bounded or monomorphized)
 - [x] Emit clear compile error if `#[inject]` is used on non-Arc field
 - [x] Write macro expansion tests using `trybuild`
 
@@ -279,12 +279,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 1.2.5 — Module Initialization Lifecycle (driven by `nivasa.module.scxml`)
 - [x] Create a `StatechartEngine<ModuleStatechart>` per module instance
-- [ ] Implement ordered module initialization (deepest dependency first)
+- [x] Implement ordered module initialization (deepest dependency first)
 - [x] Module enters `Loading` state → engine sends `module.load` event
 - [x] Call `OnModuleInit` hooks as the `<onentry>` of the `Initialized` state
-- [ ] Call `OnApplicationBootstrap` after ALL module engines reach `Active` state
+- [x] Call `OnApplicationBootstrap` after ALL module engines reach `Active` state
 - [x] On shutdown: engine sends `module.destroy` event → `Destroying` state → `<onentry>` calls `OnModuleDestroy`
-- [ ] Call `OnModuleDestroy` hooks in reverse initialization order
+- [x] Call `OnModuleDestroy` hooks in reverse initialization order
 - [x] Implement module-scoped DI containers (provider encapsulation)
 - [x] **Verify:** invalid lifecycle transitions (e.g., `Active` → `Loading`) are rejected by the engine
 
