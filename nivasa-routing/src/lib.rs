@@ -53,6 +53,20 @@ pub struct RouteDispatchEntry<T> {
     pub value: T,
 }
 
+/// Captured values extracted from a matching route path.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RoutePathCaptures {
+    parameters: Vec<(String, String)>,
+    wildcard: Option<(Option<String>, String)>,
+}
+
+/// A matched dispatch entry plus its captured path values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteDispatchMatch<'a, T> {
+    pub entry: &'a RouteDispatchEntry<T>,
+    pub captures: RoutePathCaptures,
+}
+
 /// Errors raised when registering or parsing routes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RouteRegistryError {
@@ -200,12 +214,23 @@ impl RoutePattern {
 
     /// Check whether this pattern matches the provided path.
     pub fn matches(&self, path: &str) -> bool {
+        self.captures(path).is_some()
+    }
+
+    /// Capture values from a matching route path.
+    pub fn captures(&self, path: &str) -> Option<RoutePathCaptures> {
         let candidate = normalize_path(path.to_string());
         let candidate_segments = split_path_segments(&candidate).collect::<Vec<_>>();
 
         match self {
-            RoutePattern::Static(expected) => expected == &candidate_segments,
-            RoutePattern::Pattern(expected) => matches_pattern(expected, &candidate_segments),
+            RoutePattern::Static(expected) => {
+                if expected == &candidate_segments {
+                    Some(RoutePathCaptures::default())
+                } else {
+                    None
+                }
+            }
+            RoutePattern::Pattern(expected) => capture_pattern(expected, &candidate_segments),
         }
     }
 
@@ -537,6 +562,97 @@ impl<T> RouteDispatchRegistry<T> {
     pub fn contains(&self, method: impl AsRef<str>, path: &str) -> bool {
         self.resolve(method, path).is_some()
     }
+
+    /// Resolve a route and return its captured path values.
+    pub fn resolve_match(
+        &self,
+        method: impl AsRef<str>,
+        path: &str,
+    ) -> Option<RouteDispatchMatch<'_, T>> {
+        let method = method.as_ref().trim().to_ascii_uppercase();
+        let normalized_path = normalize_path(path.to_string());
+
+        for entry in &self.routes {
+            let Some(captures) = entry.pattern.captures(&normalized_path) else {
+                continue;
+            };
+
+            if entry.method.matches(&method) {
+                return Some(RouteDispatchMatch { entry, captures });
+            }
+        }
+
+        None
+    }
+}
+
+impl<T> RouteDispatchEntry<T> {
+    /// Capture values from this dispatch entry if the path matches.
+    pub fn captures(&self, path: &str) -> Option<RoutePathCaptures> {
+        self.pattern.captures(path)
+    }
+}
+
+impl RoutePathCaptures {
+    /// Create an empty capture set.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Whether the capture set is empty.
+    pub fn is_empty(&self) -> bool {
+        self.parameters.is_empty() && self.wildcard.is_none()
+    }
+
+    /// The number of captured values.
+    pub fn len(&self) -> usize {
+        self.parameters.len() + usize::from(self.wildcard.is_some())
+    }
+
+    /// Look up a named capture.
+    pub fn get(&self, name: &str) -> Option<&str> {
+        self.parameters
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.as_str())
+            .or_else(|| match self.wildcard.as_ref() {
+                Some((Some(key), value)) if key == name => Some(value.as_str()),
+                Some((None, value)) if name == "*" => Some(value.as_str()),
+                _ => None,
+            })
+    }
+
+    /// Return the wildcard value, if present.
+    pub fn wildcard(&self) -> Option<&str> {
+        self.wildcard.as_ref().map(|(_, value)| value.as_str())
+    }
+
+    /// Return the wildcard name, if one was provided.
+    pub fn wildcard_name(&self) -> Option<&str> {
+        self.wildcard.as_ref().and_then(|(name, _)| name.as_deref())
+    }
+
+    /// Iterate over all captured values.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
+        let params = self
+            .parameters
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()));
+        let wildcard = self.wildcard.iter().map(|(name, value)| {
+            let key = name.as_deref().unwrap_or("*");
+            (key, value.as_str())
+        });
+
+        params.chain(wildcard)
+    }
+
+    fn push_parameter(&mut self, name: impl Into<String>, value: impl Into<String>) {
+        self.parameters.push((name.into(), value.into()));
+    }
+
+    fn set_wildcard(&mut self, name: Option<String>, value: impl Into<String>) {
+        self.wildcard = Some((name, value.into()));
+    }
 }
 
 /// Trait implemented by controller types.
@@ -643,8 +759,17 @@ fn parse_segments(path: &str) -> Result<Vec<RoutePatternSegment>, RouteRegistryE
     Ok(parsed)
 }
 
-fn matches_pattern(pattern: &[RoutePatternSegment], candidate: &[String]) -> bool {
-    matches_pattern_from(pattern, candidate, 0, 0)
+fn capture_pattern(
+    pattern: &[RoutePatternSegment],
+    candidate: &[String],
+) -> Option<RoutePathCaptures> {
+    let mut captures = RoutePathCaptures::new();
+
+    if matches_pattern_from(pattern, candidate, 0, 0, &mut captures) {
+        Some(captures)
+    } else {
+        None
+    }
 }
 
 fn matches_pattern_from(
@@ -652,6 +777,7 @@ fn matches_pattern_from(
     candidate: &[String],
     pattern_index: usize,
     candidate_index: usize,
+    captures: &mut RoutePathCaptures,
 ) -> bool {
     if pattern_index == pattern.len() {
         return candidate_index == candidate.len();
@@ -671,17 +797,43 @@ fn matches_pattern_from(
                 return false;
             }
 
-            matches_pattern_from(pattern, candidate, pattern_index + 1, candidate_index + 1)
+            matches_pattern_from(
+                pattern,
+                candidate,
+                pattern_index + 1,
+                candidate_index + 1,
+                captures,
+            )
         }
-        RoutePatternSegment::Parameter { .. } => {
+        RoutePatternSegment::Parameter { name } => {
             if candidate.get(candidate_index).is_none() {
                 return false;
             }
 
-            matches_pattern_from(pattern, candidate, pattern_index + 1, candidate_index + 1)
+            let Some(value) = candidate.get(candidate_index) else {
+                return false;
+            };
+
+            captures.push_parameter(name.clone(), value.clone());
+
+            matches_pattern_from(
+                pattern,
+                candidate,
+                pattern_index + 1,
+                candidate_index + 1,
+                captures,
+            )
         }
-        RoutePatternSegment::OptionalParameter { .. } => {
-            if matches_pattern_from(pattern, candidate, pattern_index + 1, candidate_index) {
+        RoutePatternSegment::OptionalParameter { name } => {
+            let mut skipped = captures.clone();
+            if matches_pattern_from(
+                pattern,
+                candidate,
+                pattern_index + 1,
+                candidate_index,
+                &mut skipped,
+            ) {
+                *captures = skipped;
                 return true;
             }
 
@@ -689,9 +841,29 @@ fn matches_pattern_from(
                 return false;
             }
 
-            matches_pattern_from(pattern, candidate, pattern_index + 1, candidate_index + 1)
+            let Some(value) = candidate.get(candidate_index) else {
+                return false;
+            };
+
+            captures.push_parameter(name.clone(), value.clone());
+
+            matches_pattern_from(
+                pattern,
+                candidate,
+                pattern_index + 1,
+                candidate_index + 1,
+                captures,
+            )
         }
-        RoutePatternSegment::Wildcard { .. } => pattern_index == pattern.len() - 1,
+        RoutePatternSegment::Wildcard { name } => {
+            if pattern_index != pattern.len() - 1 {
+                return false;
+            }
+
+            let remainder = candidate[candidate_index..].join("/");
+            captures.set_wildcard(name.clone(), remainder);
+            true
+        }
     }
 }
 
@@ -863,6 +1035,11 @@ mod tests {
         assert!(pattern.matches("/users/42"));
         assert!(!pattern.matches("/users"));
         assert!(!pattern.matches("/users/42/posts"));
+
+        let captures = pattern.captures("/users/42").unwrap();
+        assert_eq!(captures.len(), 1);
+        assert_eq!(captures.get("id"), Some("42"));
+        assert!(captures.wildcard().is_none());
     }
 
     #[test]
@@ -874,6 +1051,13 @@ mod tests {
         assert!(pattern.matches("/users/42"));
         assert!(!pattern.matches("/users/42/posts"));
         assert!(!pattern.matches("/other"));
+
+        let missing = pattern.captures("/users").unwrap();
+        assert!(missing.is_empty());
+
+        let present = pattern.captures("/users/42").unwrap();
+        assert_eq!(present.len(), 1);
+        assert_eq!(present.get("id"), Some("42"));
     }
 
     #[test]
@@ -884,6 +1068,15 @@ mod tests {
         assert!(pattern.matches("/files"));
         assert!(pattern.matches("/files/a/b/c"));
         assert!(!pattern.matches("/other"));
+
+        let empty = pattern.captures("/files").unwrap();
+        assert_eq!(empty.len(), 1);
+        assert_eq!(empty.get("path"), Some(""));
+        assert_eq!(empty.wildcard(), Some(""));
+
+        let nested = pattern.captures("/files/a/b/c").unwrap();
+        assert_eq!(nested.get("path"), Some("a/b/c"));
+        assert_eq!(nested.wildcard_name(), Some("path"));
     }
 
     #[test]
@@ -925,6 +1118,23 @@ mod tests {
         }
 
         assert_eq!(registry.resolve("GET", "/users"), Some(&"list"));
+    }
+
+    #[test]
+    fn route_dispatch_registry_resolve_match_exposes_captures() {
+        let metadata = ControllerMetadata::new("/users").with_version("1");
+        let mut registry = RouteDispatchRegistry::new();
+
+        registry
+            .register_versioned_controller_route("GET", &metadata, "/:id", "show")
+            .unwrap();
+
+        let matched = registry.resolve_match("GET", "/v1/users/42").unwrap();
+
+        assert_eq!(matched.entry.value, "show");
+        assert_eq!(matched.entry.method, RouteMethod::Get);
+        assert_eq!(matched.captures.get("id"), Some("42"));
+        assert_eq!(matched.captures.len(), 1);
     }
 
     #[test]
