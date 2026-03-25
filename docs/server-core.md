@@ -1,33 +1,34 @@
 # Server Core
 
-This page describes the current `nivasa-http` transport shell and the scope we are intentionally keeping narrow for now.
+This page describes the current `nivasa-http` transport shell, the app-facing builder config that now sits in front of it, and the runtime boundaries we are keeping explicit.
 
 ## SCXML Rule
 
-Every request must enter the SCXML request pipeline. The transport layer may adapt network I/O into framework requests, but it must hand lifecycle control to `RequestPipeline` and let `StatechartEngine<NivasaRequestStatechart>` drive the legal transitions. There is no direct state mutation path.
+Every request must enter the SCXML request pipeline. The transport layer may adapt network I/O into framework requests, but it must hand lifecycle control to `RequestPipeline` and let `StatechartEngine<NivasaRequestStatechart>` drive the legal transitions. There is no direct state mutation path, and the transport shell must not be treated as a second request engine.
 
 ## What Is Implemented
 
-The current server-core batch provides:
+The current server-core surface provides:
 
-1. `NivasaServer` as the transport shell entry point.
-1. A builder-based setup for starting the server.
-1. Graceful shutdown support.
-1. A Hyper-to-framework adapter that creates `NivasaRequest`.
-1. Request handoff into `RequestPipeline` for SCXML-driven progression.
-1. Basic smoke coverage for startup, shutdown, and request dispatch.
+1. `NivasaServer` and `NivasaServerBuilder` as the transport entry points.
+1. App-facing route registration for static, header-versioned, and media-type-versioned dispatch.
+1. Transport policy knobs for request timeouts, request body size limits, and custom shutdown signals.
+1. A Hyper-to-framework adapter that turns accepted connections into `NivasaRequest` values.
+1. Request handoff into `RequestPipeline` so lifecycle progression stays SCXML-gated.
+1. Optional TLS accept support behind the `tls` feature via `rustls` and `tokio-rustls`.
+1. Smoke coverage for startup, shutdown, routing, size limits, timeouts, and TLS transport behavior.
 
-## What Is Intentionally Out Of Scope
+## What Is Still Bounded
 
-These items are still reserved for later batches:
+These are the important boundaries to keep in mind while the transport shell remains small:
 
-1. TLS via `rustls`.
-1. Request body size limits.
-1. Request timeouts.
-1. Any direct handler execution that bypasses `RequestPipeline`.
+1. The server shell is still a transport adapter, not a full application runtime.
+1. TLS is feature-gated and transport-scoped; it does not imply broader runtime integration.
+1. The SCXML request pipeline remains the only legal place for lifecycle decisions.
+1. Any request-path behavior that would bypass `RequestPipeline` is still out of bounds.
 
 ## Practical Notes
 
-1. Keep transport code focused on I/O and request construction.
+1. Keep transport code focused on I/O, request construction, and builder-level policy.
 1. Keep lifecycle decisions in the SCXML pipeline.
 1. Treat the server shell as an adapter, not a second request engine.
