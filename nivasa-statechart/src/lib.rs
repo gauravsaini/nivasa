@@ -27,3 +27,9 @@ pub mod validator;
 pub use engine::{InvalidTransitionError, StatechartEngine, StatechartSpec, StatechartTracer};
 pub use parser::ScxmlDocument;
 pub use types::*;
+
+// Include generated statechart code
+// These are generated from .scxml files by build.rs
+#[cfg(not(test))]
+include!(concat!(env!("OUT_DIR"), "/mod.rs"));
+

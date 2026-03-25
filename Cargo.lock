@@ -292,6 +292,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "nivasa-common",
+ "nivasa-macros",
  "nivasa-statechart",
  "serde",
  "serde_json",

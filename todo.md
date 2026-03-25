@@ -183,33 +183,33 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 1.1 — DI Container (`nivasa-core`)
 
 #### 1.1.1 — Provider Types & Traits
-- [ ] Define `Provider` trait (interface for all providers)
-- [ ] Define `ProviderScope` enum: `Singleton`, `Scoped`, `Transient`
-- [ ] Define `ProviderMetadata` struct (type id, scope, factory fn, dependencies list)
+- [x] Define `Provider` trait (interface for all providers)
+- [x] Define `ProviderScope` enum: `Singleton`, `Scoped`, `Transient`
+- [x] Define `ProviderMetadata` struct (type id, scope, factory fn, dependencies list)
 - [ ] Implement `ProviderRegistry` to store provider metadata keyed by `TypeId`
-- [ ] Define `FactoryProvider` — register a provider via closure/factory fn
-- [ ] Define `ValueProvider` — register a pre-built instance directly
+- [x] Define `FactoryProvider` — register a provider via closure/factory fn
+- [x] Define `ValueProvider` — register a pre-built instance directly
 - [ ] Define `ClassProvider` — register a type to be constructed by the container
 
 #### 1.1.2 — Dependency Container
-- [ ] Implement `DependencyContainer` struct
-- [ ] Implement `register<T: Injectable>()` — register a provider by type
-- [ ] Implement `register_value<T>(instance: T)` — register an existing value
-- [ ] Implement `register_factory<T>(factory: F)` — register a factory closure
-- [ ] Implement `resolve<T>() -> Result<Arc<T>, DiError>` — resolve a provider
-- [ ] Implement singleton caching (resolve once, return `Arc` clone)
+- [x] Implement `DependencyContainer` struct
+- [x] Implement `register<T: Injectable>()` — register a provider by type
+- [x] Implement `register_value<T>(instance: T)` — register an existing value
+- [x] Implement `register_factory<T>(factory: F)` — register a factory closure
+- [x] Implement `resolve<T>() -> Result<Arc<T>, DiError>` — resolve a provider
+- [x] Implement singleton caching (resolve once, return `Arc` clone)
 - [ ] Implement scoped provider support (per-request `ScopeGuard`)
 - [ ] Implement transient provider support (new instance per `resolve`)
-- [ ] Implement `has<T>() -> bool` — check if provider is registered
+- [x] Implement `has<T>() -> bool` — check if provider is registered
 - [ ] Implement `remove<T>()` — deregister a provider
 - [ ] Implement `Container::create_scope()` — create child scope for request-scoped DI
 
 #### 1.1.3 — Circular Dependency Detection
-- [ ] Build dependency graph from provider registrations (adjacency list)
-- [ ] Implement topological sort for initialization order
-- [ ] Detect cycles via DFS and emit clear compile-time or startup error messages
-- [ ] Include the full cycle path in error messages (e.g., `A -> B -> C -> A`)
-- [ ] Write unit tests: simple cycle, transitive cycle, diamond (no cycle), self-cycle
+- [x] Build dependency graph from provider registrations (adjacency list)
+- [x] Implement topological sort for initialization order
+- [x] Detect cycles via DFS and emit clear compile-time or startup error messages
+- [x] Include the full cycle path in error messages (e.g., `A -> B -> C -> A`)
+- [x] Write unit tests: simple cycle, transitive cycle, diamond (no cycle), self-cycle
 
 #### 1.1.4 — Optional & Lazy Dependencies
 - [ ] Support `Option<Arc<T>>` injection (resolves to `None` if missing)

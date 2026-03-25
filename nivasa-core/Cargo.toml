@@ -18,3 +18,7 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
+nivasa-macros = { path = "../nivasa-macros" }
+
+[build-dependencies]
+nivasa-statechart = { path = "../nivasa-statechart" }
