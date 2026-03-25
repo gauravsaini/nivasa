@@ -56,7 +56,7 @@
 - [x] Create `docs/` directory for book-style documentation
 
 ### 0.4 — Umbrella Crate Re-export Strategy
-- [ ] Design `nivasa::prelude::*` — users should only need one import
+- [x] Design `nivasa::prelude::*` — users should only need one import
 - [ ] Re-export key traits: `Module`, `Injectable`, `Controller`, `Guard`, `Interceptor`, `Pipe`, `ExceptionFilter`, `Middleware`
 - [ ] Re-export key macros: `#[module]`, `#[injectable]`, `#[controller]`, `#[get]`, `#[post]`, etc.
 - [ ] Re-export `NestApplication`, `ServerOptions`, `HttpException` and friends
@@ -430,7 +430,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `FileInterceptor` (single file)
 - [ ] Implement `FilesInterceptor` (multiple files)
 - [x] Implement configurable file size limits
-- [ ] Implement configurable allowed MIME types
+- [x] Implement configurable allowed MIME types
 
 #### 2.2.5 — HTTP Server Tests
 - [x] Test server starts and responds to GET /
