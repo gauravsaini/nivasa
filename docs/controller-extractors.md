@@ -2,7 +2,7 @@
 
 This page documents the controller parameter surface that the macros recognize today and separates it from what the runtime can actually extract at request time.
 
-The public request extractor for `HeaderMap` is now landed in `nivasa-http`, and the first controller-side runtime slice for `#[res]` is also landed. That slice is intentionally narrow: it covers mutable response construction, not full controller execution. Controller-side `#[headers]` binding is still waiting on the later SCXML handler-execution path.
+The public request extractor for `HeaderMap` is now landed in `nivasa-http`, and the first controller-side runtime slices for `#[body]` and `#[res]` are also landed. Those slices are intentionally narrow: `#[body]` covers request body extraction after route dispatch, while `#[res]` covers mutable response construction, not full controller execution. Controller-side `#[headers]` binding is still waiting on the later SCXML handler-execution path.
 
 ## Compile-Time Surface
 

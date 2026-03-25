@@ -334,10 +334,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Validate no duplicate routes within a controller
 
 #### 2.1.4 — Parameter Extraction
-> ⚠️ **SCXML / controller boundary:** the request pipeline still stops at route dispatch. The first landed controller runtime slice is `#[res]` response-builder access; the other controller markers remain partial or pending until the later SCXML handler-execution path lands.
+> ⚠️ **SCXML / controller boundary:** the request pipeline still stops at route dispatch. The landed controller runtime slices are `#[body]` request extraction and `#[res]` response-builder access; the remaining controller markers stay partial or pending until the later SCXML handler-execution path lands.
 
 - [x] Strip and record controller parameter extractor metadata in `#[impl_controller]`
-- [ ] Implement `#[body]` extractor — deserialize JSON request body to typed DTO
+- [x] Implement `#[body]` extractor — deserialize JSON request body to typed DTO
 - [ ] Implement `#[param("name")]` extractor — extract path parameter
 - [ ] Implement `#[query]` extractor — deserialize full query string to struct
 - [x] Implement `#[query("name")]` extractor — extract single query param
@@ -435,7 +435,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 2.2.5 — HTTP Server Tests
 - [x] Test server starts and responds to GET /
 - [ ] Test graceful shutdown completes in-flight requests
-- [ ] Test request body parsing (JSON)
+- [x] Test request body parsing (JSON)
 - [x] Test response serialization (JSON, text, HTML)
 - [x] Test 404 for unknown routes
 - [x] Test request body size limit enforcement
