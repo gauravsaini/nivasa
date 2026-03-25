@@ -8,6 +8,7 @@ use http::{
     header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE},
     Method, Request, Response, StatusCode, Uri,
 };
+use nivasa_routing::RoutePathCaptures;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
 
@@ -117,7 +118,10 @@ impl From<serde_json::Value> for Body {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequestExtractError {
     MissingBody,
+    MissingPathParameters,
+    MissingPathParameter { name: String },
     InvalidBody(String),
+    InvalidPathParameter { name: String, error: String },
     InvalidQuery(String),
 }
 
@@ -125,7 +129,16 @@ impl fmt::Display for RequestExtractError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RequestExtractError::MissingBody => f.write_str("request body is empty"),
+            RequestExtractError::MissingPathParameters => {
+                f.write_str("request has no captured path parameters")
+            }
+            RequestExtractError::MissingPathParameter { name } => {
+                write!(f, "request is missing path parameter `{name}`")
+            }
             RequestExtractError::InvalidBody(err) => write!(f, "invalid request body: {err}"),
+            RequestExtractError::InvalidPathParameter { name, error } => {
+                write!(f, "invalid path parameter `{name}`: {error}")
+            }
             RequestExtractError::InvalidQuery(err) => write!(f, "invalid query string: {err}"),
         }
     }
@@ -158,10 +171,20 @@ impl<T> Json<T> {
     }
 }
 
+fn deserialize_path_value<T>(raw: &str) -> Result<T, String>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_str(raw)
+        .or_else(|_| serde_json::from_value(serde_json::Value::String(raw.to_string())))
+        .map_err(|err| err.to_string())
+}
+
 /// Request wrapper used by the HTTP layer.
 #[derive(Debug, Clone)]
 pub struct NivasaRequest {
     inner: Request<Body>,
+    path_params: Option<RoutePathCaptures>,
 }
 
 impl NivasaRequest {
@@ -173,12 +196,18 @@ impl NivasaRequest {
             .body(body.into())
             .expect("request must have a valid URI");
 
-        Self { inner }
+        Self {
+            inner,
+            path_params: None,
+        }
     }
 
     /// Wrap an existing HTTP request.
     pub fn from_http(inner: Request<Body>) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            path_params: None,
+        }
     }
 
     /// Request method.
@@ -233,6 +262,44 @@ impl NivasaRequest {
         self.inner.body_mut()
     }
 
+    /// Attach captured path parameters to this request.
+    pub fn set_path_params(&mut self, path_params: RoutePathCaptures) {
+        self.path_params = Some(path_params);
+    }
+
+    /// Clear any attached path parameters.
+    pub fn clear_path_params(&mut self) {
+        self.path_params = None;
+    }
+
+    /// Borrow the captured path parameters, if any.
+    pub fn path_params(&self) -> Option<&RoutePathCaptures> {
+        self.path_params.as_ref()
+    }
+
+    /// Look up a captured path parameter by name.
+    pub fn path_param(&self, name: impl AsRef<str>) -> Option<&str> {
+        self.path_params
+            .as_ref()
+            .and_then(|captures| captures.get(name.as_ref()))
+    }
+
+    /// Look up and coerce a captured path parameter by name.
+    pub fn path_param_typed<T>(&self, name: impl AsRef<str>) -> Result<T, RequestExtractError>
+    where
+        T: DeserializeOwned,
+    {
+        let name = name.as_ref().to_string();
+        let Some(raw) = self.path_param(&name) else {
+            return Err(RequestExtractError::MissingPathParameter { name });
+        };
+
+        deserialize_path_value(raw).map_err(|error| RequestExtractError::InvalidPathParameter {
+            name,
+            error,
+        })
+    }
+
     /// Consume the wrapper and return the inner request.
     pub fn into_inner(self) -> Request<Body> {
         self.inner
@@ -264,6 +331,15 @@ impl From<NivasaRequest> for Request<Body> {
 impl FromRequest for NivasaRequest {
     fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
         Ok(request.clone())
+    }
+}
+
+impl FromRequest for RoutePathCaptures {
+    fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
+        request
+            .path_params()
+            .cloned()
+            .ok_or(RequestExtractError::MissingPathParameters)
     }
 }
 

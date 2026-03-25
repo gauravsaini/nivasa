@@ -13,3 +13,6 @@ nivasa-routing = { path = "../nivasa-routing" }
 nivasa-statechart = { path = "../nivasa-statechart" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+nivasa-macros = { path = "../nivasa-macros" }

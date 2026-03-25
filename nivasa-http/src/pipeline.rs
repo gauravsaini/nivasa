@@ -81,12 +81,21 @@ impl RequestPipeline {
 
         match &outcome {
             RouteDispatchOutcome::Matched(_) => {
+                if let Some(matched) =
+                    routes.resolve_match(self.request.method().as_str(), self.request.path())
+                {
+                    self.request.set_path_params(matched.captures);
+                } else {
+                    self.request.clear_path_params();
+                }
                 self.advance(self.route_matched_event())?;
             }
             RouteDispatchOutcome::MethodNotAllowed { .. } => {
+                self.request.clear_path_params();
                 self.advance(self.route_method_not_allowed_event())?;
             }
             RouteDispatchOutcome::NotFound => {
+                self.request.clear_path_params();
                 self.advance(self.route_not_found_event())?;
             }
         }

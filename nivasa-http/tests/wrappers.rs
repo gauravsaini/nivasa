@@ -1,6 +1,9 @@
 use http::header::HeaderMap;
 use http::{Method, Request, StatusCode};
-use nivasa_http::{Body, FromRequest, IntoResponse, Json, NivasaRequest, NivasaResponse, Query};
+use nivasa_http::{
+    Body, FromRequest, IntoResponse, Json, NivasaRequest, NivasaResponse, Query,
+};
+use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod, RoutePathCaptures};
 use serde::Deserialize;
 
 #[test]
@@ -57,6 +60,48 @@ fn request_extraction_supports_query_headers_and_json() {
             name: "Ada".to_string(),
         }
     );
+}
+
+#[test]
+fn request_extraction_supports_path_parameters() {
+    let request = NivasaRequest::new(Method::GET, "/users/42", Body::empty());
+    let mut pipeline = nivasa_http::RequestPipeline::new(request);
+    let mut routes = RouteDispatchRegistry::new();
+    routes
+        .register_pattern(RouteMethod::Get, "/users/:id", "show")
+        .unwrap();
+
+    pipeline.parse_request().unwrap();
+    pipeline.complete_middleware().unwrap();
+
+    let outcome = pipeline.match_route(&routes).unwrap();
+    assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
+
+    let request = pipeline.request();
+    assert_eq!(request.path_params().unwrap().get("id"), Some("42"));
+    assert_eq!(request.path_param("id"), Some("42"));
+    assert_eq!(request.path_param_typed::<u32>("id").unwrap(), 42);
+
+    let captures = RoutePathCaptures::from_request(request).unwrap();
+    assert_eq!(captures.get("id"), Some("42"));
+    assert_eq!(captures.len(), 1);
+}
+
+#[test]
+fn request_extraction_reports_missing_path_parameters() {
+    let request = NivasaRequest::new(Method::GET, "/users/42", Body::empty());
+
+    let err = request.path_param_typed::<u32>("id").unwrap_err();
+    assert!(matches!(
+        err,
+        nivasa_http::RequestExtractError::MissingPathParameter { .. }
+    ));
+
+    let captures = RoutePathCaptures::from_request(&request).unwrap_err();
+    assert!(matches!(
+        captures,
+        nivasa_http::RequestExtractError::MissingPathParameters
+    ));
 }
 
 #[test]
