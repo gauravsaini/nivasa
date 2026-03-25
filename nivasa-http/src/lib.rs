@@ -163,6 +163,31 @@ impl From<serde_json::Value> for Body {
     }
 }
 
+fn sanitize_sse_single_line(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| match ch {
+            '\r' | '\n' => ' ',
+            other => other,
+        })
+        .collect()
+}
+
+fn push_sse_field(body: &mut String, name: &str, value: &str) {
+    body.push_str(name);
+    body.push_str(value);
+    body.push('\n');
+}
+
+fn push_sse_multiline_field(body: &mut String, name: &str, value: &str) {
+    for line in value.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        body.push_str(name);
+        body.push_str(line);
+        body.push('\n');
+    }
+}
+
 fn escape_content_disposition_filename(filename: &str) -> String {
     let mut escaped = String::with_capacity(filename.len());
     for ch in filename.chars() {
@@ -769,6 +794,147 @@ impl IntoResponse for &str {
 impl IntoResponse for Vec<u8> {
     fn into_response(self) -> NivasaResponse {
         NivasaResponse::bytes(self)
+    }
+}
+
+/// Buffered server-sent events response helper.
+///
+/// This frames SSE payloads into a `text/event-stream` body without introducing
+/// transport-level streaming requirements in the wrapper layer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SseEvent {
+    event: Option<String>,
+    id: Option<String>,
+    retry: Option<u64>,
+    data: Vec<String>,
+    comment: Vec<String>,
+}
+
+impl SseEvent {
+    /// Create an event with a single `data:` field.
+    pub fn data(data: impl Into<String>) -> Self {
+        Self {
+            event: None,
+            id: None,
+            retry: None,
+            data: vec![data.into()],
+            comment: Vec::new(),
+        }
+    }
+
+    /// Create a comment-only SSE frame.
+    pub fn comment(comment: impl Into<String>) -> Self {
+        Self {
+            event: None,
+            id: None,
+            retry: None,
+            data: Vec::new(),
+            comment: vec![comment.into()],
+        }
+    }
+
+    /// Set the event name.
+    pub fn event(mut self, event: impl Into<String>) -> Self {
+        self.event = Some(event.into());
+        self
+    }
+
+    /// Set the event identifier.
+    pub fn id(mut self, id: impl Into<String>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    /// Set the reconnection delay, in milliseconds.
+    pub fn retry(mut self, retry_ms: u64) -> Self {
+        self.retry = Some(retry_ms);
+        self
+    }
+
+    /// Append an additional data line to the event.
+    pub fn data_line(mut self, data: impl Into<String>) -> Self {
+        self.data.push(data.into());
+        self
+    }
+
+    fn render(&self, body: &mut String) {
+        if let Some(event) = &self.event {
+            push_sse_field(body, "event: ", &sanitize_sse_single_line(event));
+        }
+
+        if let Some(id) = &self.id {
+            push_sse_field(body, "id: ", &sanitize_sse_single_line(id));
+        }
+
+        if let Some(retry) = self.retry {
+            push_sse_field(body, "retry: ", &retry.to_string());
+        }
+
+        for comment in &self.comment {
+            push_sse_multiline_field(body, ": ", comment);
+        }
+
+        for data in &self.data {
+            push_sse_multiline_field(body, "data: ", data);
+        }
+
+        body.push('\n');
+    }
+}
+
+/// Buffered SSE response with one or more preframed events.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sse {
+    events: Vec<SseEvent>,
+}
+
+impl Sse {
+    /// Create an SSE response from a sequence of events.
+    pub fn new(events: impl IntoIterator<Item = SseEvent>) -> Self {
+        Self {
+            events: events.into_iter().collect(),
+        }
+    }
+
+    /// Append an event to the buffered stream.
+    pub fn push(mut self, event: SseEvent) -> Self {
+        self.events.push(event);
+        self
+    }
+
+    fn into_body(self) -> String {
+        let mut body = String::new();
+        for event in self.events {
+            event.render(&mut body);
+        }
+        body
+    }
+}
+
+impl From<SseEvent> for Sse {
+    fn from(event: SseEvent) -> Self {
+        Self::new([event])
+    }
+}
+
+impl NivasaResponse {
+    /// Create an OK server-sent events response.
+    pub fn sse(events: impl IntoIterator<Item = SseEvent>) -> Self {
+        Sse::new(events).into_response()
+    }
+}
+
+impl IntoResponse for SseEvent {
+    fn into_response(self) -> NivasaResponse {
+        Sse::from(self).into_response()
+    }
+}
+
+impl IntoResponse for Sse {
+    fn into_response(self) -> NivasaResponse {
+        NivasaResponse::new(StatusCode::OK, Body::text(self.into_body()))
+            .with_header(http::header::CONTENT_TYPE.as_str(), "text/event-stream; charset=utf-8")
+            .with_header(http::header::CACHE_CONTROL.as_str(), "no-cache")
     }
 }
 
