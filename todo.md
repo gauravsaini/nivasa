@@ -968,7 +968,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `.listen(ServerOptions) -> Result<()>` — start HTTP server
 - [x] Implement `ServerOptions` struct: `port`, `host`, `cors`, `global_prefix`, `versioning`
 - [x] Introduce `AppBootstrapConfig` boundary for server-only bootstrap config
-- [ ] Implement `.set_global_prefix("/api")` — prefix all routes
+- [ ] Use `AppBootstrapConfig::global_prefix()` to prefix all routes during bootstrap
 - [ ] Implement `.use_global_guard(Guard)` — apply guard to all routes
 - [ ] Implement `.use_global_interceptor(Interceptor)` — apply interceptor globally
 - [ ] Implement `.use_global_pipe(Pipe)` — apply pipe globally (e.g., ValidationPipe)
