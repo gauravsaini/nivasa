@@ -317,8 +317,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Generate controller trait impl with prefix accessor
 
 #### 2.1.2 — HTTP Method Attributes
-- [ ] Implement `#[get("/path")]` attribute macro
-- [ ] Implement `#[post("/path")]` attribute macro
+- [x] Implement `#[get("/path")]` attribute macro
+- [x] Implement `#[post("/path")]` attribute macro
 - [ ] Implement `#[put("/path")]` attribute macro
 - [ ] Implement `#[delete("/path")]` attribute macro
 - [ ] Implement `#[patch("/path")]` attribute macro
@@ -327,11 +327,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[all("/path")]` (match any HTTP method)
 
 #### 2.1.3 — `#[impl_controller]` Macro
-- [ ] Parse `impl` block annotated with `#[impl_controller]`
-- [ ] Discover all methods with HTTP method attributes
-- [ ] Generate route registration for each handler method
-- [ ] Combine controller prefix with method path
-- [ ] Validate no duplicate routes within a controller
+- [x] Parse `impl` block annotated with `#[impl_controller]`
+- [x] Discover all methods with HTTP method attributes
+- [x] Generate route registration for each handler method
+- [x] Combine controller prefix with method path
+- [x] Validate no duplicate routes within a controller
 
 #### 2.1.4 — Parameter Extraction
 - [ ] Implement `#[body]` extractor — deserialize JSON request body to typed DTO
@@ -348,14 +348,14 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Support custom parameter decorators: `#[custom_param(MyExtractor)]`
 
 #### 2.1.5 — Route Registration & Matching
-- [ ] Implement `RouteRegistry` to store all routes
-- [ ] Implement path matching: static segments (`/users`)
+- [x] Implement `RouteRegistry` to store all routes
+- [x] Implement path matching: static segments (`/users`)
 - [ ] Implement path matching: named parameters (`/users/:id`)
 - [ ] Implement path matching: wildcard / catch-all (`/files/*path`)
 - [ ] Implement path matching: optional segments (`/users/:id?`)
-- [ ] Implement route conflict detection (duplicate routes → startup error)
+- [x] Implement route conflict detection (duplicate routes → startup error)
 - [ ] Implement route ordering (static > parameterized > wildcard)
-- [ ] Implement route prefix merging: global prefix + controller prefix + method path
+- [x] Implement route prefix merging: global prefix + controller prefix + method path
 
 #### 2.1.6 — Response Types
 - [ ] Implement JSON response (auto-serialize via Serde)
