@@ -34,6 +34,15 @@ pub trait StatechartSpec: Send + Sync + 'static {
     /// Returns the list of valid events for the given state.
     fn valid_events_for(state: &Self::State) -> Vec<Self::Event>;
 
+    /// Resolve a state to the effective entered leaf state.
+    ///
+    /// Compound states may specify an initial child in SCXML. Generated specs
+    /// override this method so the runtime lands on the correct entered state
+    /// instead of exposing an intermediate container state.
+    fn enter_initial_state(state: Self::State) -> Self::State {
+        state
+    }
+
     /// Returns `true` if the state is a final state.
     fn is_final(state: &Self::State) -> bool;
 
@@ -171,7 +180,7 @@ impl<S: StatechartSpec> StatechartEngine<S> {
     /// Create a new engine in the given initial state.
     pub fn new(initial_state: S::State) -> Self {
         Self {
-            current_state: initial_state,
+            current_state: S::enter_initial_state(initial_state),
             tracer: None,
             #[cfg(debug_assertions)]
             recent_transitions: VecDeque::new(),
@@ -182,7 +191,7 @@ impl<S: StatechartSpec> StatechartEngine<S> {
     /// Create a new engine with a tracer.
     pub fn with_tracer(initial_state: S::State, tracer: Box<dyn StatechartTracer>) -> Self {
         Self {
-            current_state: initial_state,
+            current_state: S::enter_initial_state(initial_state),
             tracer: Some(tracer),
             #[cfg(debug_assertions)]
             recent_transitions: VecDeque::new(),
@@ -205,6 +214,7 @@ impl<S: StatechartSpec> StatechartEngine<S> {
 
         match S::transition(&self.current_state, &event) {
             Some(target) => {
+                let target = S::enter_initial_state(target);
                 let to = format!("{:?}", target);
                 if let Some(ref tracer) = self.tracer {
                     tracer.on_transition(&from, &event_str, &to);
