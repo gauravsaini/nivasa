@@ -1,6 +1,6 @@
 # Server Core
 
-This page describes the current `nivasa-http` transport shell, the app-facing builder config that now sits in front of it, and the runtime boundaries we are keeping explicit.
+This page describes the current `nivasa-http` transport shell, the app-facing bootstrap config boundary that now sits in front of it, and the runtime boundaries we are keeping explicit.
 
 ## SCXML Rule
 
@@ -11,6 +11,7 @@ Every request must enter the SCXML request pipeline. The transport layer may ada
 The current server-core surface provides:
 
 1. `NivasaServer` and `NivasaServerBuilder` as the transport entry points.
+1. `ServerOptions` and `AppBootstrapConfig` as pure app-facing configuration surfaces.
 1. App-facing route registration for static, header-versioned, and media-type-versioned dispatch.
 1. Transport policy knobs for request timeouts, request body size limits, and custom shutdown signals.
 1. A Hyper-to-framework adapter that turns accepted connections into `NivasaRequest` values.
@@ -23,6 +24,7 @@ The current server-core surface provides:
 These are the important boundaries to keep in mind while the transport shell remains small:
 
 1. The server shell is still a transport adapter, not a full application runtime.
+1. `AppBootstrapConfig` is a configuration boundary, not a `NestApplication` runtime surface.
 1. TLS is feature-gated and transport-scoped; it does not imply broader runtime integration.
 1. The SCXML request pipeline remains the only legal place for lifecycle decisions.
 1. Any request-path behavior that would bypass `RequestPipeline` is still out of bounds.
