@@ -1581,6 +1581,10 @@ mod tests {
             parse_api_version_accept("application/vnd.app.v2+json; charset=utf-8"),
             Some("v2".to_string())
         );
+        assert_eq!(
+            parse_api_version_accept("application/json, application/vnd.app.v3+json"),
+            Some("v3".to_string())
+        );
         assert_eq!(parse_api_version_accept("application/json"), None);
     }
 
@@ -1612,6 +1616,25 @@ mod tests {
             registry.resolve_header_versioned("GET", "/users", Some("3")),
             Some(&"default")
         );
+    }
+
+    #[test]
+    fn route_dispatch_registry_prefers_exact_version_over_unversioned_fallback_for_same_method() {
+        let mut registry = RouteDispatchRegistry::new();
+
+        registry
+            .register_header_versioned_route("GET", "1", "/users", "versioned")
+            .unwrap();
+        registry.register_static("GET", "/users", "default").unwrap();
+
+        assert_eq!(
+            registry.resolve_header_versioned("GET", "/users", Some("1")),
+            Some(&"versioned")
+        );
+        assert!(matches!(
+            registry.dispatch_header_versioned("GET", "/users", Some("1")),
+            RouteDispatchOutcome::Matched(entry) if entry.value == "versioned"
+        ));
     }
 
     #[test]
