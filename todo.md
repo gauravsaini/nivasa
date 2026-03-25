@@ -46,8 +46,8 @@
 
 ### 0.3 — CI / Tooling
 - [x] Set up GitHub Actions CI: `cargo check`, `cargo test`, `cargo clippy`, `cargo fmt --check`
-- [ ] Set up code coverage reporting (tarpaulin or llvm-cov)
-- [ ] Set up `cargo doc` generation in CI
+- [x] Set up code coverage reporting (tarpaulin or llvm-cov)
+- [x] Set up `cargo doc` generation in CI
 - [x] **Add SCXML CI step:** `nivasa statechart validate --all` — validates all `.scxml` files are well-formed
 - [x] **Add SCXML CI step:** `nivasa statechart parity` — verifies generated Rust code matches current `.scxml` files
 - [ ] **Add CI step:** `git diff --exit-code src/generated/` — fails if codegen output is stale
