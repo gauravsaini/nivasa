@@ -3,6 +3,7 @@
 //! Nivasa framework HTTP primitives.
 
 mod pipeline;
+mod server;
 
 use http::{
     header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE},
@@ -656,6 +657,7 @@ where
 }
 
 pub use pipeline::RequestPipeline;
+pub use server::{NivasaServer, NivasaServerBuilder};
 
 #[cfg(debug_assertions)]
 pub mod debug {
