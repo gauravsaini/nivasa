@@ -352,9 +352,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement path matching: static segments (`/users`)
 - [x] Implement path matching: named parameters (`/users/:id`)
 - [x] Implement path matching: wildcard / catch-all (`/files/*path`)
-- [ ] Implement path matching: optional segments (`/users/:id?`)
+- [x] Implement path matching: optional segments (`/users/:id?`)
 - [x] Implement route conflict detection (duplicate routes → startup error)
-- [x] Implement route ordering (static > parameterized > wildcard)
+- [x] Implement route ordering (static > parameterized > optional > wildcard)
 - [x] Implement route prefix merging: global prefix + controller prefix + method path
 
 #### 2.1.6 — Response Types
