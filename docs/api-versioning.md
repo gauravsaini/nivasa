@@ -1,31 +1,43 @@
 # API Versioning
 
-This document describes the current versioning shape in the Nivasa codebase.
+This document describes the public versioning surface in Nivasa and how far it is wired into runtime today.
 
-## What Is Implemented
+## What Exists Today
 
-URI versioning is implemented in the routing layer. Versioned controller metadata can be turned into `/v1/...` style paths, and the dispatch layer can resolve versioned routes while preserving the existing method-aware `404` vs `405` behavior.
+The umbrella crate now exports app-facing config types in `nivasa`:
 
-The routing surfaces currently relevant to versioning are:
+1. `VersioningStrategy` with `Uri`, `Header`, and `MediaType` variants.
+1. `VersioningOptions`, which stores the selected strategy plus an optional default version.
+1. `ServerOptions`, which groups `host`, `port`, `cors`, `global_prefix`, and `versioning`.
 
-1. `ControllerMetadata` for controller-level path and version metadata.
-1. `RouteDispatchRegistry` for registering versioned routes.
-1. `RouteDispatchOutcome` for matching, `404`, and `405` results.
+These types are available from the crate root and the prelude, and their builders normalize simple input forms such as `1` into `v1`.
 
-## What Is In Progress
+The HTTP layer also already understands versioned route registration:
 
-Header versioning and media type versioning are being added in the routing layer as explicit version-aware registration paths. The intended inputs are:
+1. URI versioning can map controller metadata into `/v1/...` style paths.
+1. `NivasaServer::builder()` can register header-versioned routes and media-type-versioned routes.
+1. Request dispatch looks at `X-API-Version` first and then `Accept` before it filters the route registry.
+1. The dispatch path still preserves the existing method-aware `404` vs `405` behavior.
 
-1. `X-API-Version: 1`
-1. `Accept: application/vnd.app.v1+json`
+## What Is Wired Into Runtime
 
-Those routes should remain compatible with the existing route ordering and capture behavior.
+Versioning is currently a transport and routing concern, not an application-bootstrap setting.
 
-## What Is Not Yet Present
+The SCXML request pipeline remains the owner of request lifecycle transitions, but version parsing happens before route matching:
 
-The app-level `VersioningOptions` configuration is not wired into `NestApplication` yet. That means versioning is still primarily a routing concern, not a global application setting.
+1. The transport layer parses version hints from request headers.
+1. It filters the route registry to the versioned or unversioned routes that should be considered for the request.
+1. `RequestPipeline` then continues through its SCXML-driven lifecycle and calls `match_route` on that filtered registry.
+
+## What Is Not Yet Wired
+
+The new app-facing config surface is intentionally ahead of runtime integration:
+
+1. `ServerOptions` is exported, but `NivasaServer` does not yet accept it as a single application configuration object.
+1. `ServerOptions.versioning` exists, but the server does not read it yet.
+1. There is no `NestApplication`-style bootstrap path wired up to consume `VersioningOptions` at application start.
 
 ## Practical Notes
 
-1. Keep versioning logic separate from the SCXML request pipeline. The request pipeline should continue to delegate transition control to `RequestPipeline` and `StatechartEngine`.
-1. Treat URI versioning as the baseline. Header and media type versioning can build on the same routing primitives once the application-level config exists.
+1. Keep versioning logic separate from the SCXML request pipeline contract.
+1. Treat URI versioning as the baseline route shape, with header and media-type versioning handled by the HTTP transport layer until app-level wiring lands.
