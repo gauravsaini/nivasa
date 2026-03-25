@@ -69,3 +69,38 @@ pub fn impl_controller(attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn scxml_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
     scxml_handler::scxml_handler_impl(_attr, item)
 }
+
+#[proc_macro_attribute]
+pub fn body(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn param(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn query(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn headers(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn header(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn req(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn res(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}

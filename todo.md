@@ -334,6 +334,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Validate no duplicate routes within a controller
 
 #### 2.1.4 — Parameter Extraction
+- [x] Strip and record controller parameter extractor metadata in `#[impl_controller]`
 - [ ] Implement `#[body]` extractor — deserialize JSON request body to typed DTO
 - [ ] Implement `#[param("name")]` extractor — extract path parameter
 - [ ] Implement `#[query]` extractor — deserialize full query string to struct
