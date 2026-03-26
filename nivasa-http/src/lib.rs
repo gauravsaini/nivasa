@@ -848,6 +848,60 @@ where
     }
 }
 
+/// Execute a controller-style action with raw request access only.
+///
+/// This is intentionally narrow: it models the `#[req]`-style runtime slice
+/// after route matching has already been driven through the request pipeline.
+pub fn run_controller_action_with_request<F, R>(
+    request: &NivasaRequest,
+    action: F,
+) -> NivasaResponse
+where
+    F: FnOnce(&NivasaRequest) -> R,
+    R: IntoResponse,
+{
+    action(request).into_response()
+}
+
+/// Execute a controller-style action with a single typed path parameter.
+///
+/// This is intentionally narrow: it relies on route matching to attach the
+/// captured path parameters before controller execution begins.
+pub fn run_controller_action_with_param<T, F, R>(
+    request: &NivasaRequest,
+    name: impl AsRef<str>,
+    action: F,
+) -> NivasaResponse
+where
+    T: DeserializeOwned,
+    F: FnOnce(T) -> R,
+    R: IntoResponse,
+{
+    match request.path_param_typed::<T>(name) {
+        Ok(param) => action(param).into_response(),
+        Err(error) => HttpException::bad_request(error.to_string()).into_response(),
+    }
+}
+
+/// Execute a controller-style action with a full typed query DTO.
+///
+/// This is intentionally narrow: it exposes the `#[query]`-style runtime slice
+/// after the request pipeline has already advanced through route matching.
+pub fn run_controller_action_with_query<T, F, R>(
+    request: &NivasaRequest,
+    action: F,
+) -> NivasaResponse
+where
+    T: DeserializeOwned,
+    F: FnOnce(Query<T>) -> R,
+    R: IntoResponse,
+{
+    match request.extract::<Query<T>>() {
+        Ok(query) => action(query).into_response(),
+        Err(error) => HttpException::bad_request(error.to_string()).into_response(),
+    }
+}
+
 impl IntoResponse for NivasaResponse {
     fn into_response(self) -> NivasaResponse {
         self
