@@ -1,6 +1,10 @@
 use nivasa::prelude::*;
 #[allow(unused_imports)]
-use nivasa::prelude::{injectable, module, scxml_handler};
+use nivasa::prelude::{
+    all, body, controller, custom_param, delete, file, files, get, head, header, headers,
+    http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
+    req, res, scxml_handler, session,
+};
 
 #[test]
 fn crate_root_reexports_app_config_builders() {
@@ -96,13 +100,34 @@ fn crate_root_reexports_bootstrap_config_as_pure_data() {
 
 #[test]
 fn prelude_reexports_core_traits_macros_and_http_types() {
+    fn _assert_request_type_is_in_scope(_: Option<NivasaRequest>) {}
+    fn _assert_response_type_is_in_scope(_: Option<NivasaResponse>) {}
+    fn _assert_query_type_is_in_scope(
+        _: Option<Query<std::collections::BTreeMap<String, String>>>,
+    ) {
+    }
+
     fn _asserts_module_trait_name_is_in_scope<T: Module>() {}
     fn _asserts_injectable_trait_name_is_in_scope<T: Injectable>() {}
 
     let _container = DependencyContainer::new();
+    let _body = Body::empty();
+    let _response = NivasaResponse::builder()
+        .status(HttpStatus::Ok.into())
+        .build();
     let _ = ProviderScope::Singleton;
     let _ = HttpStatus::Ok;
     let _ = HttpException::bad_request("boom");
+}
+
+#[test]
+#[allow(unused_imports)]
+fn crate_root_reexports_controller_macro_and_http_surface() {
+    use nivasa::{
+        all, body, controller, custom_param, delete, file, files, get, head, header, headers,
+        http_code, impl_controller, options, param, patch, post, put, query, req, res, session,
+        Body, ControllerResponse, Html, Json, NivasaRequest, NivasaResponse, Redirect,
+    };
 }
 
 #[test]

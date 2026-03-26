@@ -11,6 +11,7 @@ nivasa-core = { path = "../nivasa-core" }
 nivasa-common = { path = "../nivasa-common" }
 nivasa-statechart = { path = "../nivasa-statechart" }
 nivasa-macros = { path = "../nivasa-macros" }
+nivasa-http = { path = "../nivasa-http" }
 nivasa-config = { path = "../nivasa-config", optional = true }
 nivasa-validation = { path = "../nivasa-validation", optional = true }
 nivasa-websocket = { path = "../nivasa-websocket", optional = true }
