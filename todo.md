@@ -334,16 +334,16 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Validate no duplicate routes within a controller
 
 #### 2.1.4 — Parameter Extraction
-> ⚠️ **SCXML / controller boundary:** the request pipeline still stops at route dispatch. The landed controller runtime slices are `#[body]` request extraction and `#[res]` response-builder access; the remaining controller markers stay partial or pending until the later SCXML handler-execution path lands.
+> ⚠️ **SCXML / controller boundary:** the request pipeline still stops at route dispatch. The landed controller runtime slices are `#[body]` request extraction, `#[req]` raw request access, `#[param("name")]` path-param extraction, `#[query]` full query DTO extraction, and `#[res]` response-builder access; the remaining controller markers stay partial or pending until the later SCXML handler-execution path lands.
 
 - [x] Strip and record controller parameter extractor metadata in `#[impl_controller]`
 - [x] Implement `#[body]` extractor — deserialize JSON request body to typed DTO
-- [ ] Implement `#[param("name")]` extractor — extract path parameter
-- [ ] Implement `#[query]` extractor — deserialize full query string to struct
+- [x] Implement `#[param("name")]` extractor — extract path parameter
+- [x] Implement `#[query]` extractor — deserialize full query string to struct
 - [x] Implement `#[query("name")]` extractor — extract single query param
 - [x] Implement `#[headers]` extractor — access all request headers as map
 - [x] Implement `#[header("name")]` extractor — extract single header value
-- [ ] Implement `#[req]` extractor — raw `NivasaRequest` access
+- [x] Implement `#[req]` extractor — raw `NivasaRequest` access
 - [x] Implement `#[res]` extractor — first runtime slice for mutable response builder access
 - [x] Implement `#[ip]` extractor — client IP address
 - [x] Implement `#[session]` extractor — session data (if session module loaded)
