@@ -1,3 +1,4 @@
+pub mod dynamic;
 pub mod lifecycle;
 pub mod orchestrator;
 pub mod registry;
@@ -7,8 +8,9 @@ use crate::di::DependencyContainer;
 use async_trait::async_trait;
 use std::any::TypeId;
 
-pub use registry::{ModuleEntry, ModuleRegistry, ModuleRegistryError};
+pub use dynamic::{ConfigurableModule, DynamicModule};
 pub use orchestrator::{ModuleHookSet, ModuleOrchestrator, ModuleOrchestratorError};
+pub use registry::{ModuleEntry, ModuleRegistry, ModuleRegistryError};
 pub use runtime::{ModuleLifecycleError, ModuleRuntime};
 
 /// Metadata for a Nivasa module.
