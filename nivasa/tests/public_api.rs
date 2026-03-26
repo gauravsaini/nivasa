@@ -131,3 +131,12 @@ fn bootstrap_config_can_compose_prefixed_route_paths_without_runtime_wiring() {
         "/users"
     );
 }
+
+#[cfg(feature = "config")]
+#[test]
+#[allow(unused_imports)]
+fn optional_crate_features_reexport_placeholder_crates_when_enabled() {
+    use nivasa::config as config_crate;
+    use nivasa::validation as validation_crate;
+    use nivasa::websocket as websocket_crate;
+}

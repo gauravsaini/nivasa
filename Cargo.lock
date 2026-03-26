@@ -681,9 +681,12 @@ name = "nivasa"
 version = "0.1.0"
 dependencies = [
  "nivasa-common",
+ "nivasa-config",
  "nivasa-core",
  "nivasa-macros",
  "nivasa-statechart",
+ "nivasa-validation",
+ "nivasa-websocket",
 ]
 
 [[package]]

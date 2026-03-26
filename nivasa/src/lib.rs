@@ -31,6 +31,12 @@ pub mod prelude {
     };
     pub use nivasa_macros::{injectable, module, scxml_handler};
     pub use nivasa_statechart::{StatechartEngine, StatechartSpec};
+    #[cfg(feature = "config")]
+    pub use nivasa_config as config;
+    #[cfg(feature = "validation")]
+    pub use nivasa_validation as validation;
+    #[cfg(feature = "websocket")]
+    pub use nivasa_websocket as websocket;
 }
 
 pub use application::{
@@ -38,6 +44,8 @@ pub use application::{
     VersioningOptionsBuilder, VersioningStrategy,
 };
 pub use nivasa_common::{self, HttpException, HttpStatus};
+#[cfg(feature = "config")]
+pub use nivasa_config as config;
 pub use nivasa_core::di::Lazy;
 pub use nivasa_core::di::provider::Injectable;
 pub use nivasa_core::{
@@ -47,3 +55,7 @@ pub use nivasa_core::{
 };
 pub use nivasa_macros::{self, injectable, module, scxml_handler};
 pub use nivasa_statechart::{self, StatechartEngine, StatechartSpec};
+#[cfg(feature = "validation")]
+pub use nivasa_validation as validation;
+#[cfg(feature = "websocket")]
+pub use nivasa_websocket as websocket;
