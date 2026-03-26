@@ -61,7 +61,7 @@
 - [ ] Re-export key macros: `#[module]`, `#[injectable]`, `#[controller]`, `#[get]`, `#[post]`, etc.
 - [ ] Re-export `NestApplication`, `ServerOptions`, `HttpException` and friends
 - [ ] Re-export `StatechartEngine`, generated state/event enums from `nivasa-statechart`
-- [ ] Feature-gate optional sub-crates (e.g., `features = ["websocket", "config", "validation"]`)
+- [x] Feature-gate optional sub-crates (e.g., `features = ["websocket", "config", "validation"]`)
 
 ---
 
