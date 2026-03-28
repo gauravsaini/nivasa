@@ -8,6 +8,7 @@ pub mod upload;
 
 pub use http::header::HeaderMap;
 
+use async_trait::async_trait;
 use http::{
     header::{HeaderName, HeaderValue, CONTENT_TYPE},
     Method, Request, Response, StatusCode, Uri,
@@ -15,7 +16,7 @@ use http::{
 use nivasa_common::HttpException;
 use nivasa_routing::RoutePathCaptures;
 use serde::{de::DeserializeOwned, Serialize};
-use std::fmt;
+use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 /// Minimal response/request body abstraction for the HTTP wrapper layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1022,6 +1023,48 @@ impl IntoResponse for &str {
     fn into_response(self) -> NivasaResponse {
         NivasaResponse::text(self)
     }
+}
+
+type MiddlewareFuture = Pin<Box<dyn Future<Output = NivasaResponse> + Send + 'static>>;
+type MiddlewareHandler = Arc<dyn Fn(NivasaRequest) -> MiddlewareFuture + Send + Sync + 'static>;
+
+/// Continuation handle passed to middleware implementations.
+#[derive(Clone)]
+pub struct NextMiddleware {
+    handler: MiddlewareHandler,
+}
+
+impl fmt::Debug for NextMiddleware {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NextMiddleware").finish_non_exhaustive()
+    }
+}
+
+impl NextMiddleware {
+    /// Construct a continuation from an async request handler.
+    pub fn new<F, Fut>(handler: F) -> Self
+    where
+        F: Fn(NivasaRequest) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = NivasaResponse> + Send + 'static,
+    {
+        Self {
+            handler: Arc::new(move |request| Box::pin(handler(request))),
+        }
+    }
+
+    /// Forward the request to the next middleware or terminal handler.
+    pub async fn run(&self, request: NivasaRequest) -> NivasaResponse {
+        (self.handler)(request).await
+    }
+}
+
+/// Middleware surface for request pre-processing and delegation.
+///
+/// This is intentionally just the foundational trait and continuation handle.
+/// Full middleware registration and SCXML-driven execution wiring land later.
+#[async_trait]
+pub trait NivasaMiddleware: Send + Sync {
+    async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse;
 }
 
 impl IntoResponse for Vec<u8> {
