@@ -505,10 +505,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support multiple interceptors: `#[interceptor(I1, I2)]` (execute in order)
 
 #### 3.2.3 — Interceptor Chain Execution
+- Landed execution slices: `NivasaServerBuilder::interceptor(...)` now supports a thin server-side interceptor hook around matched route handlers, and repeated `.interceptor(...)` calls execute as an ordered onion chain while `RequestPipeline` remains the owner of `InterceptorPre` / `InterceptorPost` transitions. Decorator-driven registration, module wiring, and response-mapping helpers remain open.
 - [ ] Implement interceptor chain (onion/RxJS-style: pre → next.handle() → post)
 - [ ] Implement response transformation in post-processing
 - [ ] Implement response mapping (map the body before sending)
-- [ ] Support async interceptor execution
+- [x] Support async interceptor execution
 
 #### 3.2.4 — Built-in Interceptors
 - [ ] Implement `LoggingInterceptor` (log method, path, status, duration)
@@ -519,7 +520,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.2.5 — Interceptor Tests
 - [ ] Test pre-processing interceptor adds header to request
 - [ ] Test post-processing interceptor wraps response in `{ data: ... }`
-- [ ] Test interceptor chain execution order (I1.pre → I2.pre → handler → I2.post → I1.post)
+- [x] Test interceptor chain execution order (I1.pre → I2.pre → handler → I2.post → I1.post)
 - [ ] Test timeout interceptor returns 408 on slow handler
 - [ ] Test cache interceptor returns cached response on second call
 

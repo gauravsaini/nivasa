@@ -46,7 +46,7 @@ type InterceptorLayer = Arc<dyn Interceptor<Response = NivasaResponse> + Send + 
 pub struct NivasaServer {
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
-    interceptor: Option<InterceptorLayer>,
+    interceptors: Vec<InterceptorLayer>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -59,7 +59,7 @@ pub struct NivasaServer {
 pub struct NivasaServerBuilder {
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
-    interceptor: Option<InterceptorLayer>,
+    interceptors: Vec<InterceptorLayer>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -81,7 +81,7 @@ impl NivasaServer {
         let mut shutdown = shutdown_future(self.shutdown.take());
         let routes = self.routes;
         let middleware = self.middleware;
-        let interceptor = self.interceptor;
+        let interceptors = self.interceptors;
         let cors = self.cors;
         let request_timeout = self.request_timeout;
         let request_body_size_limit = self.request_body_size_limit;
@@ -98,7 +98,7 @@ impl NivasaServer {
                     let (stream, _) = accept?;
                     let routes = routes.clone();
                     let middleware = middleware.clone();
-                    let interceptor = interceptor.clone();
+                    let interceptors = interceptors.clone();
                     #[cfg(feature = "tls")]
                     let tls_config = tls_config.clone();
 
@@ -111,7 +111,7 @@ impl NivasaServer {
                                     stream,
                                     routes,
                                     middleware,
-                                    interceptor,
+                                    interceptors,
                                     cors,
                                     request_timeout,
                                     request_body_size_limit,
@@ -125,7 +125,7 @@ impl NivasaServer {
                             stream,
                             routes,
                             middleware,
-                            interceptor,
+                            interceptors,
                             cors,
                             request_timeout,
                             request_body_size_limit,
@@ -146,7 +146,7 @@ impl NivasaServerBuilder {
         Self {
             routes: RouteDispatchRegistry::new(),
             middleware: None,
-            interceptor: None,
+            interceptors: Vec::new(),
             cors: false,
             request_timeout: None,
             request_body_size_limit: None,
@@ -216,7 +216,7 @@ impl NivasaServerBuilder {
     where
         I: Interceptor<Response = NivasaResponse> + Send + Sync + 'static,
     {
-        self.interceptor = Some(Arc::new(interceptor));
+        self.interceptors.push(Arc::new(interceptor));
         self
     }
 
@@ -256,7 +256,7 @@ impl NivasaServerBuilder {
         NivasaServer {
             routes: self.routes,
             middleware: self.middleware,
-            interceptor: self.interceptor,
+            interceptors: self.interceptors,
             cors: self.cors,
             request_timeout: self.request_timeout,
             request_body_size_limit: self.request_body_size_limit,
@@ -271,7 +271,7 @@ async fn serve_connection<S>(
     stream: S,
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
-    interceptor: Option<InterceptorLayer>,
+    interceptors: Vec<InterceptorLayer>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -282,7 +282,7 @@ async fn serve_connection<S>(
     let service = service_fn(move |request| {
         let routes = routes.clone();
         let middleware = middleware.clone();
-        let interceptor = interceptor.clone();
+        let interceptors = interceptors.clone();
         let cors = cors;
         let request_timeout = request_timeout;
         let request_body_size_limit = request_body_size_limit;
@@ -294,7 +294,7 @@ async fn serve_connection<S>(
                         request,
                         routes,
                         middleware,
-                        interceptor,
+                        interceptors,
                         cors,
                         request_body_size_limit,
                     ),
@@ -315,7 +315,7 @@ async fn serve_connection<S>(
                     request,
                     routes,
                     middleware,
-                    interceptor,
+                    interceptors,
                     cors,
                     request_body_size_limit,
                 )
@@ -332,7 +332,7 @@ async fn handle_request(
     request: hyper::Request<Incoming>,
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
-    interceptor: Option<InterceptorLayer>,
+    interceptors: Vec<InterceptorLayer>,
     cors: bool,
     request_body_size_limit: Option<usize>,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
@@ -416,9 +416,8 @@ async fn handle_request(
         Ok(RouteDispatchOutcome::Matched(entry)) => {
             let handler = Arc::clone(&entry.value);
             let request = pipeline.request().clone();
-            match interceptor {
-                Some(interceptor) => match execute_interceptor(interceptor, request, handler).await
-                {
+            match interceptors.is_empty() {
+                false => match execute_interceptors(interceptors, request, handler).await {
                     InterceptorExecution::Completed(response) => {
                         if pipeline.pass_guards().is_err()
                             || pipeline.complete_interceptors_pre().is_err()
@@ -472,7 +471,7 @@ async fn handle_request(
                         }
                     }
                 },
-                None => match tokio::task::spawn_blocking(move || (handler)(&request)).await {
+                true => match tokio::task::spawn_blocking(move || (handler)(&request)).await {
                     Ok(response) => response,
                     Err(_) => NivasaResponse::new(
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -544,29 +543,24 @@ async fn execute_middleware(
     }
 }
 
-async fn execute_interceptor(
-    interceptor: InterceptorLayer,
+async fn execute_interceptors(
+    interceptors: Vec<InterceptorLayer>,
     request: NivasaRequest,
     handler: RouteHandler,
 ) -> InterceptorExecution {
     let handler_called = Arc::new(AtomicBool::new(false));
-    let invoked = Arc::clone(&handler_called);
-    let request_for_handler = request.clone();
     let context = InterceptorExecutionContext::new()
         .with_request(request.method().to_string(), request.path().to_string());
-    let next = CallHandler::new(move || {
-        let invoked = Arc::clone(&invoked);
-        let handler = Arc::clone(&handler);
-        let request = request_for_handler.clone();
-        async move {
-            invoked.store(true, Ordering::SeqCst);
-            tokio::task::spawn_blocking(move || (handler)(&request))
-                .await
-                .map_err(|_| HttpException::internal_server_error("request handler failed"))
-        }
-    });
+    let next = interceptor_chain_handler(
+        Arc::new(interceptors),
+        0,
+        context.clone(),
+        Arc::clone(&handler_called),
+        request,
+        handler,
+    );
 
-    match interceptor.intercept(&context, next).await {
+    match next.handle().await {
         Ok(response) => {
             if handler_called.load(Ordering::SeqCst) {
                 InterceptorExecution::Completed(response)
@@ -578,6 +572,47 @@ async fn execute_interceptor(
             error,
             handler_called: handler_called.load(Ordering::SeqCst),
         },
+    }
+}
+
+fn interceptor_chain_handler(
+    interceptors: Arc<Vec<InterceptorLayer>>,
+    index: usize,
+    context: InterceptorExecutionContext,
+    handler_called: Arc<AtomicBool>,
+    request: NivasaRequest,
+    handler: RouteHandler,
+) -> CallHandler<NivasaResponse> {
+    match interceptors.get(index).cloned() {
+        Some(interceptor) => CallHandler::new(move || {
+            let interceptors = Arc::clone(&interceptors);
+            let context = context.clone();
+            let handler_called = Arc::clone(&handler_called);
+            let request = request.clone();
+            let handler = Arc::clone(&handler);
+            async move {
+                let next = interceptor_chain_handler(
+                    interceptors,
+                    index + 1,
+                    context.clone(),
+                    handler_called,
+                    request,
+                    handler,
+                );
+                interceptor.intercept(&context, next).await
+            }
+        }),
+        None => CallHandler::new(move || {
+            let handler_called = Arc::clone(&handler_called);
+            let request = request.clone();
+            let handler = Arc::clone(&handler);
+            async move {
+                handler_called.store(true, Ordering::SeqCst);
+                tokio::task::spawn_blocking(move || (handler)(&request))
+                    .await
+                    .map_err(|_| HttpException::internal_server_error("request handler failed"))
+            }
+        }),
     }
 }
 

@@ -9,7 +9,7 @@ use nivasa_routing::RouteMethod;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use std::time::Duration;
 use tokio::{sync::oneshot, time::sleep};
@@ -61,6 +61,30 @@ impl Interceptor for ErrorInterceptor {
             Err(nivasa_common::HttpException::bad_request(
                 "interceptor blocked request",
             ))
+        })
+    }
+}
+
+struct RecordingInterceptor {
+    label: &'static str,
+    log: Arc<Mutex<Vec<String>>>,
+}
+
+impl Interceptor for RecordingInterceptor {
+    type Response = NivasaResponse;
+
+    fn intercept(
+        &self,
+        _context: &ExecutionContext,
+        next: CallHandler<Self::Response>,
+    ) -> InterceptorFuture<Self::Response> {
+        let label = self.label;
+        let log = Arc::clone(&self.log);
+        Box::pin(async move {
+            log.lock().unwrap().push(format!("{label}.pre"));
+            let response = next.handle().await?;
+            log.lock().unwrap().push(format!("{label}.post"));
+            Ok(response)
         })
     }
 }
@@ -199,5 +223,62 @@ async fn interceptor_error_returns_exception_response() -> Result<(), Box<dyn st
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(std::str::from_utf8(&body)?.contains("interceptor blocked request"));
     assert!(!called.load(Ordering::SeqCst));
+    Ok(())
+}
+
+#[tokio::test]
+async fn interceptors_execute_in_onion_order() -> Result<(), Box<dyn std::error::Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let first = Arc::clone(&log);
+    let second = Arc::clone(&log);
+    let handler_log = Arc::clone(&log);
+
+    let server = NivasaServer::builder()
+        .interceptor(RecordingInterceptor {
+            label: "i1",
+            log: first,
+        })
+        .interceptor(RecordingInterceptor {
+            label: "i2",
+            log: second,
+        })
+        .route(RouteMethod::Get, "/interceptor", move |_| {
+            handler_log.lock().unwrap().push("handler".to_string());
+            NivasaResponse::text("handler")
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("http://127.0.0.1:{port}/interceptor"))
+        .body(Full::new(Bytes::new()))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let body = response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body.as_ref(), b"handler");
+    assert_eq!(
+        &*log.lock().unwrap(),
+        &[
+            "i1.pre".to_string(),
+            "i2.pre".to_string(),
+            "handler".to_string(),
+            "i2.post".to_string(),
+            "i1.post".to_string(),
+        ]
+    );
     Ok(())
 }
