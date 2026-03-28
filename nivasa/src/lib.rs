@@ -45,6 +45,7 @@ pub mod prelude {
         Json, NivasaRequest, NivasaResponse, NivasaServer, NivasaServerBuilder, Query, Redirect,
         RequestExtractError, RequestPipeline, Sse, SseEvent, StreamBody, Text, UploadedFile,
     };
+    pub use nivasa_routing::Controller;
     pub use nivasa_macros::{
         all, body, controller, custom_param, delete, file, files, get, head, header, headers,
         http_code, impl_controller, injectable, ip, module, options, param, patch, post, put,
@@ -90,6 +91,7 @@ pub use nivasa_http::{
     Json, NivasaRequest, NivasaResponse, NivasaServer, NivasaServerBuilder, Query, Redirect,
     RequestExtractError, RequestPipeline, Sse, SseEvent, StreamBody, Text, UploadedFile,
 };
+pub use nivasa_routing::Controller;
 pub use nivasa_macros::{
     self, all, body, controller, custom_param, delete, file, files, get, head, header, headers,
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,

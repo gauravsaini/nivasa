@@ -118,6 +118,7 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
     fn _assert_server_builder_is_in_scope(_: Option<NivasaServerBuilder>) {}
     fn _assert_runtime_module_type_is_in_scope(_: Option<ModuleRuntime<DemoModule>>) {}
 
+    fn _asserts_controller_trait_name_is_in_scope<T: Controller>() {}
     fn _asserts_module_trait_name_is_in_scope<T: Module>() {}
     fn _asserts_injectable_trait_name_is_in_scope<T: Injectable>() {}
 
@@ -155,9 +156,17 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
     use nivasa::{
         all, body, controller, custom_param, delete, file, files, get, head, header, headers,
         http_code, impl_controller, options, param, patch, post, put, query, req, res, session,
-        Body, ControllerResponse, Download, Html, Json, MultipartLimits, NivasaRequest,
+        Body, Controller, ControllerResponse, Download, Html, Json, MultipartLimits, NivasaRequest,
         NivasaResponse, NivasaServer, RequestPipeline, Sse, Text, UploadedFile,
     };
+}
+
+struct DemoController;
+
+impl Controller for DemoController {
+    fn metadata(&self) -> nivasa_routing::ControllerMetadata {
+        nivasa_routing::ControllerMetadata::new("/")
+    }
 }
 
 struct DemoModule;
