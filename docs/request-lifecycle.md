@@ -57,3 +57,4 @@ These stages are still important because they define the future SCXML contract f
 1. `RequestPipeline::complete_middleware()` and `RequestPipeline::fail_middleware()` cover the middleware branch.
 1. `RequestPipeline::match_route()` uses routing outcomes to drive the generated SCXML transition table through `send_event`.
 1. Request extraction in `nivasa-http` currently supports body, query, header, and path-capture access for the pieces that already exist.
+1. SCXML validation and parity now build cleanly on this machine through the repo-local `pkg-config` wrapper, so `nivasa statechart validate --all` and `nivasa statechart parity` do not need manual `PKG_CONFIG` setup here.
