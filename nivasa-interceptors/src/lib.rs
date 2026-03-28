@@ -5,8 +5,9 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
-use nivasa_common::HttpException;
+use nivasa_common::{HttpException, RequestContext};
 
 /// Standard result type returned by interceptor handlers.
 pub type InterceptorResult<T> = Result<T, HttpException>;
@@ -20,7 +21,7 @@ pub type InterceptorFuture<T> =
 /// This keeps the first interceptor slice independent from the HTTP runtime
 /// while still carrying the request, handler, class, and metadata shape that
 /// later phases will need.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default)]
 pub struct ExecutionContext {
     request_method: Option<String>,
     request_path: Option<String>,
@@ -29,6 +30,22 @@ pub struct ExecutionContext {
     handler_metadata: BTreeMap<String, String>,
     class_metadata: BTreeMap<String, String>,
     custom_data: BTreeMap<String, String>,
+    request_context: Option<Arc<RequestContext>>,
+}
+
+impl std::fmt::Debug for ExecutionContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExecutionContext")
+            .field("request_method", &self.request_method)
+            .field("request_path", &self.request_path)
+            .field("handler_name", &self.handler_name)
+            .field("class_name", &self.class_name)
+            .field("handler_metadata", &self.handler_metadata)
+            .field("class_metadata", &self.class_metadata)
+            .field("custom_data", &self.custom_data)
+            .field("has_request_context", &self.request_context.is_some())
+            .finish()
+    }
 }
 
 impl ExecutionContext {
@@ -57,6 +74,12 @@ impl ExecutionContext {
     /// Attach a controller/class name.
     pub fn with_class_name(mut self, class_name: impl Into<String>) -> Self {
         self.class_name = Some(class_name.into());
+        self
+    }
+
+    /// Attach the canonical shared request context.
+    pub fn with_request_context(mut self, request_context: RequestContext) -> Self {
+        self.request_context = Some(Arc::new(request_context));
         self
     }
 
@@ -113,6 +136,20 @@ impl ExecutionContext {
 
     pub fn custom_data(&self) -> &BTreeMap<String, String> {
         &self.custom_data
+    }
+
+    /// Access the shared canonical request context, when present.
+    pub fn request_context(&self) -> Option<&RequestContext> {
+        self.request_context.as_deref()
+    }
+
+    /// Look up typed request data from the shared request context.
+    pub fn request_data<T>(&self) -> Option<&T>
+    where
+        T: Send + Sync + 'static,
+    {
+        self.request_context()
+            .and_then(|request_context| request_context.request_data::<T>())
     }
 }
 
@@ -278,5 +315,31 @@ mod tests {
 
         assert_eq!(error.status_code, 500);
         assert_eq!(error.message, "boom");
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct TestRequest {
+        method: &'static str,
+        path: &'static str,
+    }
+
+    #[test]
+    fn execution_context_can_carry_the_shared_request_context() {
+        let mut request_context = RequestContext::new();
+        request_context.insert_request_data(TestRequest {
+            method: "GET",
+            path: "/users/42",
+        });
+
+        let context = ExecutionContext::new().with_request_context(request_context);
+
+        assert_eq!(
+            context.request_data::<TestRequest>(),
+            Some(&TestRequest {
+                method: "GET",
+                path: "/users/42",
+            })
+        );
+        assert!(context.request_context().is_some());
     }
 }
