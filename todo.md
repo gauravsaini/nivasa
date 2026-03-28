@@ -441,6 +441,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test 404 for unknown routes
 - [x] Test request body size limit enforcement
 - [x] Test file upload via multipart
+  - verified with `PATH=/opt/homebrew/bin:$PATH cargo test -p nivasa-http --test upload_contract --test upload_limits --test upload_interceptors`
 
 ---
 
