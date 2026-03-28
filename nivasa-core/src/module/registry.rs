@@ -1,4 +1,4 @@
-use super::{Module, ModuleMetadata};
+use super::{DynamicModule, Module, ModuleMetadata};
 use crate::di::error::DiError;
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
@@ -67,6 +67,15 @@ impl ModuleRegistry {
             type_id: TypeId::of::<M>(),
             type_name: std::any::type_name::<M>(),
             metadata: module.metadata(),
+        };
+        self.entries.insert(entry.type_id, entry).is_none()
+    }
+
+    pub fn register_dynamic<M: 'static>(&mut self, module: DynamicModule) -> bool {
+        let entry = ModuleEntry {
+            type_id: TypeId::of::<M>(),
+            type_name: std::any::type_name::<M>(),
+            metadata: module.merged_metadata(),
         };
         self.entries.insert(entry.type_id, entry).is_none()
     }

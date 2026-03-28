@@ -25,6 +25,16 @@ impl DynamicModule {
         self.metadata = self.metadata.with_global(is_global);
         self
     }
+
+    pub fn merged_metadata(&self) -> ModuleMetadata {
+        let mut metadata = self.metadata.clone();
+        for provider in &self.providers {
+            if !metadata.providers.contains(provider) {
+                metadata.providers.push(*provider);
+            }
+        }
+        metadata
+    }
 }
 
 /// Factory trait for modules that expose runtime-configurable metadata.
