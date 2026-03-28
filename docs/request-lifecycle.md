@@ -18,6 +18,8 @@ The codebase currently exercises the early request stages that are wired into `n
 
 That is the current runtime boundary: requests stop at route dispatch. A narrow controller-side `#[res]` response-builder slice now exists, but full controller execution plus the later SCXML stages remain future work.
 
+Controller-side multipart helpers for `#[file]` and `#[files]` now exist as post-route helpers as well, but they do not introduce a new SCXML stage. They still execute after route matching, and `RequestPipeline` remains the lifecycle owner.
+
 The implemented coordinator in `nivasa-http` now:
 
 1. Starts each request in `Received`.
@@ -57,4 +59,5 @@ These stages are still important because they define the future SCXML contract f
 1. `RequestPipeline::complete_middleware()` and `RequestPipeline::fail_middleware()` cover the middleware branch.
 1. `RequestPipeline::match_route()` uses routing outcomes to drive the generated SCXML transition table through `send_event`.
 1. Request extraction in `nivasa-http` currently supports body, query, header, and path-capture access for the pieces that already exist.
+1. Multipart `#[file]` and `#[files]` helpers are post-route conveniences; keep them out of the SCXML stage model.
 1. SCXML validation and parity now build cleanly on this machine through the repo-local `pkg-config` wrapper, so `nivasa statechart validate --all` and `nivasa statechart parity` do not need manual `PKG_CONFIG` setup here.
