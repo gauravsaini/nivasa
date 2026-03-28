@@ -57,7 +57,7 @@
 
 ### 0.4 — Umbrella Crate Re-export Strategy
 - [x] Design `nivasa::prelude::*` — users should only need one import
-- [ ] Re-export key traits and runtime types: `Module`, `Injectable`, `Controller`, `Guard`, `Interceptor`, `Pipe`, `ExceptionFilter`, `Middleware`, plus the landed DI/module/runtime surface
+- [ ] Re-export key traits and runtime types: `Controller`, `Module`, `Injectable`, plus the landed DI/module/runtime surface; `Guard`, `Interceptor`, `Pipe`, `ExceptionFilter`, and `Middleware` still need upstream exports
 - [x] Re-export key macros: `#[module]`, `#[injectable]`, `#[controller]`, `#[get]`, `#[post]`, `#[put]`, `#[delete]`, `#[patch]`, `#[head]`, `#[options]`, `#[all]`, `#[impl_controller]`, `#[scxml_handler]`
 - [x] Re-export `ServerOptions`, `HttpException`, and the existing HTTP/server surface
 - [x] Re-export `StatechartEngine`, generated state/event enums from `nivasa-statechart`
@@ -522,7 +522,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 3.3 — Middleware System (`nivasa-http` + `nivasa-macros`)
 
 #### 3.3.1 — Middleware Trait
-- [ ] Define `NivasaMiddleware` trait: `async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse`
+- [x] Define `NivasaMiddleware` trait: `async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse`
 - [ ] Support DI in middleware structs (`#[inject]` on fields)
 - [ ] Support functional middleware (closure-based, no struct needed)
 
