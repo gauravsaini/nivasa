@@ -5,6 +5,7 @@
 //! pipeline once the multipart dependency and interceptor wiring are landed.
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 /// Buffered file payload extracted from a multipart request.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,9 +190,321 @@ impl MultipartLimits {
     }
 }
 
+/// Errors raised while extracting uploaded files from a multipart payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UploadInterceptError {
+    MissingMultipartBoundary,
+    InvalidMultipart(String),
+    UnknownField {
+        name: String,
+    },
+    MissingFile {
+        field: String,
+    },
+    TooManyFiles {
+        field: String,
+        count: usize,
+    },
+    FieldTooLarge {
+        field: String,
+        limit: u64,
+        actual: usize,
+    },
+    StreamTooLarge {
+        limit: u64,
+        actual: usize,
+    },
+    DisallowedMimeType {
+        mime_type: Option<String>,
+    },
+}
+
+impl fmt::Display for UploadInterceptError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingMultipartBoundary => {
+                write!(f, "missing multipart boundary in content type")
+            }
+            Self::InvalidMultipart(error) => write!(f, "invalid multipart payload: {error}"),
+            Self::UnknownField { name } => write!(f, "multipart field `{name}` is not allowed"),
+            Self::MissingFile { field } => write!(f, "missing uploaded file for field `{field}`"),
+            Self::TooManyFiles { field, count } => {
+                write!(f, "expected one file for field `{field}`, found {count}")
+            }
+            Self::FieldTooLarge {
+                field,
+                limit,
+                actual,
+            } => write!(
+                f,
+                "multipart field `{field}` exceeded size limit {limit} bytes with {actual} bytes"
+            ),
+            Self::StreamTooLarge { limit, actual } => write!(
+                f,
+                "multipart payload exceeded size limit {limit} bytes with {actual} bytes"
+            ),
+            Self::DisallowedMimeType { mime_type } => match mime_type {
+                Some(mime_type) => write!(f, "multipart MIME type `{mime_type}` is not allowed"),
+                None => write!(f, "multipart file is missing an allowed MIME type"),
+            },
+        }
+    }
+}
+
+impl std::error::Error for UploadInterceptError {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedMultipartFile {
+    field_name: String,
+    file: UploadedFile,
+}
+
+/// Upload-layer helper for extracting a single file from a multipart payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileInterceptor {
+    field_name: String,
+    limits: MultipartLimits,
+}
+
+impl FileInterceptor {
+    /// Create a new single-file interceptor for a field name.
+    pub fn new(field_name: impl Into<String>) -> Self {
+        Self {
+            field_name: field_name.into(),
+            limits: MultipartLimits::new(),
+        }
+    }
+
+    /// Apply multipart limits to this interceptor.
+    pub fn with_limits(mut self, limits: MultipartLimits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// Extract a single file from a multipart payload body.
+    pub fn extract_from_bytes(
+        &self,
+        content_type: &str,
+        body: &[u8],
+    ) -> Result<UploadedFile, UploadInterceptError> {
+        let files = parse_uploaded_files(content_type, body, &self.limits)?
+            .into_iter()
+            .filter(|part| part.field_name == self.field_name)
+            .map(|part| part.file)
+            .collect::<Vec<_>>();
+
+        match files.len() {
+            0 => Err(UploadInterceptError::MissingFile {
+                field: self.field_name.clone(),
+            }),
+            1 => Ok(files.into_iter().next().expect("single file must exist")),
+            count => Err(UploadInterceptError::TooManyFiles {
+                field: self.field_name.clone(),
+                count,
+            }),
+        }
+    }
+}
+
+/// Upload-layer helper for extracting multiple files from a multipart payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FilesInterceptor {
+    field_name: String,
+    limits: MultipartLimits,
+}
+
+impl FilesInterceptor {
+    /// Create a new multi-file interceptor for a field name.
+    pub fn new(field_name: impl Into<String>) -> Self {
+        Self {
+            field_name: field_name.into(),
+            limits: MultipartLimits::new(),
+        }
+    }
+
+    /// Apply multipart limits to this interceptor.
+    pub fn with_limits(mut self, limits: MultipartLimits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// Extract all files for a field from a multipart payload body.
+    pub fn extract_from_bytes(
+        &self,
+        content_type: &str,
+        body: &[u8],
+    ) -> Result<Vec<UploadedFile>, UploadInterceptError> {
+        let files = parse_uploaded_files(content_type, body, &self.limits)?
+            .into_iter()
+            .filter(|part| part.field_name == self.field_name)
+            .map(|part| part.file)
+            .collect::<Vec<_>>();
+
+        if files.is_empty() {
+            return Err(UploadInterceptError::MissingFile {
+                field: self.field_name.clone(),
+            });
+        }
+
+        Ok(files)
+    }
+}
+
+fn parse_uploaded_files(
+    content_type: &str,
+    body: &[u8],
+    limits: &MultipartLimits,
+) -> Result<Vec<ParsedMultipartFile>, UploadInterceptError> {
+    let boundary = multer::parse_boundary(content_type)
+        .map_err(|_| UploadInterceptError::MissingMultipartBoundary)?;
+    let whole_size = body.len();
+    if let Some(limit) = limits.whole_stream_limit() {
+        if whole_size > limit as usize {
+            return Err(UploadInterceptError::StreamTooLarge {
+                limit,
+                actual: whole_size,
+            });
+        }
+    }
+
+    let boundary_marker = format!("--{boundary}");
+    let mut files = Vec::new();
+
+    for part in multipart_sections(body, boundary_marker.as_bytes())? {
+        let (headers, content) = split_once_bytes(part, b"\r\n\r\n").ok_or_else(|| {
+            UploadInterceptError::InvalidMultipart("missing header separator".to_string())
+        })?;
+        let mut field_name = None;
+        let mut filename = None;
+        let mut content_type = None;
+
+        let headers = std::str::from_utf8(headers).map_err(|_| {
+            UploadInterceptError::InvalidMultipart(
+                "multipart headers must be valid UTF-8".to_string(),
+            )
+        })?;
+
+        for header in headers.split("\r\n") {
+            let (name, value) = header.split_once(':').ok_or_else(|| {
+                UploadInterceptError::InvalidMultipart(format!("invalid header line `{header}`"))
+            })?;
+            let name = name.trim();
+            let value = value.trim();
+
+            if name.eq_ignore_ascii_case("content-disposition") {
+                for segment in value.split(';').skip(1) {
+                    let segment = segment.trim();
+                    if let Some(value) = segment.strip_prefix("name=") {
+                        field_name = Some(value.trim_matches('"').to_string());
+                    } else if let Some(value) = segment.strip_prefix("filename=") {
+                        filename = Some(value.trim_matches('"').to_string());
+                    }
+                }
+            } else if name.eq_ignore_ascii_case("content-type") {
+                content_type = Some(value.to_string());
+            }
+        }
+
+        let Some(field_name) = field_name else {
+            return Err(UploadInterceptError::InvalidMultipart(
+                "multipart field is missing a name".to_string(),
+            ));
+        };
+        let Some(filename) = filename else {
+            continue;
+        };
+
+        if !limits.allowed_fields_list().is_empty()
+            && !limits
+                .allowed_fields_list()
+                .iter()
+                .any(|field| field == &field_name)
+        {
+            return Err(UploadInterceptError::UnknownField { name: field_name });
+        }
+
+        if !limits.allows_mime_type(content_type.as_deref()) {
+            return Err(UploadInterceptError::DisallowedMimeType {
+                mime_type: content_type,
+            });
+        }
+
+        let bytes = content.to_vec();
+        let actual = bytes.len();
+        let per_field_limit = limits
+            .field_limit_for(&field_name)
+            .or_else(|| limits.per_field_limit());
+
+        if let Some(limit) = per_field_limit {
+            if actual > limit as usize {
+                return Err(UploadInterceptError::FieldTooLarge {
+                    field: field_name,
+                    limit,
+                    actual,
+                });
+            }
+        }
+
+        files.push(ParsedMultipartFile {
+            field_name,
+            file: UploadedFile::new(filename, content_type, bytes),
+        });
+    }
+
+    Ok(files)
+}
+
+fn multipart_sections<'a>(
+    body: &'a [u8],
+    boundary_marker: &[u8],
+) -> Result<Vec<&'a [u8]>, UploadInterceptError> {
+    let mut rest = body;
+    let mut sections = Vec::new();
+
+    while let Some(index) = find_bytes(rest, boundary_marker) {
+        rest = &rest[index + boundary_marker.len()..];
+
+        if rest.starts_with(b"--") {
+            break;
+        }
+
+        if let Some(stripped) = rest.strip_prefix(b"\r\n") {
+            rest = stripped;
+        }
+
+        let Some(next_boundary) = find_bytes(rest, boundary_marker) else {
+            return Err(UploadInterceptError::InvalidMultipart(
+                "multipart payload is missing a closing boundary".to_string(),
+            ));
+        };
+
+        let mut part = &rest[..next_boundary];
+        if let Some(stripped) = part.strip_suffix(b"\r\n") {
+            part = stripped;
+        }
+        sections.push(part);
+        rest = &rest[next_boundary..];
+    }
+
+    Ok(sections)
+}
+
+fn split_once_bytes<'a>(bytes: &'a [u8], delimiter: &[u8]) -> Option<(&'a [u8], &'a [u8])> {
+    let index = find_bytes(bytes, delimiter)?;
+    Some((&bytes[..index], &bytes[index + delimiter.len()..]))
+}
+
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MultipartLimits, UploadedFile};
+    use super::{
+        FileInterceptor, FilesInterceptor, MultipartLimits, UploadInterceptError, UploadedFile,
+    };
 
     #[test]
     fn uploaded_file_exposes_filename_content_type_and_bytes() {
@@ -243,7 +556,7 @@ mod tests {
         );
         assert!(limits.allows_mime_type(Some("image/png")));
         assert!(!limits.allows_mime_type(Some("text/plain")));
-        assert!(limits.allows_mime_type(None));
+        assert!(!limits.allows_mime_type(None));
     }
 
     #[test]
@@ -259,5 +572,97 @@ mod tests {
         assert!(debug.contains("avatar"));
         assert!(debug.contains("2048"));
         assert!(debug.contains("512"));
+    }
+
+    fn multipart_body(parts: &[(&str, &str, Option<&str>, &[u8])]) -> (String, Vec<u8>) {
+        let boundary = "X-BOUNDARY";
+        let mut body = Vec::new();
+
+        for (field_name, filename, content_type, bytes) in parts {
+            body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+            body.extend_from_slice(
+                format!(
+                    "Content-Disposition: form-data; name=\"{field_name}\"; filename=\"{filename}\"\r\n"
+                )
+                .as_bytes(),
+            );
+            if let Some(content_type) = content_type {
+                body.extend_from_slice(format!("Content-Type: {content_type}\r\n").as_bytes());
+            }
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(bytes);
+            body.extend_from_slice(b"\r\n");
+        }
+
+        body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+        (format!("multipart/form-data; boundary={boundary}"), body)
+    }
+
+    #[test]
+    fn file_interceptor_extracts_a_single_uploaded_file() {
+        let (content_type, body) =
+            multipart_body(&[("avatar", "avatar.png", Some("image/png"), b"png-data")]);
+
+        let file = FileInterceptor::new("avatar")
+            .extract_from_bytes(&content_type, &body)
+            .expect("single file should parse");
+
+        assert_eq!(file.filename(), "avatar.png");
+        assert_eq!(file.content_type(), Some("image/png"));
+        assert_eq!(file.bytes(), b"png-data");
+    }
+
+    #[test]
+    fn files_interceptor_extracts_multiple_files_for_one_field() {
+        let (content_type, body) = multipart_body(&[
+            ("attachments", "one.txt", Some("text/plain"), b"first"),
+            ("attachments", "two.txt", Some("text/plain"), b"second"),
+        ]);
+
+        let files = FilesInterceptor::new("attachments")
+            .extract_from_bytes(&content_type, &body)
+            .expect("multiple files should parse");
+
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].filename(), "one.txt");
+        assert_eq!(files[1].filename(), "two.txt");
+    }
+
+    #[test]
+    fn file_interceptor_rejects_disallowed_mime_types() {
+        let (content_type, body) =
+            multipart_body(&[("avatar", "avatar.txt", Some("text/plain"), b"text-data")]);
+
+        let error = FileInterceptor::new("avatar")
+            .with_limits(MultipartLimits::new().allowed_mime_types(["image/png"]))
+            .extract_from_bytes(&content_type, &body)
+            .expect_err("unexpected mime type should be rejected");
+
+        assert_eq!(
+            error,
+            UploadInterceptError::DisallowedMimeType {
+                mime_type: Some("text/plain".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn files_interceptor_enforces_per_field_limits() {
+        let (content_type, body) =
+            multipart_body(&[("attachments", "large.bin", None, b"1234567890")]);
+
+        let error = FilesInterceptor::new("attachments")
+            .with_limits(MultipartLimits::new().per_field(4))
+            .extract_from_bytes(&content_type, &body)
+            .expect_err("oversized field should be rejected");
+
+        assert_eq!(
+            error,
+            UploadInterceptError::FieldTooLarge {
+                field: "attachments".to_string(),
+                limit: 4,
+                actual: 10,
+            }
+        );
     }
 }
