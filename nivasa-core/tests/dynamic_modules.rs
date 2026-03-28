@@ -6,11 +6,14 @@ use std::any::TypeId;
 
 struct RootService;
 struct FeatureService;
+struct FeatureServiceTwo;
 struct ConsumerService;
 struct RootDynamicModuleMarker;
 struct FeatureDynamicModuleMarker;
+struct FeatureDynamicModuleMarkerTwo;
 struct DynamicConsumerModule;
 struct DynamicImportingConsumerModule;
+struct DynamicImportingConsumerModuleTwo;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DynamicOptions {
@@ -57,6 +60,22 @@ impl Module for DynamicImportingConsumerModule {
     fn metadata(&self) -> ModuleMetadata {
         ModuleMetadata::new()
             .with_imports(vec![TypeId::of::<FeatureDynamicModuleMarker>()])
+            .with_providers(vec![TypeId::of::<ConsumerService>()])
+    }
+
+    async fn configure(
+        &self,
+        _container: &nivasa_core::di::DependencyContainer,
+    ) -> Result<(), nivasa_core::di::error::DiError> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Module for DynamicImportingConsumerModuleTwo {
+    fn metadata(&self) -> ModuleMetadata {
+        ModuleMetadata::new()
+            .with_imports(vec![TypeId::of::<FeatureDynamicModuleMarkerTwo>()])
             .with_providers(vec![TypeId::of::<ConsumerService>()])
     }
 
@@ -134,4 +153,35 @@ fn register_dynamic_feature_module_requires_explicit_imports() {
         .visible_exports::<DynamicImportingConsumerModule>()
         .unwrap();
     assert!(importing_visible.contains(&TypeId::of::<FeatureService>()));
+}
+
+#[test]
+fn for_feature_dynamic_modules_stay_isolated_per_importing_module() {
+    let mut registry = ModuleRegistry::new();
+    registry.register_dynamic::<FeatureDynamicModuleMarker>(ExampleDynamicModule::for_feature(
+        DynamicOptions {
+            provider: TypeId::of::<FeatureService>(),
+            is_global: false,
+        },
+    ));
+    registry.register_dynamic::<FeatureDynamicModuleMarkerTwo>(ExampleDynamicModule::for_feature(
+        DynamicOptions {
+            provider: TypeId::of::<FeatureServiceTwo>(),
+            is_global: false,
+        },
+    ));
+    registry.register(&DynamicImportingConsumerModule);
+    registry.register(&DynamicImportingConsumerModuleTwo);
+
+    let first_visible = registry
+        .visible_exports::<DynamicImportingConsumerModule>()
+        .unwrap();
+    assert!(first_visible.contains(&TypeId::of::<FeatureService>()));
+    assert!(!first_visible.contains(&TypeId::of::<FeatureServiceTwo>()));
+
+    let second_visible = registry
+        .visible_exports::<DynamicImportingConsumerModuleTwo>()
+        .unwrap();
+    assert!(second_visible.contains(&TypeId::of::<FeatureServiceTwo>()));
+    assert!(!second_visible.contains(&TypeId::of::<FeatureService>()));
 }
