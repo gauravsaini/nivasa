@@ -57,9 +57,9 @@
 
 ### 0.4 — Umbrella Crate Re-export Strategy
 - [x] Design `nivasa::prelude::*` — users should only need one import
-- [ ] Re-export key traits: `Module`, `Injectable`, `Controller`, `Guard`, `Interceptor`, `Pipe`, `ExceptionFilter`, `Middleware`
-- [ ] Re-export key macros: `#[module]`, `#[injectable]`, `#[controller]`, `#[get]`, `#[post]`, etc.
-- [ ] Re-export `NestApplication`, `ServerOptions`, `HttpException` and friends
+- [ ] Re-export key traits and runtime types: `Module`, `Injectable`, `Controller`, `Guard`, `Interceptor`, `Pipe`, `ExceptionFilter`, `Middleware`, plus the landed DI/module/runtime surface
+- [x] Re-export key macros: `#[module]`, `#[injectable]`, `#[controller]`, `#[get]`, `#[post]`, `#[put]`, `#[delete]`, `#[patch]`, `#[head]`, `#[options]`, `#[all]`, `#[impl_controller]`, `#[scxml_handler]`
+- [x] Re-export `ServerOptions`, `HttpException`, and the existing HTTP/server surface
 - [ ] Re-export `StatechartEngine`, generated state/event enums from `nivasa-statechart`
 - [x] Feature-gate optional sub-crates (e.g., `features = ["websocket", "config", "validation"]`)
 
@@ -439,7 +439,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test response serialization (JSON, text, HTML)
 - [x] Test 404 for unknown routes
 - [x] Test request body size limit enforcement
-- [ ] Test file upload via multipart (coverage added; full local execution blocked by missing `pkg-config`/`libxml` in this environment)
+- [x] Test file upload via multipart
 
 ---
 
