@@ -303,6 +303,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test circular module import detection
 - [x] Test global module (available everywhere without explicit import)
 - [ ] Test dynamic module via `for_root`
+- [x] Test `for_feature` creates isolated instance per importing module
 
 ---
 
