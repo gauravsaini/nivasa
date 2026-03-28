@@ -455,8 +455,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Support DI in guard structs (guards are injectable)
 
 #### 3.1.2 — `#[guard]` Attribute Macro
-- [ ] Parse `#[guard(GuardType)]` on handler methods
-- [ ] Parse `#[guard(GuardType)]` on controller struct (apply to all routes)
+- [x] Parse `#[guard(GuardType)]` on handler methods
+- [x] Parse `#[guard(GuardType)]` on controller struct (metadata capture only; runtime apply-to-all-routes still open)
 - [ ] Parse `#[guard(GuardType)]` on module (apply to all module routes)
 - [ ] Support multiple guards: `#[guard(Guard1, Guard2)]`
 
