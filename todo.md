@@ -533,6 +533,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Generate middleware registration
 
 #### 3.3.3 — Middleware Pipeline
+- Landed execution slice: `NivasaServerBuilder::middleware(...)` runs one `NivasaMiddleware` around a `NextMiddleware` capture point before `complete_middleware()`. Global registration, module-level wiring, route ordering, and decorator parsing remain open.
 - [ ] Implement global middleware registration via `NestApplication::use_()`
 - [ ] Implement module-level middleware registration via `#[module({ middlewares: [...] })]`
 - [ ] Implement route-specific middleware (`.apply(Mw).forRoutes("/users")`)
