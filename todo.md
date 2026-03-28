@@ -489,16 +489,18 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 3.2 — Interceptor System (`nivasa-interceptors` + `nivasa-macros`)
 
+> Shared context note: `nivasa-common::RequestContext` is now the canonical per-request context foundation; the interceptor runtime surface should converge onto it in later slices.
+
 #### 3.2.1 — Interceptor Trait
-- [ ] Define `Interceptor` trait: `async fn intercept(&self, context: &ExecutionContext, next: CallHandler) -> Result<Response>`
-- [ ] Define `CallHandler` struct: `async fn handle(self) -> Result<Response>`
+- [x] Define `Interceptor` trait: `async fn intercept(&self, context: &ExecutionContext, next: CallHandler) -> Result<Response>`
+- [x] Define `CallHandler` struct: `async fn handle(self) -> Result<Response>`
 - [ ] Support DI in interceptor structs
 
 #### 3.2.2 — `#[interceptor]` Attribute Macro
-- [ ] Parse `#[interceptor(InterceptorType)]` on handler methods
-- [ ] Parse `#[interceptor(InterceptorType)]` on controller struct
+- [x] Parse `#[interceptor(InterceptorType)]` on handler methods
+- [x] Parse `#[interceptor(InterceptorType)]` on controller struct
 - [ ] Parse `#[interceptor(InterceptorType)]` on module
-- [ ] Support multiple interceptors: `#[interceptor(I1, I2)]` (execute in order)
+- [x] Support multiple interceptors: `#[interceptor(I1, I2)]` (execute in order)
 
 #### 3.2.3 — Interceptor Chain Execution
 - [ ] Implement interceptor chain (onion/RxJS-style: pre → next.handle() → post)
