@@ -28,7 +28,10 @@ fn crate_root_reexports_app_config_builders() {
         Some(nivasa::VersioningStrategy::Header)
     );
     assert_eq!(
-        server.versioning.as_ref().and_then(|options| options.default_version.as_deref()),
+        server
+            .versioning
+            .as_ref()
+            .and_then(|options| options.default_version.as_deref()),
         Some("v1")
     );
     assert_eq!(versioning.default_version.as_deref(), Some("v1"));
@@ -51,7 +54,10 @@ fn prelude_reexports_app_config_types_for_downstream_use() {
         Some(VersioningStrategy::MediaType)
     );
     assert_eq!(
-        server.versioning.as_ref().and_then(|options| options.default_version.as_deref()),
+        server
+            .versioning
+            .as_ref()
+            .and_then(|options| options.default_version.as_deref()),
         Some("v2")
     );
 }
@@ -106,15 +112,22 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
         _: Option<Query<std::collections::BTreeMap<String, String>>>,
     ) {
     }
+    fn _assert_pipeline_type_is_in_scope(_: Option<RequestPipeline>) {}
+    fn _assert_server_builder_is_in_scope(_: Option<NivasaServerBuilder>) {}
+    fn _assert_runtime_module_type_is_in_scope(_: Option<ModuleRuntime<DemoModule>>) {}
 
     fn _asserts_module_trait_name_is_in_scope<T: Module>() {}
     fn _asserts_injectable_trait_name_is_in_scope<T: Injectable>() {}
 
     let _container = DependencyContainer::new();
     let _body = Body::empty();
+    let _limits = MultipartLimits::new();
     let _response = NivasaResponse::builder()
         .status(HttpStatus::Ok.into())
         .build();
+    let _ = NivasaServer::builder();
+    let _ = UploadedFile::new("avatar.png", Some("image/png"), vec![1, 2, 3]);
+    let _ = DynamicModule::new(ModuleMetadata::default());
     let _ = ProviderScope::Singleton;
     let _ = HttpStatus::Ok;
     let _ = HttpException::bad_request("boom");
@@ -126,28 +139,31 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
     use nivasa::{
         all, body, controller, custom_param, delete, file, files, get, head, header, headers,
         http_code, impl_controller, options, param, patch, post, put, query, req, res, session,
-        Body, ControllerResponse, Html, Json, NivasaRequest, NivasaResponse, Redirect,
+        Body, ControllerResponse, Download, Html, Json, MultipartLimits, NivasaRequest,
+        NivasaResponse, NivasaServer, RequestPipeline, Sse, Text, UploadedFile,
     };
+}
+
+struct DemoModule;
+
+impl Module for DemoModule {
+    fn metadata() -> ModuleMetadata {
+        ModuleMetadata::default()
+    }
 }
 
 #[test]
 fn bootstrap_config_exposes_a_normalized_global_prefix_for_route_setup() {
-    let bootstrap = nivasa::AppBootstrapConfig::from(
-        ServerOptions::builder()
-            .global_prefix(" api/ ")
-            .build(),
-    );
+    let bootstrap =
+        nivasa::AppBootstrapConfig::from(ServerOptions::builder().global_prefix(" api/ ").build());
 
     assert_eq!(bootstrap.global_prefix(), Some("/api"));
 }
 
 #[test]
 fn bootstrap_config_can_compose_prefixed_route_paths_without_runtime_wiring() {
-    let bootstrap = nivasa::AppBootstrapConfig::from(
-        ServerOptions::builder()
-            .global_prefix("api")
-            .build(),
-    );
+    let bootstrap =
+        nivasa::AppBootstrapConfig::from(ServerOptions::builder().global_prefix("api").build());
 
     assert_eq!(bootstrap.prefixed_route_path("users"), "/api/users");
     assert_eq!(bootstrap.prefixed_route_path("/"), "/api");
