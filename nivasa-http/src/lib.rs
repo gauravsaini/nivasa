@@ -1067,6 +1067,17 @@ pub trait NivasaMiddleware: Send + Sync {
     async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse;
 }
 
+#[async_trait]
+impl<F, Fut> NivasaMiddleware for F
+where
+    F: Fn(NivasaRequest, NextMiddleware) -> Fut + Send + Sync,
+    Fut: Future<Output = NivasaResponse> + Send + 'static,
+{
+    async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
+        (self)(req, next).await
+    }
+}
+
 impl IntoResponse for Vec<u8> {
     fn into_response(self) -> NivasaResponse {
         NivasaResponse::bytes(self)

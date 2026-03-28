@@ -529,7 +529,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.3.1 — Middleware Trait
 - [x] Define `NivasaMiddleware` trait: `async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse`
 - [ ] Support DI in middleware structs (`#[inject]` on fields)
-- [ ] Support functional middleware (closure-based, no struct needed)
+- [x] Support functional middleware (closure-based, no struct needed)
 
 #### 3.3.2 — `#[middleware]` Attribute Macro
 - [ ] Parse `#[middleware]` on struct

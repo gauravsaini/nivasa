@@ -206,3 +206,41 @@ async fn server_short_circuits_when_middleware_does_not_delegate(
     assert!(!called.load(Ordering::SeqCst));
     Ok(())
 }
+
+#[tokio::test]
+async fn server_supports_functional_middleware() -> Result<(), Box<dyn std::error::Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .middleware(|mut req: NivasaRequest, next: NextMiddleware| async move {
+            req.body_mut().clone_from(&Body::text("functional"));
+            next.run(req).await
+        })
+        .route(RouteMethod::Post, "/middleware", |request| {
+            NivasaResponse::new(StatusCode::OK, request.body().clone())
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::POST)
+        .uri(format!("http://127.0.0.1:{port}/middleware"))
+        .body(Full::new(Bytes::from_static(b"original")))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let body = response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body.as_ref(), b"functional");
+    Ok(())
+}
