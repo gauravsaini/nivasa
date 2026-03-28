@@ -449,6 +449,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 3.1 — Guard System (`nivasa-guards` + `nivasa-macros`)
 
+> Shared context note: `nivasa-common::RequestContext` is now the canonical per-request context foundation; the guard runtime surface can converge onto it via the existing adapter path in later slices.
+
 #### 3.1.1 — Guard Trait
 - [x] Define `Guard` trait: `async fn can_activate(&self, context: &ExecutionContext) -> Result<bool, HttpException>`
 - [x] Define `ExecutionContext` struct (request, handler metadata, class metadata, custom data map)
@@ -489,7 +491,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 3.2 — Interceptor System (`nivasa-interceptors` + `nivasa-macros`)
 
-> Shared context note: `nivasa-common::RequestContext` is now the canonical per-request context foundation; the interceptor runtime surface should converge onto it in later slices.
+> Shared context note: `nivasa-common::RequestContext` is now the canonical per-request context foundation; the interceptor runtime surface should converge onto it via the existing adapter path in later slices.
 
 #### 3.2.1 — Interceptor Trait
 - [x] Define `Interceptor` trait: `async fn intercept(&self, context: &ExecutionContext, next: CallHandler) -> Result<Response>`
