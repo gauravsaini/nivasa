@@ -902,6 +902,69 @@ where
     }
 }
 
+/// Execute a controller-style action with a single uploaded file.
+///
+/// This is intentionally narrow: multipart parsing still happens in a focused
+/// upload helper after route matching has completed, rather than inside the
+/// SCXML-driven request pipeline itself.
+pub fn run_controller_action_with_file<F, R>(
+    request: &NivasaRequest,
+    interceptor: &upload::FileInterceptor,
+    action: F,
+) -> NivasaResponse
+where
+    F: FnOnce(upload::UploadedFile) -> R,
+    R: IntoResponse,
+{
+    let Some(content_type) = request.header(CONTENT_TYPE.as_str()) else {
+        return HttpException::bad_request("request is missing header `content-type`")
+            .into_response();
+    };
+
+    let Ok(content_type) = content_type.to_str() else {
+        return HttpException::bad_request(
+            "invalid header `content-type`: header value is not valid ASCII",
+        )
+        .into_response();
+    };
+
+    match interceptor.extract_from_bytes(content_type, &request.body().as_bytes()) {
+        Ok(file) => action(file).into_response(),
+        Err(error) => HttpException::bad_request(error.to_string()).into_response(),
+    }
+}
+
+/// Execute a controller-style action with multiple uploaded files.
+///
+/// This keeps multipart parsing in the upload helper layer and assumes the
+/// SCXML-driven request pipeline has already advanced through route matching.
+pub fn run_controller_action_with_files<F, R>(
+    request: &NivasaRequest,
+    interceptor: &upload::FilesInterceptor,
+    action: F,
+) -> NivasaResponse
+where
+    F: FnOnce(Vec<upload::UploadedFile>) -> R,
+    R: IntoResponse,
+{
+    let Some(content_type) = request.header(CONTENT_TYPE.as_str()) else {
+        return HttpException::bad_request("request is missing header `content-type`")
+            .into_response();
+    };
+
+    let Ok(content_type) = content_type.to_str() else {
+        return HttpException::bad_request(
+            "invalid header `content-type`: header value is not valid ASCII",
+        )
+        .into_response();
+    };
+
+    match interceptor.extract_from_bytes(content_type, &request.body().as_bytes()) {
+        Ok(files) => action(files).into_response(),
+        Err(error) => HttpException::bad_request(error.to_string()).into_response(),
+    }
+}
+
 impl IntoResponse for NivasaResponse {
     fn into_response(self) -> NivasaResponse {
         self
