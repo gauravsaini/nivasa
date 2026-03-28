@@ -60,7 +60,7 @@
 - [ ] Re-export key traits and runtime types: `Module`, `Injectable`, `Controller`, `Guard`, `Interceptor`, `Pipe`, `ExceptionFilter`, `Middleware`, plus the landed DI/module/runtime surface
 - [x] Re-export key macros: `#[module]`, `#[injectable]`, `#[controller]`, `#[get]`, `#[post]`, `#[put]`, `#[delete]`, `#[patch]`, `#[head]`, `#[options]`, `#[all]`, `#[impl_controller]`, `#[scxml_handler]`
 - [x] Re-export `ServerOptions`, `HttpException`, and the existing HTTP/server surface
-- [ ] Re-export `StatechartEngine`, generated state/event enums from `nivasa-statechart`
+- [x] Re-export `StatechartEngine`, generated state/event enums from `nivasa-statechart`
 - [x] Feature-gate optional sub-crates (e.g., `features = ["websocket", "config", "validation"]`)
 
 ---
