@@ -450,8 +450,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 3.1 — Guard System (`nivasa-guards` + `nivasa-macros`)
 
 #### 3.1.1 — Guard Trait
-- [ ] Define `Guard` trait: `async fn can_activate(&self, context: &ExecutionContext) -> Result<bool, HttpException>`
-- [ ] Define `ExecutionContext` struct (request, handler metadata, class metadata, custom data map)
+- [x] Define `Guard` trait: `async fn can_activate(&self, context: &ExecutionContext) -> Result<bool, HttpException>`
+- [x] Define `ExecutionContext` struct (request, handler metadata, class metadata, custom data map)
 - [ ] Support DI in guard structs (guards are injectable)
 
 #### 3.1.2 — `#[guard]` Attribute Macro
@@ -462,10 +462,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 3.1.3 — Guard Execution Pipeline
 - [ ] Implement guard chain execution (AND logic: all must pass)
-- [ ] Implement short-circuit on first failure
+- [x] Implement short-circuit on first failure
 - [ ] Return `ForbiddenException` on guard failure (configurable)
-- [ ] Support guard returning custom exception on failure
-- [ ] Support async guard execution
+- [x] Support guard returning custom exception on failure
+- [x] Support async guard execution
 
 #### 3.1.4 — Reflector / Metadata (NestJS `SetMetadata`)
 - [ ] Implement `#[set_metadata(key, value)]` decorator
