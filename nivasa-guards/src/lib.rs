@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 
-use nivasa_common::HttpException;
+use nivasa_common::{HttpException, RequestContext};
 
 type ContextValue = Arc<dyn Any + Send + Sync>;
 
@@ -24,6 +24,7 @@ pub type ContextDataMap = BTreeMap<String, ContextValue>;
 #[derive(Clone)]
 pub struct ExecutionContext {
     request: ContextValue,
+    request_context: Option<Arc<RequestContext>>,
     handler_metadata: ContextDataMap,
     class_metadata: ContextDataMap,
     custom_data: ContextDataMap,
@@ -37,10 +38,22 @@ impl ExecutionContext {
     {
         Self {
             request: Arc::new(request),
+            request_context: None,
             handler_metadata: BTreeMap::new(),
             class_metadata: BTreeMap::new(),
             custom_data: BTreeMap::new(),
         }
+    }
+
+    /// Attach the shared canonical request context without replacing the
+    /// existing guard-local request value or metadata surface.
+    pub fn with_request_context(mut self, request_context: RequestContext) -> Self {
+        self.request_context = Some(Arc::new(request_context));
+        self
+    }
+
+    pub fn request_context(&self) -> Option<&RequestContext> {
+        self.request_context.as_deref()
     }
 
     /// Return the typed request value if it matches the requested type.
@@ -48,7 +61,10 @@ impl ExecutionContext {
     where
         T: Any + Send + Sync + 'static,
     {
-        self.request.as_ref().downcast_ref::<T>()
+        self.request
+            .as_ref()
+            .downcast_ref::<T>()
+            .or_else(|| self.request_context.as_ref()?.request_data::<T>())
     }
 
     /// Return the raw request value for integration layers that need to downcast manually.
@@ -152,7 +168,7 @@ pub trait Guard: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::{ExecutionContext, Guard};
-    use nivasa_common::HttpException;
+    use nivasa_common::{HttpException, RequestContext};
     use std::{
         future::Future,
         pin::Pin,
@@ -196,6 +212,22 @@ mod tests {
         );
         assert_eq!(context.class_metadata::<&'static str>("controller"), Some(&"users"));
         assert_eq!(context.custom_data::<&'static str>("tenant"), Some(&"acme"));
+    }
+
+    #[test]
+    fn execution_context_can_attach_shared_request_context() {
+        let mut request_context = RequestContext::new();
+        request_context.insert_request_data(FakeRequest { path: "/shared" });
+        request_context.set_handler_metadata("roles", ["admin"]);
+
+        let context = ExecutionContext::new(())
+            .with_request_context(request_context);
+
+        assert_eq!(
+            context.request::<FakeRequest>(),
+            Some(&FakeRequest { path: "/shared" })
+        );
+        assert!(context.request_context().is_some());
     }
 
     #[test]
