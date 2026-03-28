@@ -427,8 +427,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 2.2.4 — Multipart / File Upload
 - [x] Add `multer` crate dependency for multipart parsing
 - [x] Implement `UploadedFile` struct (filename, content_type, bytes)
-- [ ] Implement `FileInterceptor` (single file)
-- [ ] Implement `FilesInterceptor` (multiple files)
+- [x] Implement `FileInterceptor` (single file)
+- [x] Implement `FilesInterceptor` (multiple files)
 - [x] Implement configurable file size limits
 - [x] Implement configurable allowed MIME types
 
@@ -439,7 +439,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test response serialization (JSON, text, HTML)
 - [x] Test 404 for unknown routes
 - [x] Test request body size limit enforcement
-- [ ] Test file upload via multipart
+- [ ] Test file upload via multipart (coverage added; full local execution blocked by missing `pkg-config`/`libxml` in this environment)
 
 ---
 
