@@ -50,7 +50,13 @@ pub mod prelude {
         http_code, impl_controller, injectable, ip, module, options, param, patch, post, put,
         query, req, res, scxml_handler, session,
     };
-    pub use nivasa_statechart::{StatechartEngine, StatechartSpec};
+    pub use nivasa_statechart::{
+        GENERATED_STATECHARTS, NivasaApplicationEvent, NivasaApplicationState,
+        NivasaApplicationStatechart, NivasaModuleEvent, NivasaModuleState,
+        NivasaModuleStatechart, NivasaProviderEvent, NivasaProviderState,
+        NivasaProviderStatechart, NivasaRequestEvent, NivasaRequestState,
+        NivasaRequestStatechart, StatechartEngine, StatechartSpec,
+    };
     #[cfg(feature = "validation")]
     pub use nivasa_validation as validation;
     #[cfg(feature = "websocket")]
@@ -89,7 +95,13 @@ pub use nivasa_macros::{
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
     req, res, scxml_handler, session,
 };
-pub use nivasa_statechart::{self, StatechartEngine, StatechartSpec};
+pub use nivasa_statechart::{
+    self, GENERATED_STATECHARTS, NivasaApplicationEvent, NivasaApplicationState,
+    NivasaApplicationStatechart, NivasaModuleEvent, NivasaModuleState,
+    NivasaModuleStatechart, NivasaProviderEvent, NivasaProviderState,
+    NivasaProviderStatechart, NivasaRequestEvent, NivasaRequestState,
+    NivasaRequestStatechart, StatechartEngine, StatechartSpec,
+};
 #[cfg(feature = "validation")]
 pub use nivasa_validation as validation;
 #[cfg(feature = "websocket")]

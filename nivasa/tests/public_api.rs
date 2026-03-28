@@ -5,6 +5,8 @@ use nivasa::prelude::{
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
     req, res, scxml_handler, session,
 };
+use std::future::Future;
+use std::pin::Pin;
 
 #[test]
 fn crate_root_reexports_app_config_builders() {
@@ -126,11 +128,25 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
         .status(HttpStatus::Ok.into())
         .build();
     let _ = NivasaServer::builder();
-    let _ = UploadedFile::new("avatar.png", Some("image/png"), vec![1, 2, 3]);
+    let _ = UploadedFile::new("avatar.png", Some("image/png".to_string()), vec![1, 2, 3]);
     let _ = DynamicModule::new(ModuleMetadata::default());
     let _ = ProviderScope::Singleton;
     let _ = HttpStatus::Ok;
     let _ = HttpException::bad_request("boom");
+}
+
+#[test]
+fn crate_root_and_prelude_reexport_generated_statechart_types() {
+    fn _assert_root_application_state(_: nivasa::NivasaApplicationState) {}
+    fn _assert_root_application_event(_: nivasa::NivasaApplicationEvent) {}
+    fn _assert_root_request_statechart(_: Option<nivasa::NivasaRequestStatechart>) {}
+    fn _assert_prelude_module_state(_: NivasaModuleState) {}
+    fn _assert_prelude_provider_event(_: NivasaProviderEvent) {}
+    fn _assert_prelude_application_statechart(_: Option<NivasaApplicationStatechart>) {}
+
+    let generated = nivasa::GENERATED_STATECHARTS;
+
+    assert!(!generated.is_empty());
 }
 
 #[test]
@@ -147,8 +163,20 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
 struct DemoModule;
 
 impl Module for DemoModule {
-    fn metadata() -> ModuleMetadata {
+    fn metadata(&self) -> ModuleMetadata {
         ModuleMetadata::default()
+    }
+
+    fn configure<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        _container: &'life1 DependencyContainer,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DiError>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async { Ok(()) })
     }
 }
 
