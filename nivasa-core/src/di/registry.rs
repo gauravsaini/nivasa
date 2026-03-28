@@ -39,6 +39,14 @@ impl ProviderRegistry {
 
     pub fn insert<T: 'static>(&mut self, provider: Arc<dyn Provider>) -> Option<Arc<dyn Provider>> {
         let type_id = TypeId::of::<T>();
+        self.insert_by_id(type_id, provider)
+    }
+
+    pub fn insert_by_id(
+        &mut self,
+        type_id: TypeId,
+        provider: Arc<dyn Provider>,
+    ) -> Option<Arc<dyn Provider>> {
         let entry = ProviderEntry {
             metadata: provider.metadata().clone(),
             provider: provider.clone(),
@@ -75,6 +83,10 @@ impl ProviderRegistry {
         self.entries
             .get(&TypeId::of::<T>())
             .map(|entry| entry.metadata.clone())
+    }
+
+    pub fn metadata_by_id(&self, type_id: TypeId) -> Option<ProviderMetadata> {
+        self.entries.get(&type_id).map(|entry| entry.metadata.clone())
     }
 
     pub fn snapshot(&self) -> Vec<(TypeId, Arc<dyn Provider>, ProviderMetadata)> {

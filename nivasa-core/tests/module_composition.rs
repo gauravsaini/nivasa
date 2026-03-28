@@ -1,6 +1,10 @@
 use async_trait::async_trait;
-use nivasa_core::module::{Module, ModuleMetadata, ModuleRegistry, ModuleRegistryError};
+use nivasa_core::di::error::DiError;
+use nivasa_core::module::{
+    Module, ModuleMetadata, ModuleOrchestrator, ModuleRegistry, ModuleRegistryError,
+};
 use std::any::{type_name, TypeId};
+use std::sync::{Arc, Mutex};
 
 struct PublicService;
 struct HiddenService;
@@ -12,6 +16,13 @@ struct ReExportingModule;
 struct ConsumerModule;
 struct GlobalModule;
 struct BrokenExportModule;
+struct ImportedPublicService;
+struct ImportedHiddenService;
+struct ExportingSingletonModule;
+struct ImportingSingletonModule {
+    seen_public: Arc<Mutex<bool>>,
+    saw_hidden_error: Arc<Mutex<bool>>,
+}
 
 fn metadata(
     imports: Vec<TypeId>,
@@ -140,6 +151,56 @@ impl Module for BrokenExportModule {
     }
 }
 
+#[async_trait]
+impl Module for ExportingSingletonModule {
+    fn metadata(&self) -> ModuleMetadata {
+        metadata(
+            vec![],
+            vec![
+                TypeId::of::<ImportedPublicService>(),
+                TypeId::of::<ImportedHiddenService>(),
+            ],
+            vec![TypeId::of::<ImportedPublicService>()],
+            false,
+        )
+    }
+
+    async fn configure(
+        &self,
+        container: &nivasa_core::di::DependencyContainer,
+    ) -> Result<(), nivasa_core::di::error::DiError> {
+        container.register_value(ImportedPublicService).await;
+        container.register_value(ImportedHiddenService).await;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Module for ImportingSingletonModule {
+    fn metadata(&self) -> ModuleMetadata {
+        metadata(
+            vec![TypeId::of::<ExportingSingletonModule>()],
+            vec![],
+            vec![],
+            false,
+        )
+    }
+
+    async fn configure(
+        &self,
+        container: &nivasa_core::di::DependencyContainer,
+    ) -> Result<(), nivasa_core::di::error::DiError> {
+        let public = container.resolve::<ImportedPublicService>().await;
+        *self.seen_public.lock().unwrap() = public.is_ok();
+
+        let hidden = container.resolve::<ImportedHiddenService>().await;
+        *self.saw_hidden_error.lock().unwrap() =
+            matches!(hidden, Err(DiError::ProviderNotFound(_)));
+
+        Ok(())
+    }
+}
+
 #[test]
 fn import_resolution_and_re_exports_respect_export_boundaries() {
     let mut registry = ModuleRegistry::new();
@@ -194,4 +255,22 @@ fn invalid_exports_are_rejected_during_visibility_resolution() {
         }
         other => panic!("unexpected error: {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn orchestrator_seeds_imported_exported_singletons_without_hidden_providers() {
+    let seen_public = Arc::new(Mutex::new(false));
+    let saw_hidden_error = Arc::new(Mutex::new(false));
+    let mut orchestrator = ModuleOrchestrator::new();
+
+    orchestrator.register(ExportingSingletonModule);
+    orchestrator.register(ImportingSingletonModule {
+        seen_public: seen_public.clone(),
+        saw_hidden_error: saw_hidden_error.clone(),
+    });
+
+    orchestrator.bootstrap().await.unwrap();
+
+    assert!(*seen_public.lock().unwrap());
+    assert!(*saw_hidden_error.lock().unwrap());
 }
