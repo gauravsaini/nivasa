@@ -1432,7 +1432,7 @@ where
     }
 }
 
-pub use pipeline::RequestPipeline;
+pub use pipeline::{GuardExecutionOutcome, RequestPipeline};
 pub use server::{NivasaServer, NivasaServerBuilder};
 pub use upload::UploadedFile;
 

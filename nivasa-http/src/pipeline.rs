@@ -8,6 +8,8 @@
 //! `Received -> MiddlewareChain -> RouteMatching -> GuardChain -> InterceptorPre -> PipeTransform -> HandlerExecution -> InterceptorPost -> ErrorHandling -> SendingResponse -> Done`
 
 use crate::NivasaRequest;
+use nivasa_common::HttpException;
+use nivasa_guards::{ExecutionContext, Guard};
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry};
 use nivasa_statechart::{
     InvalidTransitionError, NivasaRequestEvent, NivasaRequestState, NivasaRequestStatechart,
@@ -173,6 +175,14 @@ impl From<RequestEvent> for NivasaRequestEvent {
     }
 }
 
+/// Result of evaluating a guard against the request pipeline.
+#[derive(Clone, Debug)]
+pub enum GuardExecutionOutcome {
+    Passed,
+    Denied,
+    Error(HttpException),
+}
+
 /// SCXML-safe request coordinator for the first request pipeline stages.
 pub struct RequestPipeline {
     engine: StatechartEngine<NivasaRequestStatechart>,
@@ -279,6 +289,29 @@ impl RequestPipeline {
         &mut self,
     ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
         self.advance(RequestEvent::guard_error())
+    }
+
+    /// Evaluate a guard from the SCXML `GuardChain` state and advance along the
+    /// pass, deny, or error transition that the guard result dictates.
+    pub async fn evaluate_guard<G: Guard + ?Sized>(
+        &mut self,
+        guard: &G,
+        context: &ExecutionContext,
+    ) -> Result<GuardExecutionOutcome, InvalidTransitionError<NivasaRequestStatechart>> {
+        match guard.can_activate(context).await {
+            Ok(true) => {
+                self.pass_guards()?;
+                Ok(GuardExecutionOutcome::Passed)
+            }
+            Ok(false) => {
+                self.deny_guards()?;
+                Ok(GuardExecutionOutcome::Denied)
+            }
+            Err(error) => {
+                self.fail_guards()?;
+                Ok(GuardExecutionOutcome::Error(error))
+            }
+        }
     }
 
     /// Mark interceptor pre-processing as complete.

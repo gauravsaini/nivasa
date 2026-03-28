@@ -1,4 +1,6 @@
 use http::Method;
+use nivasa_common::HttpException;
+use nivasa_guards::{ExecutionContext, Guard, GuardFuture};
 use nivasa_http::{Body, RequestPipeline};
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod};
 
@@ -154,6 +156,62 @@ fn request_pipeline_short_circuits_guard_denials_via_scxml() {
     pipeline.fail_send().unwrap();
 
     assert_eq!(pipeline.snapshot().current_state, "Done");
+}
+
+struct AllowGuard;
+
+impl Guard for AllowGuard {
+    fn can_activate<'a>(&'a self, _: &'a ExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async { Ok(true) })
+    }
+}
+
+struct DenyGuard;
+
+impl Guard for DenyGuard {
+    fn can_activate<'a>(&'a self, _: &'a ExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async { Ok(false) })
+    }
+}
+
+struct ErrorGuard;
+
+impl Guard for ErrorGuard {
+    fn can_activate<'a>(&'a self, _: &'a ExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async { Err(HttpException::forbidden("blocked")) })
+    }
+}
+
+#[tokio::test]
+async fn request_pipeline_can_evaluate_guard_results_through_scxml() {
+    let context = ExecutionContext::new(());
+
+    let mut passed = matched_pipeline();
+    let passed_outcome = passed.evaluate_guard(&AllowGuard, &context).await.unwrap();
+    assert!(matches!(
+        passed_outcome,
+        nivasa_http::GuardExecutionOutcome::Passed
+    ));
+    assert_eq!(passed.snapshot().current_state, "InterceptorPre");
+
+    let mut denied = matched_pipeline();
+    let denied_outcome = denied.evaluate_guard(&DenyGuard, &context).await.unwrap();
+    assert!(matches!(
+        denied_outcome,
+        nivasa_http::GuardExecutionOutcome::Denied
+    ));
+    assert_eq!(denied.snapshot().current_state, "ErrorHandling");
+
+    let mut errored = matched_pipeline();
+    let error_outcome = errored.evaluate_guard(&ErrorGuard, &context).await.unwrap();
+    match error_outcome {
+        nivasa_http::GuardExecutionOutcome::Error(error) => {
+            assert_eq!(error.status_code, 403);
+            assert_eq!(error.message, "blocked");
+        }
+        other => panic!("expected guard error outcome, got {other:?}"),
+    }
+    assert_eq!(errored.snapshot().current_state, "ErrorHandling");
 }
 
 #[test]
