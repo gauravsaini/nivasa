@@ -1,4 +1,6 @@
-use crate::{Body, NivasaRequest, NivasaResponse, RequestPipeline};
+use crate::{
+    Body, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse, RequestPipeline,
+};
 use bytes::{Bytes, BytesMut};
 use http::{
     header::{
@@ -22,10 +24,12 @@ use tokio::{net::TcpListener, sync::oneshot, task::JoinSet};
 use tokio_rustls::TlsAcceptor;
 
 type RouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
+type MiddlewareLayer = Arc<dyn NivasaMiddleware + Send + Sync + 'static>;
 
 /// Minimal HTTP transport shell for Nivasa.
 pub struct NivasaServer {
     routes: RouteDispatchRegistry<RouteHandler>,
+    middleware: Option<MiddlewareLayer>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -37,6 +41,7 @@ pub struct NivasaServer {
 /// Builder for [`NivasaServer`].
 pub struct NivasaServerBuilder {
     routes: RouteDispatchRegistry<RouteHandler>,
+    middleware: Option<MiddlewareLayer>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -57,6 +62,7 @@ impl NivasaServer {
         let listener = TcpListener::bind(addr).await?;
         let mut shutdown = shutdown_future(self.shutdown.take());
         let routes = self.routes;
+        let middleware = self.middleware;
         let cors = self.cors;
         let request_timeout = self.request_timeout;
         let request_body_size_limit = self.request_body_size_limit;
@@ -72,6 +78,7 @@ impl NivasaServer {
                 accept = listener.accept() => {
                     let (stream, _) = accept?;
                     let routes = routes.clone();
+                    let middleware = middleware.clone();
                     #[cfg(feature = "tls")]
                     let tls_config = tls_config.clone();
 
@@ -83,6 +90,7 @@ impl NivasaServer {
                                 serve_connection(
                                     stream,
                                     routes,
+                                    middleware,
                                     cors,
                                     request_timeout,
                                     request_body_size_limit,
@@ -95,6 +103,7 @@ impl NivasaServer {
                         serve_connection(
                             stream,
                             routes,
+                            middleware,
                             cors,
                             request_timeout,
                             request_body_size_limit,
@@ -114,6 +123,7 @@ impl NivasaServerBuilder {
     fn new() -> Self {
         Self {
             routes: RouteDispatchRegistry::new(),
+            middleware: None,
             cors: false,
             request_timeout: None,
             request_body_size_limit: None,
@@ -169,6 +179,15 @@ impl NivasaServerBuilder {
         self
     }
 
+    /// Register a single middleware hook around request handling.
+    pub fn middleware<M>(mut self, middleware: M) -> Self
+    where
+        M: NivasaMiddleware + Send + Sync + 'static,
+    {
+        self.middleware = Some(Arc::new(middleware));
+        self
+    }
+
     /// Toggle permissive transport-side CORS handling explicitly.
     pub fn cors(mut self, cors: bool) -> Self {
         self.cors = cors;
@@ -204,6 +223,7 @@ impl NivasaServerBuilder {
     pub fn build(self) -> NivasaServer {
         NivasaServer {
             routes: self.routes,
+            middleware: self.middleware,
             cors: self.cors,
             request_timeout: self.request_timeout,
             request_body_size_limit: self.request_body_size_limit,
@@ -217,6 +237,7 @@ impl NivasaServerBuilder {
 async fn serve_connection<S>(
     stream: S,
     routes: RouteDispatchRegistry<RouteHandler>,
+    middleware: Option<MiddlewareLayer>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -226,6 +247,7 @@ async fn serve_connection<S>(
     let io = TokioIo::new(stream);
     let service = service_fn(move |request| {
         let routes = routes.clone();
+        let middleware = middleware.clone();
         let cors = cors;
         let request_timeout = request_timeout;
         let request_body_size_limit = request_body_size_limit;
@@ -233,7 +255,7 @@ async fn serve_connection<S>(
             if let Some(timeout) = request_timeout {
                 match tokio::time::timeout(
                     timeout,
-                    handle_request(request, routes, cors, request_body_size_limit),
+                    handle_request(request, routes, middleware, cors, request_body_size_limit),
                 )
                 .await
                 {
@@ -247,7 +269,7 @@ async fn serve_connection<S>(
                     )),
                 }
             } else {
-                handle_request(request, routes, cors, request_body_size_limit).await
+                handle_request(request, routes, middleware, cors, request_body_size_limit).await
             }
         }
     });
@@ -259,6 +281,7 @@ async fn serve_connection<S>(
 async fn handle_request(
     request: hyper::Request<Incoming>,
     routes: RouteDispatchRegistry<RouteHandler>,
+    middleware: Option<MiddlewareLayer>,
     cors: bool,
     request_body_size_limit: Option<usize>,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
@@ -293,6 +316,27 @@ async fn handle_request(
     };
 
     let request = NivasaRequest::from_http(Request::from_parts(parts, body));
+    let request = match middleware {
+        Some(middleware) => match execute_middleware(middleware, request).await {
+            MiddlewareExecution::Forwarded(request) => request,
+            MiddlewareExecution::ShortCircuited { request, response } => {
+                let mut pipeline = RequestPipeline::new(request);
+
+                if pipeline.parse_request().is_err() || pipeline.fail_middleware().is_err() {
+                    return Ok(finalize_response(
+                        NivasaResponse::new(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Body::text("request pipeline middleware transition failed"),
+                        ),
+                        cors,
+                    ));
+                }
+
+                return Ok(finalize_response(response, cors));
+            }
+        },
+        None => request,
+    };
     let mut pipeline = RequestPipeline::new(request);
 
     if pipeline.parse_request().is_err() {
@@ -346,6 +390,41 @@ async fn handle_request(
     };
 
     Ok(finalize_response(response, cors))
+}
+
+enum MiddlewareExecution {
+    Forwarded(NivasaRequest),
+    ShortCircuited {
+        request: NivasaRequest,
+        response: NivasaResponse,
+    },
+}
+
+async fn execute_middleware(
+    middleware: MiddlewareLayer,
+    request: NivasaRequest,
+) -> MiddlewareExecution {
+    let forwarded_request = Arc::new(tokio::sync::Mutex::new(None));
+    let capture = Arc::clone(&forwarded_request);
+    let next = NextMiddleware::new(move |request: NivasaRequest| {
+        let capture = Arc::clone(&capture);
+        async move {
+            *capture.lock().await = Some(request);
+            NivasaResponse::new(StatusCode::NO_CONTENT, Body::empty())
+        }
+    });
+
+    let original_request = request.clone();
+    let response = middleware.use_(request, next).await;
+    let forwarded_request = forwarded_request.lock().await.take();
+
+    match forwarded_request {
+        Some(request) => MiddlewareExecution::Forwarded(request),
+        None => MiddlewareExecution::ShortCircuited {
+            request: original_request,
+            response,
+        },
+    }
 }
 
 async fn collect_request_body(
