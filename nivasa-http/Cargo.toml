@@ -20,6 +20,7 @@ hyper-util = { workspace = true }
 multer = "3.1"
 nivasa-common = { path = "../nivasa-common" }
 nivasa-guards = { path = "../nivasa-guards" }
+nivasa-interceptors = { path = "../nivasa-interceptors" }
 nivasa-routing = { path = "../nivasa-routing" }
 nivasa-statechart = { path = "../nivasa-statechart" }
 tokio = { workspace = true }

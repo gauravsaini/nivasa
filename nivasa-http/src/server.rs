@@ -1,5 +1,6 @@
 use crate::{
-    Body, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse, RequestPipeline,
+    Body, IntoResponse, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse,
+    RequestPipeline,
 };
 use bytes::{Bytes, BytesMut};
 use http::{
@@ -14,22 +15,38 @@ use http_body_util::{BodyExt, Full};
 use hyper::{body::Incoming, service::service_fn};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder as AutoBuilder;
+use nivasa_common::HttpException;
+use nivasa_interceptors::{
+    CallHandler, ExecutionContext as InterceptorExecutionContext, Interceptor,
+};
 use nivasa_routing::{
     parse_api_version_accept, parse_api_version_header, RouteDispatchError, RouteDispatchOutcome,
     RouteDispatchRegistry, RouteMethod,
 };
-use std::{future::Future, io, net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    io,
+    net::SocketAddr,
+    pin::Pin,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tokio::{net::TcpListener, sync::oneshot, task::JoinSet};
 #[cfg(feature = "tls")]
 use tokio_rustls::TlsAcceptor;
 
 type RouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
 type MiddlewareLayer = Arc<dyn NivasaMiddleware + Send + Sync + 'static>;
+type InterceptorLayer = Arc<dyn Interceptor<Response = NivasaResponse> + Send + Sync + 'static>;
 
 /// Minimal HTTP transport shell for Nivasa.
 pub struct NivasaServer {
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
+    interceptor: Option<InterceptorLayer>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -42,6 +59,7 @@ pub struct NivasaServer {
 pub struct NivasaServerBuilder {
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
+    interceptor: Option<InterceptorLayer>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -63,6 +81,7 @@ impl NivasaServer {
         let mut shutdown = shutdown_future(self.shutdown.take());
         let routes = self.routes;
         let middleware = self.middleware;
+        let interceptor = self.interceptor;
         let cors = self.cors;
         let request_timeout = self.request_timeout;
         let request_body_size_limit = self.request_body_size_limit;
@@ -79,6 +98,7 @@ impl NivasaServer {
                     let (stream, _) = accept?;
                     let routes = routes.clone();
                     let middleware = middleware.clone();
+                    let interceptor = interceptor.clone();
                     #[cfg(feature = "tls")]
                     let tls_config = tls_config.clone();
 
@@ -91,6 +111,7 @@ impl NivasaServer {
                                     stream,
                                     routes,
                                     middleware,
+                                    interceptor,
                                     cors,
                                     request_timeout,
                                     request_body_size_limit,
@@ -104,6 +125,7 @@ impl NivasaServer {
                             stream,
                             routes,
                             middleware,
+                            interceptor,
                             cors,
                             request_timeout,
                             request_body_size_limit,
@@ -124,6 +146,7 @@ impl NivasaServerBuilder {
         Self {
             routes: RouteDispatchRegistry::new(),
             middleware: None,
+            interceptor: None,
             cors: false,
             request_timeout: None,
             request_body_size_limit: None,
@@ -188,6 +211,15 @@ impl NivasaServerBuilder {
         self
     }
 
+    /// Register a single interceptor hook around a matched route handler.
+    pub fn interceptor<I>(mut self, interceptor: I) -> Self
+    where
+        I: Interceptor<Response = NivasaResponse> + Send + Sync + 'static,
+    {
+        self.interceptor = Some(Arc::new(interceptor));
+        self
+    }
+
     /// Toggle permissive transport-side CORS handling explicitly.
     pub fn cors(mut self, cors: bool) -> Self {
         self.cors = cors;
@@ -224,6 +256,7 @@ impl NivasaServerBuilder {
         NivasaServer {
             routes: self.routes,
             middleware: self.middleware,
+            interceptor: self.interceptor,
             cors: self.cors,
             request_timeout: self.request_timeout,
             request_body_size_limit: self.request_body_size_limit,
@@ -238,6 +271,7 @@ async fn serve_connection<S>(
     stream: S,
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
+    interceptor: Option<InterceptorLayer>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -248,6 +282,7 @@ async fn serve_connection<S>(
     let service = service_fn(move |request| {
         let routes = routes.clone();
         let middleware = middleware.clone();
+        let interceptor = interceptor.clone();
         let cors = cors;
         let request_timeout = request_timeout;
         let request_body_size_limit = request_body_size_limit;
@@ -255,7 +290,14 @@ async fn serve_connection<S>(
             if let Some(timeout) = request_timeout {
                 match tokio::time::timeout(
                     timeout,
-                    handle_request(request, routes, middleware, cors, request_body_size_limit),
+                    handle_request(
+                        request,
+                        routes,
+                        middleware,
+                        interceptor,
+                        cors,
+                        request_body_size_limit,
+                    ),
                 )
                 .await
                 {
@@ -269,7 +311,15 @@ async fn serve_connection<S>(
                     )),
                 }
             } else {
-                handle_request(request, routes, middleware, cors, request_body_size_limit).await
+                handle_request(
+                    request,
+                    routes,
+                    middleware,
+                    interceptor,
+                    cors,
+                    request_body_size_limit,
+                )
+                .await
             }
         }
     });
@@ -282,6 +332,7 @@ async fn handle_request(
     request: hyper::Request<Incoming>,
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
+    interceptor: Option<InterceptorLayer>,
     cors: bool,
     request_body_size_limit: Option<usize>,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
@@ -365,12 +416,69 @@ async fn handle_request(
         Ok(RouteDispatchOutcome::Matched(entry)) => {
             let handler = Arc::clone(&entry.value);
             let request = pipeline.request().clone();
-            match tokio::task::spawn_blocking(move || (handler)(&request)).await {
-                Ok(response) => response,
-                Err(_) => NivasaResponse::new(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Body::text("request handler failed"),
-                ),
+            match interceptor {
+                Some(interceptor) => match execute_interceptor(interceptor, request, handler).await
+                {
+                    InterceptorExecution::Completed(response) => {
+                        if pipeline.pass_guards().is_err()
+                            || pipeline.complete_interceptors_pre().is_err()
+                            || pipeline.complete_pipes().is_err()
+                            || pipeline.complete_handler().is_err()
+                            || pipeline.complete_interceptors_post().is_err()
+                            || pipeline.complete_response().is_err()
+                        {
+                            NivasaResponse::new(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Body::text("request pipeline interceptor transition failed"),
+                            )
+                        } else {
+                            response
+                        }
+                    }
+                    InterceptorExecution::ShortCircuited(response) => {
+                        if pipeline.pass_guards().is_err()
+                            || pipeline.fail_interceptors_pre().is_err()
+                        {
+                            NivasaResponse::new(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Body::text("request pipeline interceptor transition failed"),
+                            )
+                        } else {
+                            response
+                        }
+                    }
+                    InterceptorExecution::Error {
+                        error,
+                        handler_called,
+                    } => {
+                        let transition_failed = if pipeline.pass_guards().is_err() {
+                            true
+                        } else if handler_called {
+                            pipeline.complete_interceptors_pre().is_err()
+                                || pipeline.complete_pipes().is_err()
+                                || pipeline.complete_handler().is_err()
+                                || pipeline.fail_interceptors_post().is_err()
+                        } else {
+                            pipeline.fail_interceptors_pre().is_err()
+                        };
+
+                        if transition_failed {
+                            NivasaResponse::new(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Body::text("request pipeline interceptor transition failed"),
+                            )
+                        } else {
+                            error.into_response()
+                        }
+                    }
+                },
+                None => match tokio::task::spawn_blocking(move || (handler)(&request)).await {
+                    Ok(response) => response,
+                    Err(_) => NivasaResponse::new(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Body::text("request handler failed"),
+                    ),
+                },
             }
         }
         Ok(RouteDispatchOutcome::NotFound) => {
@@ -400,6 +508,15 @@ enum MiddlewareExecution {
     },
 }
 
+enum InterceptorExecution {
+    Completed(NivasaResponse),
+    ShortCircuited(NivasaResponse),
+    Error {
+        error: HttpException,
+        handler_called: bool,
+    },
+}
+
 async fn execute_middleware(
     middleware: MiddlewareLayer,
     request: NivasaRequest,
@@ -423,6 +540,43 @@ async fn execute_middleware(
         None => MiddlewareExecution::ShortCircuited {
             request: original_request,
             response,
+        },
+    }
+}
+
+async fn execute_interceptor(
+    interceptor: InterceptorLayer,
+    request: NivasaRequest,
+    handler: RouteHandler,
+) -> InterceptorExecution {
+    let handler_called = Arc::new(AtomicBool::new(false));
+    let invoked = Arc::clone(&handler_called);
+    let request_for_handler = request.clone();
+    let context = InterceptorExecutionContext::new()
+        .with_request(request.method().to_string(), request.path().to_string());
+    let next = CallHandler::new(move || {
+        let invoked = Arc::clone(&invoked);
+        let handler = Arc::clone(&handler);
+        let request = request_for_handler.clone();
+        async move {
+            invoked.store(true, Ordering::SeqCst);
+            tokio::task::spawn_blocking(move || (handler)(&request))
+                .await
+                .map_err(|_| HttpException::internal_server_error("request handler failed"))
+        }
+    });
+
+    match interceptor.intercept(&context, next).await {
+        Ok(response) => {
+            if handler_called.load(Ordering::SeqCst) {
+                InterceptorExecution::Completed(response)
+            } else {
+                InterceptorExecution::ShortCircuited(response)
+            }
+        }
+        Err(error) => InterceptorExecution::Error {
+            error,
+            handler_called: handler_called.load(Ordering::SeqCst),
         },
     }
 }
