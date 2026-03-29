@@ -51,10 +51,54 @@ type GlobalFilterLayer =
     Arc<dyn ExceptionFilter<HttpException, NivasaResponse> + Send + Sync + 'static>;
 
 #[derive(Clone)]
-struct GlobalFilterBinding {
+pub struct GlobalFilterBinding {
     filter: GlobalFilterLayer,
     exception_type: Option<&'static str>,
     catch_all: bool,
+}
+
+impl GlobalFilterBinding {
+    pub fn new<F>(filter: F) -> Self
+    where
+        F: ExceptionFilter<HttpException, NivasaResponse>
+            + ExceptionFilterMetadata
+            + Send
+            + Sync
+            + 'static,
+    {
+        Self {
+            exception_type: filter.exception_type(),
+            catch_all: filter.is_catch_all(),
+            filter: Arc::new(filter),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct RouteHandlerBinding {
+    handler: RouteHandler,
+    handler_filters: Vec<GlobalFilterBinding>,
+    controller_filters: Vec<GlobalFilterBinding>,
+}
+
+impl RouteHandlerBinding {
+    fn new(handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static) -> Self {
+        Self {
+            handler: Arc::new(handler),
+            handler_filters: Vec::new(),
+            controller_filters: Vec::new(),
+        }
+    }
+
+    fn with_handler_filters(mut self, filters: Vec<GlobalFilterBinding>) -> Self {
+        self.handler_filters = filters;
+        self
+    }
+
+    fn with_controller_filters(mut self, filters: Vec<GlobalFilterBinding>) -> Self {
+        self.controller_filters = filters;
+        self
+    }
 }
 
 #[derive(Clone)]
@@ -66,7 +110,7 @@ struct RouteMiddlewareBinding {
 
 /// Minimal HTTP transport shell for Nivasa.
 pub struct NivasaServer {
-    routes: RouteDispatchRegistry<RouteHandler>,
+    routes: RouteDispatchRegistry<RouteHandlerBinding>,
     middleware: Option<MiddlewareLayer>,
     module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
@@ -82,7 +126,7 @@ pub struct NivasaServer {
 
 /// Builder for [`NivasaServer`].
 pub struct NivasaServerBuilder {
-    routes: RouteDispatchRegistry<RouteHandler>,
+    routes: RouteDispatchRegistry<RouteHandlerBinding>,
     middleware: Option<MiddlewareLayer>,
     module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
@@ -206,8 +250,27 @@ impl NivasaServerBuilder {
         path: impl Into<String>,
         handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static,
     ) -> Result<Self, RouteDispatchError> {
-        let handler: RouteHandler = Arc::new(handler);
-        self.routes.register_pattern(method, path, handler)?;
+        self.routes
+            .register_pattern(method, path, RouteHandlerBinding::new(handler))?;
+        Ok(self)
+    }
+
+    /// Register a request handler with local handler/controller exception filters.
+    pub fn route_with_filters(
+        mut self,
+        method: impl Into<RouteMethod>,
+        path: impl Into<String>,
+        handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static,
+        handler_filters: Vec<GlobalFilterBinding>,
+        controller_filters: Vec<GlobalFilterBinding>,
+    ) -> Result<Self, RouteDispatchError> {
+        self.routes.register_pattern(
+            method,
+            path,
+            RouteHandlerBinding::new(handler)
+                .with_handler_filters(handler_filters)
+                .with_controller_filters(controller_filters),
+        )?;
         Ok(self)
     }
 
@@ -219,9 +282,12 @@ impl NivasaServerBuilder {
         path: impl Into<String>,
         handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static,
     ) -> Result<Self, RouteDispatchError> {
-        let handler: RouteHandler = Arc::new(handler);
-        self.routes
-            .register_header_versioned_route(method, version, path, handler)?;
+        self.routes.register_header_versioned_route(
+            method,
+            version,
+            path,
+            RouteHandlerBinding::new(handler),
+        )?;
         Ok(self)
     }
 
@@ -233,9 +299,12 @@ impl NivasaServerBuilder {
         path: impl Into<String>,
         handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static,
     ) -> Result<Self, RouteDispatchError> {
-        let handler: RouteHandler = Arc::new(handler);
-        self.routes
-            .register_media_type_versioned_route(method, version, path, handler)?;
+        self.routes.register_media_type_versioned_route(
+            method,
+            version,
+            path,
+            RouteHandlerBinding::new(handler),
+        )?;
         Ok(self)
     }
 
@@ -293,11 +362,7 @@ impl NivasaServerBuilder {
             + Sync
             + 'static,
     {
-        self.global_filters.push(GlobalFilterBinding {
-            exception_type: filter.exception_type(),
-            catch_all: filter.is_catch_all(),
-            filter: Arc::new(filter),
-        });
+        self.global_filters.push(GlobalFilterBinding::new(filter));
         self
     }
 
@@ -353,7 +418,7 @@ impl NivasaServerBuilder {
 
 async fn serve_connection<S>(
     stream: S,
-    routes: RouteDispatchRegistry<RouteHandler>,
+    routes: RouteDispatchRegistry<RouteHandlerBinding>,
     middleware: Option<MiddlewareLayer>,
     module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
@@ -426,7 +491,7 @@ async fn serve_connection<S>(
 
 async fn handle_request(
     request: hyper::Request<Incoming>,
-    routes: RouteDispatchRegistry<RouteHandler>,
+    routes: RouteDispatchRegistry<RouteHandlerBinding>,
     middleware: Option<MiddlewareLayer>,
     module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
@@ -513,7 +578,8 @@ async fn handle_request(
 
     let response = match pipeline.match_route(&versioned_routes) {
         Ok(RouteDispatchOutcome::Matched(entry)) => {
-            let handler = Arc::clone(&entry.value);
+            let binding = entry.value.clone();
+            let handler = Arc::clone(&binding.handler);
             let request = pipeline.request().clone();
             let module_middlewares = module_middlewares.clone();
             let route_middlewares =
@@ -581,7 +647,14 @@ async fn handle_request(
                                 Body::text("request pipeline interceptor transition failed"),
                             )
                         } else {
-                            handle_http_exception(error, &global_filters, pipeline.request()).await
+                            handle_http_exception(
+                                error,
+                                &binding.handler_filters,
+                                &binding.controller_filters,
+                                &global_filters,
+                                pipeline.request(),
+                            )
+                            .await
                         }
                     }
                 },
@@ -632,10 +705,15 @@ enum InterceptorExecution {
 
 async fn handle_http_exception(
     error: HttpException,
+    handler_filters: &[GlobalFilterBinding],
+    controller_filters: &[GlobalFilterBinding],
     global_filters: &[GlobalFilterBinding],
     request: &NivasaRequest,
 ) -> NivasaResponse {
-    match select_global_filter(global_filters) {
+    match select_exception_filter(handler_filters)
+        .or_else(|| select_exception_filter(controller_filters))
+        .or_else(|| select_exception_filter(global_filters))
+    {
         Some(filter) => {
             let mut request_context = RequestContext::new();
             request_context.insert_request_data(request.clone());
@@ -657,7 +735,7 @@ async fn handle_http_exception(
     }
 }
 
-fn select_global_filter(filters: &[GlobalFilterBinding]) -> Option<&GlobalFilterBinding> {
+fn select_exception_filter(filters: &[GlobalFilterBinding]) -> Option<&GlobalFilterBinding> {
     let exception_type = std::any::type_name::<HttpException>();
 
     filters
@@ -885,8 +963,8 @@ enum BodyCollectionError {
 
 fn versioned_routes_for_request(
     request: &NivasaRequest,
-    routes: &RouteDispatchRegistry<RouteHandler>,
-) -> RouteDispatchRegistry<RouteHandler> {
+    routes: &RouteDispatchRegistry<RouteHandlerBinding>,
+) -> RouteDispatchRegistry<RouteHandlerBinding> {
     let version = request
         .headers()
         .get("X-API-Version")

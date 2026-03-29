@@ -679,7 +679,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 5.1.3 — Filter Execution
 - [x] Implement filter matching by exception type (most specific first)
-- [ ] Implement filter precedence: handler → controller → global
+- [x] Implement filter precedence: handler → controller → global
 - [ ] Implement fallback filter for completely unhandled exceptions (500 + log)
 - [x] Ensure filters can themselves throw (caught by next-level filter)
 
@@ -689,7 +689,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 5.1.5 — Filter Tests
 - [x] Test global filter catches unhandled HttpException
-- [ ] Test handler-level filter overrides global for specific exception
+- [x] Test handler-level filter overrides global for specific exception
 - [x] Test filter formats response correctly (`{ statusCode, message, error }`)
 - [x] Test unhandled non-HttpException returns 500 Internal Server Error
 - [x] Test filter has access to request via ArgumentsHost

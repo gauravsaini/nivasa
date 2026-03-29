@@ -7,6 +7,7 @@ mod server;
 pub mod upload;
 
 pub use http::header::HeaderMap;
+pub use server::GlobalFilterBinding;
 
 use async_trait::async_trait;
 use http::{
