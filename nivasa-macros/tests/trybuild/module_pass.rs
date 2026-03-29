@@ -2,6 +2,7 @@ use nivasa_macros::{controller, guard, impl_controller, injectable, interceptor,
 
 struct ImportedModule;
 struct OwnerGuard;
+struct OwnerRole;
 struct LoggingMiddleware;
 struct AuditInterceptor;
 
@@ -25,12 +26,14 @@ impl AppController {
     middlewares: [LoggingMiddleware],
 })]
 #[guard(OwnerGuard)]
+#[roles(OwnerRole)]
 #[interceptor(AuditInterceptor)]
 struct AppModule;
 
 fn main() {
     let _ = AppModule::__nivasa_module_middlewares();
     let _ = AppModule::__nivasa_module_guards();
+    let _ = AppModule::__nivasa_module_roles();
     let _ = AppModule::__nivasa_module_interceptors();
     let _ = AppModule::__nivasa_module_controller_registrations();
 }

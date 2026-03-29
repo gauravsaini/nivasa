@@ -85,6 +85,10 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         Ok(interceptors) => interceptors,
         Err(err) => return err.to_compile_error().into(),
     };
+    let module_roles = match parse_module_roles(&input.attrs) {
+        Ok(roles) => roles,
+        Err(err) => return err.to_compile_error().into(),
+    };
 
     let imports = args.imports;
     let providers = args.providers;
@@ -146,6 +150,10 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                 vec![#(#module_interceptors),*]
             }
 
+            pub fn __nivasa_module_roles() -> Vec<&'static str> {
+                vec![#(#module_roles),*]
+            }
+
             pub fn __nivasa_module_controller_registrations(
             ) -> Vec<nivasa_core::module::ModuleControllerRegistration> {
                 vec![
@@ -190,6 +198,7 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 const INTERCEPTOR_MARKER_PREFIX: &str = "__NIVASA_INTERCEPTOR__";
 const GUARD_MARKER_PREFIX: &str = "__NIVASA_GUARD__";
+const ROLES_MARKER_PREFIX: &str = "__NIVASA_ROLES__";
 
 fn attr_path_matches(attr: &Attribute, name: &str) -> bool {
     attr.path().is_ident(name)
@@ -332,4 +341,71 @@ fn parse_module_guards(attrs: &[Attribute]) -> Result<Vec<String>> {
     }
 
     Ok(guards)
+}
+
+fn parse_roles_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
+    if attr_path_matches(attr, "roles") {
+        let roles: syn::punctuated::Punctuated<Path, Token![,]> =
+            attr.parse_args_with(syn::punctuated::Punctuated::parse_terminated)?;
+
+        if roles.is_empty() {
+            return Err(Error::new(
+                attr.span(),
+                "`#[roles]` requires at least one role type",
+            ));
+        }
+
+        return Ok(Some(
+            roles
+                .into_iter()
+                .map(|path| path.into_token_stream().to_string().replace(' ', ""))
+                .collect(),
+        ));
+    }
+
+    if !attr.path().is_ident("doc") {
+        return Ok(None);
+    }
+
+    let Meta::NameValue(meta) = &attr.meta else {
+        return Ok(None);
+    };
+
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(doc), ..
+    }) = &meta.value
+    else {
+        return Ok(None);
+    };
+
+    let value = doc.value();
+    let Some(rest) = value.trim().strip_prefix(ROLES_MARKER_PREFIX) else {
+        return Ok(None);
+    };
+
+    let roles = rest
+        .trim()
+        .split(',')
+        .map(str::trim)
+        .filter(|role| !role.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+
+    if roles.is_empty() {
+        return Err(Error::new(doc.span(), "invalid module roles marker"));
+    }
+
+    Ok(Some(roles))
+}
+
+fn parse_module_roles(attrs: &[Attribute]) -> Result<Vec<String>> {
+    let mut roles = Vec::new();
+
+    for attr in attrs {
+        if let Some(parsed) = parse_roles_binding(attr)? {
+            roles.extend(parsed);
+        }
+    }
+
+    Ok(roles)
 }

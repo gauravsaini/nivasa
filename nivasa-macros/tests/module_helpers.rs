@@ -6,6 +6,8 @@ use nivasa_macros::{controller, guard, impl_controller, injectable, interceptor,
 struct ImportedModule;
 struct OwnerGuard;
 struct AuditGuard;
+struct OwnerRole;
+struct AuditorRole;
 struct LoggingMiddleware;
 struct AuditInterceptor;
 struct TraceInterceptor;
@@ -30,6 +32,7 @@ impl AppController {
     middlewares: [LoggingMiddleware],
 })]
 #[guard(OwnerGuard, AuditGuard)]
+#[roles(OwnerRole, AuditorRole)]
 #[interceptor(AuditInterceptor, TraceInterceptor)]
 struct AppModule;
 
@@ -62,6 +65,10 @@ fn module_macro_exposes_registration_metadata_helpers() {
     assert_eq!(
         AppModule::__nivasa_module_guards(),
         vec!["OwnerGuard", "AuditGuard"]
+    );
+    assert_eq!(
+        AppModule::__nivasa_module_roles(),
+        vec!["OwnerRole", "AuditorRole"]
     );
     assert_eq!(
         AppModule::__nivasa_module_interceptors(),
