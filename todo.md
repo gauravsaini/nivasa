@@ -463,7 +463,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support multiple guards: `#[guard(Guard1, Guard2)]` (metadata capture)
 
 #### 3.1.3 — Guard Execution Pipeline
-- [ ] Implement guard chain execution (AND logic: all must pass)
+- [x] Implement guard chain execution (AND logic: all must pass)
 - [x] Implement short-circuit on first failure
 - [ ] Return `ForbiddenException` on guard failure (configurable)
 - [x] Support guard returning custom exception on failure
@@ -483,8 +483,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.1.6 — Guard Tests
 - [x] Test guard that always allows → handler executes
 - [x] Test guard that always denies → 403 response
-- [ ] Test multiple guards — all pass
-- [ ] Test multiple guards — one fails → short-circuit
+- [x] Test multiple guards — all pass
+- [x] Test multiple guards — one fails → short-circuit
 - [ ] Test guard with injected service dependency
 - [x] Test controller-level guard applies to all its routes
 - [x] Test controller guard metadata applies to every route
