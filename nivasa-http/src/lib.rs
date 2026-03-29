@@ -966,6 +966,60 @@ where
     }
 }
 
+/// Normalized guard contract for one controller handler.
+///
+/// This keeps controller-level and handler-level metadata in one place so the
+/// server can resolve guard instances and drive them through
+/// `RequestPipeline::evaluate_guard(...)` without understanding macro output
+/// details.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControllerGuardExecutionContract<'a> {
+    handler: &'a str,
+    guards: Vec<&'a str>,
+}
+
+impl<'a> ControllerGuardExecutionContract<'a> {
+    fn new(handler: &'a str, guards: Vec<&'a str>) -> Self {
+        Self { handler, guards }
+    }
+
+    /// The controller handler this guard contract applies to.
+    pub fn handler(&self) -> &'a str {
+        self.handler
+    }
+
+    /// Ordered guard names to resolve and execute for this handler.
+    pub fn guards(&self) -> &[&'a str] {
+        &self.guards
+    }
+}
+
+/// Resolve the guard metadata for one controller handler into a single
+/// execution contract.
+///
+/// The resolved order is controller-level guards first, followed by any
+/// handler-specific guards declared for `handler`.
+pub fn resolve_controller_guard_execution<'a>(
+    handler: &'a str,
+    controller_guards: &[&'a str],
+    handler_guard_metadata: &[(&'a str, Vec<&'a str>)],
+) -> Option<ControllerGuardExecutionContract<'a>> {
+    let mut guards = controller_guards.to_vec();
+
+    if let Some((_, handler_guards)) = handler_guard_metadata
+        .iter()
+        .find(|(candidate, _)| *candidate == handler)
+    {
+        guards.extend(handler_guards.iter().copied());
+    }
+
+    if guards.is_empty() {
+        None
+    } else {
+        Some(ControllerGuardExecutionContract::new(handler, guards))
+    }
+}
+
 impl IntoResponse for NivasaResponse {
     fn into_response(self) -> NivasaResponse {
         self
@@ -1531,5 +1585,48 @@ pub mod debug {
             assert_eq!(response.content_type, "application/json");
             assert!(response.body.contains("\"event\": \"Start\""));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_controller_guard_execution, ControllerGuardExecutionContract};
+
+    #[test]
+    fn resolves_controller_and_handler_guards_into_one_contract() {
+        let contract = resolve_controller_guard_execution(
+            "list",
+            &["ControllerGuard"],
+            &[("list", vec!["AuthGuard", "AuditGuard"])],
+        );
+
+        assert_eq!(
+            contract,
+            Some(ControllerGuardExecutionContract {
+                handler: "list",
+                guards: vec!["ControllerGuard", "AuthGuard", "AuditGuard"],
+            })
+        );
+    }
+
+    #[test]
+    fn resolves_controller_only_guards_for_handlers_without_specific_metadata() {
+        let contract =
+            resolve_controller_guard_execution("show", &["ControllerGuard"], &[("list", vec![])]);
+
+        assert_eq!(
+            contract,
+            Some(ControllerGuardExecutionContract {
+                handler: "show",
+                guards: vec!["ControllerGuard"],
+            })
+        );
+    }
+
+    #[test]
+    fn returns_none_when_no_controller_or_handler_guards_exist() {
+        let contract = resolve_controller_guard_execution("show", &[], &[]);
+
+        assert_eq!(contract, None);
     }
 }
