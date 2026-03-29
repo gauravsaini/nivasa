@@ -542,7 +542,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement global middleware registration via `NestApplication::use_()` (bootstrap-only facade via `AppBootstrapConfig::use_middleware(...)`)
 - [ ] Implement module-level middleware registration via `#[module({ middlewares: [...] })]`
 - [x] Implement route-specific middleware (`.apply(Mw).forRoutes("/users")` exact/pattern route hook on `NivasaServerBuilder`)
-- [ ] Implement middleware exclusion (`.apply(Mw).exclude("/health")`)
+- [x] Implement middleware exclusion (`.apply(Mw).exclude("/health")`)
 - [ ] Implement middleware execution order: global → module → route-specific
 
 #### 3.3.4 — Tower Compatibility Layer
@@ -563,7 +563,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test module-level middleware runs only for that module's routes
 - [ ] Test middleware ordering (global before module before route)
 - [ ] Test richer CORS middleware/CorsOptions integration adds correct headers
-- [ ] Test middleware exclusion (`.exclude()`)
+- [x] Test middleware exclusion (`.exclude()`)
 - [ ] Test Tower middleware adapter works
 
 ### 3.4 — Rate Limiting / Throttling

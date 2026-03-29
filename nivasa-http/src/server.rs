@@ -16,9 +16,9 @@ use hyper::{body::Incoming, service::service_fn};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder as AutoBuilder;
 use nivasa_common::HttpException;
-use nivasa_filters::HttpExceptionSummary;
 use nivasa_common::RequestContext;
-use nivasa_filters::{ArgumentsHost, ExceptionFilter, HttpExceptionSummary};
+use nivasa_filters::HttpExceptionSummary;
+use nivasa_filters::{ArgumentsHost, ExceptionFilter};
 use nivasa_interceptors::{
     CallHandler, ExecutionContext as InterceptorExecutionContext, Interceptor,
 };
@@ -51,6 +51,7 @@ type GlobalFilterLayer =
 #[derive(Clone)]
 struct RouteMiddlewareBinding {
     pattern: RoutePattern,
+    excluded_paths: Vec<RoutePattern>,
     middleware: MiddlewareLayer,
 }
 
@@ -245,6 +246,7 @@ impl NivasaServerBuilder {
         RouteMiddlewareBuilder {
             builder: self,
             middleware: Arc::new(middleware),
+            excluded_paths: Vec::new(),
         }
     }
 
@@ -636,7 +638,13 @@ fn matching_route_middlewares(
 ) -> Vec<MiddlewareLayer> {
     route_middlewares
         .iter()
-        .filter(|binding| binding.pattern.matches(request_path))
+        .filter(|binding| {
+            binding.pattern.matches(request_path)
+                && !binding
+                    .excluded_paths
+                    .iter()
+                    .any(|pattern| pattern.matches(request_path))
+        })
         .map(|binding| Arc::clone(&binding.middleware))
         .collect()
 }
@@ -860,9 +868,17 @@ fn finalize_response(response: NivasaResponse, cors: bool) -> Response<Full<Byte
 pub struct RouteMiddlewareBuilder {
     builder: NivasaServerBuilder,
     middleware: MiddlewareLayer,
+    excluded_paths: Vec<RoutePattern>,
 }
 
 impl RouteMiddlewareBuilder {
+    /// Exclude an exact request path from the middleware binding.
+    pub fn exclude(mut self, path: impl Into<String>) -> Result<Self, RouteRegistryError> {
+        let pattern = RoutePattern::static_path(path)?;
+        self.excluded_paths.push(pattern);
+        Ok(self)
+    }
+
     /// Apply the middleware to one or more matched routes.
     pub fn for_routes(
         mut self,
@@ -871,6 +887,7 @@ impl RouteMiddlewareBuilder {
         let pattern = RoutePattern::parse(path)?;
         self.builder.route_middlewares.push(RouteMiddlewareBinding {
             pattern,
+            excluded_paths: self.excluded_paths,
             middleware: self.middleware,
         });
         Ok(self.builder)

@@ -218,6 +218,54 @@ async fn server_applies_route_specific_middleware_only_to_matching_route(
 }
 
 #[tokio::test]
+async fn server_excludes_route_specific_middleware_for_exact_path(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .apply(HeaderInjectingMiddleware)
+        .exclude("/middleware/health")?
+        .for_routes("/middleware/:kind")?
+        .route(RouteMethod::Post, "/middleware/:kind", |request| {
+            NivasaResponse::new(StatusCode::OK, request.body().clone())
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+
+    let routed_request = http::Request::builder()
+        .method(Method::POST)
+        .uri(format!("http://127.0.0.1:{port}/middleware/users"))
+        .body(Full::new(Bytes::from_static(b"original")))?;
+    let routed_response = client.request(routed_request).await?;
+    let routed_status = routed_response.status();
+    let routed_body = routed_response.into_body().collect().await?.to_bytes();
+
+    let excluded_request = http::Request::builder()
+        .method(Method::POST)
+        .uri(format!("http://127.0.0.1:{port}/middleware/health"))
+        .body(Full::new(Bytes::from_static(b"original")))?;
+    let excluded_response = client.request(excluded_request).await?;
+    let excluded_status = excluded_response.status();
+    let excluded_body = excluded_response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    assert_eq!(routed_status, StatusCode::OK);
+    assert_eq!(routed_body.as_ref(), b"middleware");
+    assert_eq!(excluded_status, StatusCode::OK);
+    assert_eq!(excluded_body.as_ref(), b"original");
+    Ok(())
+}
+
+#[tokio::test]
 async fn server_short_circuits_when_middleware_does_not_delegate(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let port = free_port();
