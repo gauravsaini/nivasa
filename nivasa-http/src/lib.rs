@@ -8,6 +8,7 @@ pub mod upload;
 
 pub use http::header::HeaderMap;
 
+use async_trait::async_trait;
 use http::{
     header::{HeaderName, HeaderValue, CONTENT_TYPE},
     Method, Request, Response, StatusCode, Uri,
@@ -15,7 +16,7 @@ use http::{
 use nivasa_common::HttpException;
 use nivasa_routing::RoutePathCaptures;
 use serde::{de::DeserializeOwned, Serialize};
-use std::fmt;
+use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 /// Minimal response/request body abstraction for the HTTP wrapper layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -848,6 +849,123 @@ where
     }
 }
 
+/// Execute a controller-style action with raw request access only.
+///
+/// This is intentionally narrow: it models the `#[req]`-style runtime slice
+/// after route matching has already been driven through the request pipeline.
+pub fn run_controller_action_with_request<F, R>(
+    request: &NivasaRequest,
+    action: F,
+) -> NivasaResponse
+where
+    F: FnOnce(&NivasaRequest) -> R,
+    R: IntoResponse,
+{
+    action(request).into_response()
+}
+
+/// Execute a controller-style action with a single typed path parameter.
+///
+/// This is intentionally narrow: it relies on route matching to attach the
+/// captured path parameters before controller execution begins.
+pub fn run_controller_action_with_param<T, F, R>(
+    request: &NivasaRequest,
+    name: impl AsRef<str>,
+    action: F,
+) -> NivasaResponse
+where
+    T: DeserializeOwned,
+    F: FnOnce(T) -> R,
+    R: IntoResponse,
+{
+    match request.path_param_typed::<T>(name) {
+        Ok(param) => action(param).into_response(),
+        Err(error) => HttpException::bad_request(error.to_string()).into_response(),
+    }
+}
+
+/// Execute a controller-style action with a full typed query DTO.
+///
+/// This is intentionally narrow: it exposes the `#[query]`-style runtime slice
+/// after the request pipeline has already advanced through route matching.
+pub fn run_controller_action_with_query<T, F, R>(
+    request: &NivasaRequest,
+    action: F,
+) -> NivasaResponse
+where
+    T: DeserializeOwned,
+    F: FnOnce(Query<T>) -> R,
+    R: IntoResponse,
+{
+    match request.extract::<Query<T>>() {
+        Ok(query) => action(query).into_response(),
+        Err(error) => HttpException::bad_request(error.to_string()).into_response(),
+    }
+}
+
+/// Execute a controller-style action with a single uploaded file.
+///
+/// This is intentionally narrow: multipart parsing still happens in a focused
+/// upload helper after route matching has completed, rather than inside the
+/// SCXML-driven request pipeline itself.
+pub fn run_controller_action_with_file<F, R>(
+    request: &NivasaRequest,
+    interceptor: &upload::FileInterceptor,
+    action: F,
+) -> NivasaResponse
+where
+    F: FnOnce(upload::UploadedFile) -> R,
+    R: IntoResponse,
+{
+    let Some(content_type) = request.header(CONTENT_TYPE.as_str()) else {
+        return HttpException::bad_request("request is missing header `content-type`")
+            .into_response();
+    };
+
+    let Ok(content_type) = content_type.to_str() else {
+        return HttpException::bad_request(
+            "invalid header `content-type`: header value is not valid ASCII",
+        )
+        .into_response();
+    };
+
+    match interceptor.extract_from_bytes(content_type, &request.body().as_bytes()) {
+        Ok(file) => action(file).into_response(),
+        Err(error) => HttpException::bad_request(error.to_string()).into_response(),
+    }
+}
+
+/// Execute a controller-style action with multiple uploaded files.
+///
+/// This keeps multipart parsing in the upload helper layer and assumes the
+/// SCXML-driven request pipeline has already advanced through route matching.
+pub fn run_controller_action_with_files<F, R>(
+    request: &NivasaRequest,
+    interceptor: &upload::FilesInterceptor,
+    action: F,
+) -> NivasaResponse
+where
+    F: FnOnce(Vec<upload::UploadedFile>) -> R,
+    R: IntoResponse,
+{
+    let Some(content_type) = request.header(CONTENT_TYPE.as_str()) else {
+        return HttpException::bad_request("request is missing header `content-type`")
+            .into_response();
+    };
+
+    let Ok(content_type) = content_type.to_str() else {
+        return HttpException::bad_request(
+            "invalid header `content-type`: header value is not valid ASCII",
+        )
+        .into_response();
+    };
+
+    match interceptor.extract_from_bytes(content_type, &request.body().as_bytes()) {
+        Ok(files) => action(files).into_response(),
+        Err(error) => HttpException::bad_request(error.to_string()).into_response(),
+    }
+}
+
 impl IntoResponse for NivasaResponse {
     fn into_response(self) -> NivasaResponse {
         self
@@ -904,6 +1022,59 @@ impl IntoResponse for String {
 impl IntoResponse for &str {
     fn into_response(self) -> NivasaResponse {
         NivasaResponse::text(self)
+    }
+}
+
+type MiddlewareFuture = Pin<Box<dyn Future<Output = NivasaResponse> + Send + 'static>>;
+type MiddlewareHandler = Arc<dyn Fn(NivasaRequest) -> MiddlewareFuture + Send + Sync + 'static>;
+
+/// Continuation handle passed to middleware implementations.
+#[derive(Clone)]
+pub struct NextMiddleware {
+    handler: MiddlewareHandler,
+}
+
+impl fmt::Debug for NextMiddleware {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NextMiddleware").finish_non_exhaustive()
+    }
+}
+
+impl NextMiddleware {
+    /// Construct a continuation from an async request handler.
+    pub fn new<F, Fut>(handler: F) -> Self
+    where
+        F: Fn(NivasaRequest) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = NivasaResponse> + Send + 'static,
+    {
+        Self {
+            handler: Arc::new(move |request| Box::pin(handler(request))),
+        }
+    }
+
+    /// Forward the request to the next middleware or terminal handler.
+    pub async fn run(&self, request: NivasaRequest) -> NivasaResponse {
+        (self.handler)(request).await
+    }
+}
+
+/// Middleware surface for request pre-processing and delegation.
+///
+/// This is intentionally just the foundational trait and continuation handle.
+/// Full middleware registration and SCXML-driven execution wiring land later.
+#[async_trait]
+pub trait NivasaMiddleware: Send + Sync {
+    async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse;
+}
+
+#[async_trait]
+impl<F, Fut> NivasaMiddleware for F
+where
+    F: Fn(NivasaRequest, NextMiddleware) -> Fut + Send + Sync,
+    Fut: Future<Output = NivasaResponse> + Send + 'static,
+{
+    async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
+        (self)(req, next).await
     }
 }
 
@@ -1272,7 +1443,7 @@ where
     }
 }
 
-pub use pipeline::RequestPipeline;
+pub use pipeline::{GuardExecutionOutcome, RequestPipeline};
 pub use server::{NivasaServer, NivasaServerBuilder};
 pub use upload::UploadedFile;
 

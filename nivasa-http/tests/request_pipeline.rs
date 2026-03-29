@@ -1,4 +1,6 @@
 use http::Method;
+use nivasa_common::HttpException;
+use nivasa_guards::{ExecutionContext, Guard, GuardFuture};
 use nivasa_http::{Body, RequestPipeline};
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod};
 
@@ -11,6 +13,20 @@ fn ready_pipeline() -> RequestPipeline {
     assert_eq!(pipeline.snapshot().current_state, "MiddlewareChain");
     pipeline.complete_middleware().unwrap();
     assert_eq!(pipeline.snapshot().current_state, "RouteMatching");
+
+    pipeline
+}
+
+fn matched_pipeline() -> RequestPipeline {
+    let mut pipeline = ready_pipeline();
+    let mut routes = RouteDispatchRegistry::new();
+    routes
+        .register_pattern(RouteMethod::Get, "/users/:id", "user")
+        .unwrap();
+
+    let matched = pipeline.match_route(&routes).unwrap();
+    assert!(matches!(matched, RouteDispatchOutcome::Matched(_)));
+    assert_eq!(pipeline.snapshot().current_state, "GuardChain");
 
     pipeline
 }
@@ -58,7 +74,10 @@ fn request_pipeline_drives_route_matching_outcomes() {
         not_allowed,
         RouteDispatchOutcome::MethodNotAllowed { .. }
     ));
-    assert_eq!(not_allowed_pipeline.snapshot().current_state, "ErrorHandling");
+    assert_eq!(
+        not_allowed_pipeline.snapshot().current_state,
+        "ErrorHandling"
+    );
     assert!(not_allowed_pipeline.request().path_params().is_none());
 }
 
@@ -105,6 +124,148 @@ fn request_pipeline_routes_parse_errors_to_error_handling() {
 
     assert_eq!(pipeline.snapshot().current_state, "ErrorHandling");
     assert!(pipeline.request().path_params().is_none());
+}
+
+#[test]
+fn request_pipeline_can_complete_the_scxml_happy_path() {
+    let mut pipeline = matched_pipeline();
+
+    pipeline.pass_guards().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "InterceptorPre");
+    pipeline.complete_interceptors_pre().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "PipeTransform");
+    pipeline.complete_pipes().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "HandlerExecution");
+    pipeline.complete_handler().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "InterceptorPost");
+    pipeline.complete_interceptors_post().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "SendingResponse");
+    pipeline.complete_response().unwrap();
+
+    assert_eq!(pipeline.snapshot().current_state, "Done");
+}
+
+#[test]
+fn request_pipeline_short_circuits_guard_denials_via_scxml() {
+    let mut pipeline = matched_pipeline();
+
+    pipeline.deny_guards().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "ErrorHandling");
+    pipeline.handle_filter().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "SendingResponse");
+    pipeline.fail_send().unwrap();
+
+    assert_eq!(pipeline.snapshot().current_state, "Done");
+}
+
+struct AllowGuard;
+
+impl Guard for AllowGuard {
+    fn can_activate<'a>(&'a self, _: &'a ExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async { Ok(true) })
+    }
+}
+
+struct DenyGuard;
+
+impl Guard for DenyGuard {
+    fn can_activate<'a>(&'a self, _: &'a ExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async { Ok(false) })
+    }
+}
+
+struct ErrorGuard;
+
+impl Guard for ErrorGuard {
+    fn can_activate<'a>(&'a self, _: &'a ExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async { Err(HttpException::forbidden("blocked")) })
+    }
+}
+
+#[tokio::test]
+async fn request_pipeline_can_evaluate_guard_results_through_scxml() {
+    let context = ExecutionContext::new(());
+
+    let mut passed = matched_pipeline();
+    let passed_outcome = passed.evaluate_guard(&AllowGuard, &context).await.unwrap();
+    assert!(matches!(
+        passed_outcome,
+        nivasa_http::GuardExecutionOutcome::Passed
+    ));
+    assert_eq!(passed.snapshot().current_state, "InterceptorPre");
+
+    let mut denied = matched_pipeline();
+    let denied_outcome = denied.evaluate_guard(&DenyGuard, &context).await.unwrap();
+    assert!(matches!(
+        denied_outcome,
+        nivasa_http::GuardExecutionOutcome::Denied
+    ));
+    assert_eq!(denied.snapshot().current_state, "ErrorHandling");
+
+    let mut errored = matched_pipeline();
+    let error_outcome = errored.evaluate_guard(&ErrorGuard, &context).await.unwrap();
+    match error_outcome {
+        nivasa_http::GuardExecutionOutcome::Error(error) => {
+            assert_eq!(error.status_code, 403);
+            assert_eq!(error.message, "blocked");
+        }
+        other => panic!("expected guard error outcome, got {other:?}"),
+    }
+    assert_eq!(errored.snapshot().current_state, "ErrorHandling");
+}
+
+#[test]
+fn request_pipeline_routes_late_stage_errors_through_error_handling() {
+    let mut guard_error = matched_pipeline();
+    guard_error.fail_guards().unwrap();
+    assert_eq!(guard_error.snapshot().current_state, "ErrorHandling");
+
+    let mut interceptor_error = matched_pipeline();
+    interceptor_error.pass_guards().unwrap();
+    interceptor_error.fail_interceptors_pre().unwrap();
+    assert_eq!(interceptor_error.snapshot().current_state, "ErrorHandling");
+
+    let mut validation_error = matched_pipeline();
+    validation_error.pass_guards().unwrap();
+    validation_error.complete_interceptors_pre().unwrap();
+    validation_error.fail_validation().unwrap();
+    assert_eq!(validation_error.snapshot().current_state, "ErrorHandling");
+
+    let mut pipe_error = matched_pipeline();
+    pipe_error.pass_guards().unwrap();
+    pipe_error.complete_interceptors_pre().unwrap();
+    pipe_error.fail_pipes().unwrap();
+    assert_eq!(pipe_error.snapshot().current_state, "ErrorHandling");
+
+    let mut handler_error = matched_pipeline();
+    handler_error.pass_guards().unwrap();
+    handler_error.complete_interceptors_pre().unwrap();
+    handler_error.complete_pipes().unwrap();
+    handler_error.fail_handler().unwrap();
+    assert_eq!(handler_error.snapshot().current_state, "ErrorHandling");
+
+    let mut interceptor_post_error = matched_pipeline();
+    interceptor_post_error.pass_guards().unwrap();
+    interceptor_post_error.complete_interceptors_pre().unwrap();
+    interceptor_post_error.complete_pipes().unwrap();
+    interceptor_post_error.complete_handler().unwrap();
+    interceptor_post_error.fail_interceptors_post().unwrap();
+    assert_eq!(
+        interceptor_post_error.snapshot().current_state,
+        "ErrorHandling"
+    );
+}
+
+#[test]
+fn request_pipeline_routes_unhandled_filter_outcomes_through_scxml() {
+    let mut pipeline = matched_pipeline();
+
+    pipeline.deny_guards().unwrap();
+    pipeline.fail_filter_unhandled().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "SendingResponse");
+    pipeline.complete_response().unwrap();
+
+    assert_eq!(pipeline.snapshot().current_state, "Done");
 }
 
 #[test]

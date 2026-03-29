@@ -1,0 +1,5 @@
+error: controller metadata requires an HTTP method attribute
+  --> tests/trybuild/controller_guard_no_route.rs:11:8
+   |
+11 |     fn list(&self) {}
+   |        ^^^^

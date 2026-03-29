@@ -1,3 +1,4 @@
+pub mod dynamic;
 pub mod lifecycle;
 pub mod orchestrator;
 pub mod registry;
@@ -7,8 +8,9 @@ use crate::di::DependencyContainer;
 use async_trait::async_trait;
 use std::any::TypeId;
 
-pub use registry::{ModuleEntry, ModuleRegistry, ModuleRegistryError};
+pub use dynamic::{ConfigurableModule, DynamicModule};
 pub use orchestrator::{ModuleHookSet, ModuleOrchestrator, ModuleOrchestratorError};
+pub use registry::{ModuleEntry, ModuleRegistry, ModuleRegistryError};
 pub use runtime::{ModuleLifecycleError, ModuleRuntime};
 
 /// Metadata for a Nivasa module.
@@ -52,6 +54,37 @@ impl ModuleMetadata {
     }
 }
 
+/// One route exposed by a controller listed on a module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControllerRouteRegistration {
+    pub method: &'static str,
+    pub path: String,
+    pub handler: &'static str,
+}
+
+impl ControllerRouteRegistration {
+    pub fn new(method: &'static str, path: impl Into<String>, handler: &'static str) -> Self {
+        Self {
+            method,
+            path: path.into(),
+            handler,
+        }
+    }
+}
+
+/// A controller plus the routes it contributes to a module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModuleControllerRegistration {
+    pub controller: TypeId,
+    pub routes: Vec<ControllerRouteRegistration>,
+}
+
+impl ModuleControllerRegistration {
+    pub fn new(controller: TypeId, routes: Vec<ControllerRouteRegistration>) -> Self {
+        Self { controller, routes }
+    }
+}
+
 /// The core trait for all Nivasa modules.
 #[async_trait]
 pub trait Module: Send + Sync + 'static {
@@ -60,6 +93,10 @@ pub trait Module: Send + Sync + 'static {
         &self,
         container: &DependencyContainer,
     ) -> Result<(), crate::di::error::DiError>;
+
+    fn controller_registrations(&self) -> Vec<ModuleControllerRegistration> {
+        Vec::new()
+    }
 }
 
 /// Lifecycle hook traits

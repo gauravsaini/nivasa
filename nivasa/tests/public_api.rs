@@ -1,4 +1,12 @@
 use nivasa::prelude::*;
+#[allow(unused_imports)]
+use nivasa::prelude::{
+    all, body, controller, custom_param, delete, file, files, get, head, header, headers,
+    http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
+    req, res, scxml_handler, session,
+};
+use std::future::Future;
+use std::pin::Pin;
 
 #[test]
 fn crate_root_reexports_app_config_builders() {
@@ -22,7 +30,10 @@ fn crate_root_reexports_app_config_builders() {
         Some(nivasa::VersioningStrategy::Header)
     );
     assert_eq!(
-        server.versioning.as_ref().and_then(|options| options.default_version.as_deref()),
+        server
+            .versioning
+            .as_ref()
+            .and_then(|options| options.default_version.as_deref()),
         Some("v1")
     );
     assert_eq!(versioning.default_version.as_deref(), Some("v1"));
@@ -45,7 +56,10 @@ fn prelude_reexports_app_config_types_for_downstream_use() {
         Some(VersioningStrategy::MediaType)
     );
     assert_eq!(
-        server.versioning.as_ref().and_then(|options| options.default_version.as_deref()),
+        server
+            .versioning
+            .as_ref()
+            .and_then(|options| options.default_version.as_deref()),
         Some("v2")
     );
 }
@@ -66,34 +80,127 @@ fn crate_root_reexports_bootstrap_config_as_pure_data() {
     let server = ServerOptions::builder()
         .host("0.0.0.0")
         .port(8080)
+        .versioning(
+            VersioningOptions::builder(VersioningStrategy::Uri)
+                .default_version(" v1 ")
+                .build(),
+        )
         .build();
     let bootstrap = nivasa::AppBootstrapConfig::from(server.clone());
 
     assert_eq!(bootstrap.server, server);
     assert_eq!(
+        bootstrap.versioning().map(|options| options.strategy),
+        Some(VersioningStrategy::Uri)
+    );
+    assert_eq!(
+        bootstrap
+            .versioning()
+            .and_then(|options| options.default_version.as_deref()),
+        Some("v1")
+    );
+    assert_eq!(
         nivasa::AppBootstrapConfig::default().server,
         ServerOptions::default()
     );
+    assert_eq!(nivasa::AppBootstrapConfig::default().versioning(), None);
+}
+
+#[test]
+fn prelude_reexports_core_traits_macros_and_http_types() {
+    fn _assert_request_type_is_in_scope(_: Option<NivasaRequest>) {}
+    fn _assert_response_type_is_in_scope(_: Option<NivasaResponse>) {}
+    fn _assert_query_type_is_in_scope(
+        _: Option<Query<std::collections::BTreeMap<String, String>>>,
+    ) {
+    }
+    fn _assert_pipeline_type_is_in_scope(_: Option<RequestPipeline>) {}
+    fn _assert_server_builder_is_in_scope(_: Option<NivasaServerBuilder>) {}
+    fn _assert_runtime_module_type_is_in_scope(_: Option<ModuleRuntime<DemoModule>>) {}
+
+    fn _asserts_controller_trait_name_is_in_scope<T: Controller>() {}
+    fn _asserts_module_trait_name_is_in_scope<T: Module>() {}
+    fn _asserts_injectable_trait_name_is_in_scope<T: Injectable>() {}
+
+    let _container = DependencyContainer::new();
+    let _body = Body::empty();
+    let _limits = MultipartLimits::new();
+    let _response = NivasaResponse::builder()
+        .status(HttpStatus::Ok.into())
+        .build();
+    let _ = NivasaServer::builder();
+    let _ = UploadedFile::new("avatar.png", Some("image/png".to_string()), vec![1, 2, 3]);
+    let _ = DynamicModule::new(ModuleMetadata::default());
+    let _ = ProviderScope::Singleton;
+    let _ = HttpStatus::Ok;
+    let _ = HttpException::bad_request("boom");
+}
+
+#[test]
+fn crate_root_and_prelude_reexport_generated_statechart_types() {
+    fn _assert_root_application_state(_: nivasa::NivasaApplicationState) {}
+    fn _assert_root_application_event(_: nivasa::NivasaApplicationEvent) {}
+    fn _assert_root_request_statechart(_: Option<nivasa::NivasaRequestStatechart>) {}
+    fn _assert_prelude_module_state(_: NivasaModuleState) {}
+    fn _assert_prelude_provider_event(_: NivasaProviderEvent) {}
+    fn _assert_prelude_application_statechart(_: Option<NivasaApplicationStatechart>) {}
+
+    let generated = nivasa::GENERATED_STATECHARTS;
+
+    assert!(!generated.is_empty());
+}
+
+#[test]
+#[allow(unused_imports)]
+fn crate_root_reexports_controller_macro_and_http_surface() {
+    use nivasa::{
+        all, body, controller, custom_param, delete, file, files, get, head, header, headers,
+        http_code, impl_controller, options, param, patch, post, put, query, req, res, session,
+        Body, Controller, ControllerResponse, Download, Html, Json, MultipartLimits, NivasaRequest,
+        NivasaResponse, NivasaServer, RequestPipeline, Sse, Text, UploadedFile,
+    };
+}
+
+struct DemoController;
+
+impl Controller for DemoController {
+    fn metadata(&self) -> nivasa_routing::ControllerMetadata {
+        nivasa_routing::ControllerMetadata::new("/")
+    }
+}
+
+struct DemoModule;
+
+impl Module for DemoModule {
+    fn metadata(&self) -> ModuleMetadata {
+        ModuleMetadata::default()
+    }
+
+    fn configure<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        _container: &'life1 DependencyContainer,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DiError>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 #[test]
 fn bootstrap_config_exposes_a_normalized_global_prefix_for_route_setup() {
-    let bootstrap = nivasa::AppBootstrapConfig::from(
-        ServerOptions::builder()
-            .global_prefix(" api/ ")
-            .build(),
-    );
+    let bootstrap =
+        nivasa::AppBootstrapConfig::from(ServerOptions::builder().global_prefix(" api/ ").build());
 
     assert_eq!(bootstrap.global_prefix(), Some("/api"));
 }
 
 #[test]
 fn bootstrap_config_can_compose_prefixed_route_paths_without_runtime_wiring() {
-    let bootstrap = nivasa::AppBootstrapConfig::from(
-        ServerOptions::builder()
-            .global_prefix("api")
-            .build(),
-    );
+    let bootstrap =
+        nivasa::AppBootstrapConfig::from(ServerOptions::builder().global_prefix("api").build());
 
     assert_eq!(bootstrap.prefixed_route_path("users"), "/api/users");
     assert_eq!(bootstrap.prefixed_route_path("/"), "/api");
@@ -101,4 +208,13 @@ fn bootstrap_config_can_compose_prefixed_route_paths_without_runtime_wiring() {
         nivasa::AppBootstrapConfig::default().prefixed_route_path("users"),
         "/users"
     );
+}
+
+#[cfg(feature = "config")]
+#[test]
+#[allow(unused_imports)]
+fn optional_crate_features_reexport_placeholder_crates_when_enabled() {
+    use nivasa::config as config_crate;
+    use nivasa::validation as validation_crate;
+    use nivasa::websocket as websocket_crate;
 }

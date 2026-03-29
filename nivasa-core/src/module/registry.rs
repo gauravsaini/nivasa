@@ -1,4 +1,4 @@
-use super::{Module, ModuleMetadata};
+use super::{DynamicModule, Module, ModuleMetadata};
 use crate::di::error::DiError;
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
@@ -71,8 +71,27 @@ impl ModuleRegistry {
         self.entries.insert(entry.type_id, entry).is_none()
     }
 
+    pub fn register_dynamic<M: 'static>(&mut self, module: DynamicModule) -> bool {
+        let entry = ModuleEntry {
+            type_id: TypeId::of::<M>(),
+            type_name: std::any::type_name::<M>(),
+            metadata: module.merged_metadata(),
+        };
+        self.entries.insert(entry.type_id, entry).is_none()
+    }
+
     pub fn entries(&self) -> impl Iterator<Item = &ModuleEntry> {
         self.entries.values()
+    }
+
+    fn exported_surface_by_id(
+        &self,
+        module: TypeId,
+        cache: &mut HashMap<TypeId, HashSet<TypeId>>,
+        visiting: &mut HashSet<TypeId>,
+        path: &mut Vec<&'static str>,
+    ) -> Result<HashSet<TypeId>, ModuleRegistryError> {
+        self.public_surface_for(module, cache, visiting, path)
     }
 
     fn global_module_ids(&self) -> Vec<TypeId> {
@@ -202,6 +221,52 @@ impl ModuleRegistry {
         }
 
         Ok(visible)
+    }
+
+    /// Returns the import/global module sources a module can consume providers from.
+    pub fn import_sources_by_id(
+        &self,
+        module: TypeId,
+    ) -> Result<Vec<TypeId>, ModuleRegistryError> {
+        let entry = self
+            .entries
+            .get(&module)
+            .expect("module must be registered before querying import sources");
+
+        let mut sources = Vec::new();
+        let mut seen = HashSet::new();
+
+        for import in &entry.metadata.imports {
+            if !self.entries.contains_key(import) {
+                return Err(ModuleRegistryError::MissingImport {
+                    module: entry.type_name,
+                    missing: *import,
+                });
+            }
+
+            if seen.insert(*import) {
+                sources.push(*import);
+            }
+        }
+
+        for global in self.global_module_ids() {
+            if global != module && seen.insert(global) {
+                sources.push(global);
+            }
+        }
+
+        Ok(sources)
+    }
+
+    /// Returns the exported provider surface for the given module.
+    pub fn exported_surface_for(
+        &self,
+        module: TypeId,
+    ) -> Result<HashSet<TypeId>, ModuleRegistryError> {
+        let mut cache = HashMap::new();
+        let mut visiting = HashSet::new();
+        let mut path = Vec::new();
+        self.exported_surface_by_id(module, &mut cache, &mut visiting, &mut path)
     }
 
     /// Returns whether a type exported by `Exported` is visible to `Consumer`.

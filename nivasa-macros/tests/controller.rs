@@ -6,6 +6,7 @@ fn controller_macro_validation() {
     t.pass("tests/trybuild/controller_pass.rs");
     t.pass("tests/trybuild/controller_version.rs");
     t.pass("tests/trybuild/controller_impl_pass.rs");
+    t.pass("tests/trybuild/controller_guard_pass.rs");
     t.pass("tests/trybuild/controller_parameter_extractors_pass.rs");
     t.pass("tests/trybuild/controller_response_metadata_pass.rs");
     t.compile_fail("tests/trybuild/controller_parameter_extractors_headers_no_route.rs");
@@ -20,5 +21,6 @@ fn controller_macro_validation() {
     t.compile_fail("tests/trybuild/controller_response_metadata_invalid_http_code.rs");
     t.compile_fail("tests/trybuild/controller_response_metadata_invalid.rs");
     t.compile_fail("tests/trybuild/controller_response_metadata_no_route.rs");
+    t.compile_fail("tests/trybuild/controller_guard_no_route.rs");
     t.compile_fail("tests/trybuild/controller_parameter_extractors_no_route.rs");
 }

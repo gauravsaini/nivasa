@@ -6,8 +6,10 @@ use tokio::sync::RwLock;
 use crate::di::error::DiError;
 use crate::di::graph::DependencyGraph;
 use crate::di::provider::{
-    ClassProvider, FactoryProvider, LifecycleProvider, Provider, ProviderScope, ValueProvider,
+    ClassProvider, FactoryProvider, LifecycleProvider, Provider, ProviderMetadata, ProviderScope,
+    ValueProvider,
 };
+use async_trait::async_trait;
 use crate::di::registry::ProviderRegistry;
 
 #[derive(Clone)]
@@ -26,6 +28,25 @@ struct DependencyContainerInner {
 pub struct DependencyContainer {
     inner: Arc<DependencyContainerInner>,
     scoped: Arc<RwLock<HashMap<TypeId, CachedInstance>>>,
+}
+
+struct ImportedValueProvider {
+    metadata: ProviderMetadata,
+    value: Arc<dyn Any + Send + Sync>,
+}
+
+#[async_trait]
+impl Provider for ImportedValueProvider {
+    fn metadata(&self) -> &ProviderMetadata {
+        &self.metadata
+    }
+
+    async fn build(
+        &self,
+        _container: &DependencyContainer,
+    ) -> Result<Arc<dyn Any + Send + Sync>, DiError> {
+        Ok(self.value.clone())
+    }
 }
 
 impl Clone for DependencyContainer {
@@ -82,17 +103,74 @@ impl DependencyContainer {
 
     async fn register_provider<T: Send + Sync + 'static>(&self, provider: Arc<dyn Provider>) {
         let type_id = TypeId::of::<T>();
+        self.register_provider_by_id(type_id, provider).await;
+    }
 
+    async fn register_provider_by_id(&self, type_id: TypeId, provider: Arc<dyn Provider>) {
         self.bump_version(type_id).await;
 
         {
             let mut providers = self.inner.providers.write().await;
-            providers.insert::<T>(provider);
+            providers.insert_by_id(type_id, provider);
         }
 
         {
             let mut singletons = self.inner.singletons.write().await;
             singletons.remove(&type_id);
+        }
+
+        {
+            let mut scoped = self.scoped.write().await;
+            scoped.remove(&type_id);
+        }
+    }
+
+    pub(crate) async fn export_singleton_value(
+        &self,
+        type_id: TypeId,
+    ) -> Option<(ProviderMetadata, Arc<dyn Any + Send + Sync>)> {
+        let version = self.current_version(type_id).await;
+        let metadata = {
+            let providers = self.inner.providers.read().await;
+            providers.metadata_by_id(type_id)?
+        };
+
+        if metadata.scope != ProviderScope::Singleton {
+            return None;
+        }
+
+        let value = {
+            let singletons = self.inner.singletons.read().await;
+            let cached = singletons.get(&type_id)?;
+            if cached.version != version {
+                return None;
+            }
+            cached.value.clone()
+        };
+
+        Some((metadata, value))
+    }
+
+    pub(crate) async fn import_singleton_value(
+        &self,
+        metadata: ProviderMetadata,
+        value: Arc<dyn Any + Send + Sync>,
+    ) {
+        let type_id = metadata.type_id;
+        let version = self.bump_version(type_id).await;
+        let provider = Arc::new(ImportedValueProvider {
+            metadata,
+            value: value.clone(),
+        });
+
+        {
+            let mut providers = self.inner.providers.write().await;
+            providers.insert_by_id(type_id, provider);
+        }
+
+        {
+            let mut singletons = self.inner.singletons.write().await;
+            singletons.insert(type_id, CachedInstance { version, value });
         }
 
         {

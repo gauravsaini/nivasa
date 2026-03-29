@@ -50,18 +50,18 @@
 - [x] Set up `cargo doc` generation in CI
 - [x] **Add SCXML CI step:** `nivasa statechart validate --all` — validates all `.scxml` files are well-formed
 - [x] **Add SCXML CI step:** `nivasa statechart parity` — verifies generated Rust code matches current `.scxml` files
-- [ ] **Add CI step:** `git diff --exit-code src/generated/` — fails if codegen output is stale
+- [x] **Add CI step:** verify generated SCXML artifacts in CI with `cargo test -p nivasa-statechart --test generated_statecharts` plus `cargo run -p nivasa-cli -- statechart parity` — the repo does not check in `src/generated/`; build.rs emits generated files into `OUT_DIR`
 - [x] Create `examples/` directory with placeholder READMEs for `basic/`, `auth/`, `websocket/`
 - [x] Create `tests/` directory for workspace-level integration tests
 - [x] Create `docs/` directory for book-style documentation
 
 ### 0.4 — Umbrella Crate Re-export Strategy
-- [ ] Design `nivasa::prelude::*` — users should only need one import
-- [ ] Re-export key traits: `Module`, `Injectable`, `Controller`, `Guard`, `Interceptor`, `Pipe`, `ExceptionFilter`, `Middleware`
-- [ ] Re-export key macros: `#[module]`, `#[injectable]`, `#[controller]`, `#[get]`, `#[post]`, etc.
-- [ ] Re-export `NestApplication`, `ServerOptions`, `HttpException` and friends
-- [ ] Re-export `StatechartEngine`, generated state/event enums from `nivasa-statechart`
-- [ ] Feature-gate optional sub-crates (e.g., `features = ["websocket", "config", "validation"]`)
+- [x] Design `nivasa::prelude::*` — users should only need one import
+- [ ] Re-export key traits and runtime types: `Controller`, `Module`, `Injectable`, plus the landed DI/module/runtime surface; `Guard`, `Interceptor`, `Pipe`, `ExceptionFilter`, and `Middleware` still need upstream exports
+- [x] Re-export key macros: `#[module]`, `#[injectable]`, `#[controller]`, `#[get]`, `#[post]`, `#[put]`, `#[delete]`, `#[patch]`, `#[head]`, `#[options]`, `#[all]`, `#[impl_controller]`, `#[scxml_handler]`
+- [x] Re-export `ServerOptions`, `HttpException`, and the existing HTTP/server surface
+- [x] Re-export `StatechartEngine`, generated state/event enums from `nivasa-statechart`
+- [x] Feature-gate optional sub-crates (e.g., `features = ["websocket", "config", "validation"]`)
 
 ---
 
@@ -257,7 +257,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Validate attribute syntax and emit helpful errors on typos
 - [x] Generate `impl Module for T` with metadata accessor methods
 - [x] Generate provider registration calls for listed providers
-- [ ] Generate controller registration calls
+- [x] Generate controller registration calls
 - [ ] Generate import resolution (pull in imported module's exported providers)
 - [ ] Generate export filtering (only exports are visible to importing modules)
 - [x] Support `middlewares: [...]` in module config
@@ -302,7 +302,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test lifecycle hooks fire in correct order
 - [x] Test circular module import detection
 - [x] Test global module (available everywhere without explicit import)
-- [ ] Test dynamic module via `for_root`
+- [x] Test dynamic module via `for_root`
+- [x] Test `for_feature` creates isolated instance per importing module
 
 ---
 
@@ -334,16 +335,16 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Validate no duplicate routes within a controller
 
 #### 2.1.4 — Parameter Extraction
-> ⚠️ **SCXML / controller boundary:** the request pipeline still stops at route dispatch. The first landed controller runtime slice is `#[res]` response-builder access; the other controller markers remain partial or pending until the later SCXML handler-execution path lands.
+> ⚠️ **SCXML / controller boundary:** the request pipeline still stops at route dispatch. The landed controller runtime slices are `#[body]` request extraction, `#[req]` raw request access, `#[param("name")]` path-param extraction, `#[query]` full query DTO extraction, and `#[res]` response-builder access; the remaining controller markers stay partial or pending until the later SCXML handler-execution path lands.
 
 - [x] Strip and record controller parameter extractor metadata in `#[impl_controller]`
-- [ ] Implement `#[body]` extractor — deserialize JSON request body to typed DTO
-- [ ] Implement `#[param("name")]` extractor — extract path parameter
-- [ ] Implement `#[query]` extractor — deserialize full query string to struct
+- [x] Implement `#[body]` extractor — deserialize JSON request body to typed DTO
+- [x] Implement `#[param("name")]` extractor — extract path parameter
+- [x] Implement `#[query]` extractor — deserialize full query string to struct
 - [x] Implement `#[query("name")]` extractor — extract single query param
 - [x] Implement `#[headers]` extractor — access all request headers as map
 - [x] Implement `#[header("name")]` extractor — extract single header value
-- [ ] Implement `#[req]` extractor — raw `NivasaRequest` access
+- [x] Implement `#[req]` extractor — raw `NivasaRequest` access
 - [x] Implement `#[res]` extractor — first runtime slice for mutable response builder access
 - [x] Implement `#[ip]` extractor — client IP address
 - [x] Implement `#[session]` extractor — session data (if session module loaded)
@@ -377,7 +378,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support URI versioning: `/v1/users`, `/v2/users`
 - [x] Support header versioning: `X-API-Version: 1`
 - [x] Support media type versioning: `Accept: application/vnd.app.v1+json`
-- [ ] Implement `VersioningOptions` config on `NestApplication`
+- [x] Expose `VersioningOptions` on the bootstrap/config surface via `AppBootstrapConfig`
 - [x] Test versioned routes resolve correctly
 
 #### 2.1.8 — Controller System Tests
@@ -420,26 +421,27 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Create a `StatechartEngine<RequestStatechart>` per incoming request
 - [x] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` (route dispatch is the current SCXML stop; the first `#[res]` runtime slice begins on the controller side, and full controller execution plus later SCXML stages remain future work) → ...
 - [x] Each pipeline stage handler returns a `RequestEvent` that the engine uses to transition
-- [ ] Pipeline short-circuits are SCXML transitions: GuardDenied → `ErrorHandling` (not ad-hoc if/else)
-- [ ] Errors at any stage raise `error.*` events → engine transitions to `ErrorHandling` state
+- [x] Pipeline short-circuits are SCXML transitions: GuardDenied → `ErrorHandling` (not ad-hoc if/else)
+- [x] Errors at any stage raise `error.*` events → engine transitions to `ErrorHandling` state
 - [x] **Verify:** attempting to skip a pipeline stage (e.g., jump from Middleware to Handler) is rejected by the engine
 
 #### 2.2.4 — Multipart / File Upload
-- [ ] Add `multer` crate dependency for multipart parsing
-- [ ] Implement `UploadedFile` struct (filename, content_type, bytes)
-- [ ] Implement `FileInterceptor` (single file)
-- [ ] Implement `FilesInterceptor` (multiple files)
-- [ ] Implement configurable file size limits
-- [ ] Implement configurable allowed MIME types
+- [x] Add `multer` crate dependency for multipart parsing
+- [x] Implement `UploadedFile` struct (filename, content_type, bytes)
+- [x] Implement `FileInterceptor` (single file)
+- [x] Implement `FilesInterceptor` (multiple files)
+- [x] Implement configurable file size limits
+- [x] Implement configurable allowed MIME types
 
 #### 2.2.5 — HTTP Server Tests
 - [x] Test server starts and responds to GET /
-- [ ] Test graceful shutdown completes in-flight requests
-- [ ] Test request body parsing (JSON)
+- [x] Test graceful shutdown completes in-flight requests
+- [x] Test request body parsing (JSON)
 - [x] Test response serialization (JSON, text, HTML)
 - [x] Test 404 for unknown routes
 - [x] Test request body size limit enforcement
-- [ ] Test file upload via multipart
+- [x] Test file upload via multipart
+  - verified with `PATH=/opt/homebrew/bin:$PATH cargo test -p nivasa-http --test upload_contract --test upload_limits --test upload_interceptors`
 
 ---
 
@@ -447,23 +449,25 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 3.1 — Guard System (`nivasa-guards` + `nivasa-macros`)
 
+> Shared context note: `nivasa-common::RequestContext` is now the canonical per-request context foundation; the guard runtime surface can converge onto it via the existing adapter path in later slices.
+
 #### 3.1.1 — Guard Trait
-- [ ] Define `Guard` trait: `async fn can_activate(&self, context: &ExecutionContext) -> Result<bool, HttpException>`
-- [ ] Define `ExecutionContext` struct (request, handler metadata, class metadata, custom data map)
+- [x] Define `Guard` trait: `async fn can_activate(&self, context: &ExecutionContext) -> Result<bool, HttpException>`
+- [x] Define `ExecutionContext` struct (request, handler metadata, class metadata, custom data map)
 - [ ] Support DI in guard structs (guards are injectable)
 
 #### 3.1.2 — `#[guard]` Attribute Macro
-- [ ] Parse `#[guard(GuardType)]` on handler methods
-- [ ] Parse `#[guard(GuardType)]` on controller struct (apply to all routes)
+- [x] Parse `#[guard(GuardType)]` on handler methods
+- [x] Parse `#[guard(GuardType)]` on controller struct (metadata capture only; runtime apply-to-all-routes still open)
 - [ ] Parse `#[guard(GuardType)]` on module (apply to all module routes)
 - [ ] Support multiple guards: `#[guard(Guard1, Guard2)]`
 
 #### 3.1.3 — Guard Execution Pipeline
 - [ ] Implement guard chain execution (AND logic: all must pass)
-- [ ] Implement short-circuit on first failure
+- [x] Implement short-circuit on first failure
 - [ ] Return `ForbiddenException` on guard failure (configurable)
-- [ ] Support guard returning custom exception on failure
-- [ ] Support async guard execution
+- [x] Support guard returning custom exception on failure
+- [x] Support async guard execution
 
 #### 3.1.4 — Reflector / Metadata (NestJS `SetMetadata`)
 - [ ] Implement `#[set_metadata(key, value)]` decorator
@@ -487,22 +491,25 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 3.2 — Interceptor System (`nivasa-interceptors` + `nivasa-macros`)
 
+> Shared context note: `nivasa-common::RequestContext` is now the canonical per-request context foundation; the interceptor runtime surface should converge onto it via the existing adapter path in later slices.
+
 #### 3.2.1 — Interceptor Trait
-- [ ] Define `Interceptor` trait: `async fn intercept(&self, context: &ExecutionContext, next: CallHandler) -> Result<Response>`
-- [ ] Define `CallHandler` struct: `async fn handle(self) -> Result<Response>`
+- [x] Define `Interceptor` trait: `async fn intercept(&self, context: &ExecutionContext, next: CallHandler) -> Result<Response>`
+- [x] Define `CallHandler` struct: `async fn handle(self) -> Result<Response>`
 - [ ] Support DI in interceptor structs
 
 #### 3.2.2 — `#[interceptor]` Attribute Macro
-- [ ] Parse `#[interceptor(InterceptorType)]` on handler methods
-- [ ] Parse `#[interceptor(InterceptorType)]` on controller struct
+- [x] Parse `#[interceptor(InterceptorType)]` on handler methods
+- [x] Parse `#[interceptor(InterceptorType)]` on controller struct
 - [ ] Parse `#[interceptor(InterceptorType)]` on module
-- [ ] Support multiple interceptors: `#[interceptor(I1, I2)]` (execute in order)
+- [x] Support multiple interceptors: `#[interceptor(I1, I2)]` (execute in order)
 
 #### 3.2.3 — Interceptor Chain Execution
+- Landed execution slices: `NivasaServerBuilder::interceptor(...)` now supports a thin server-side interceptor hook around matched route handlers, and repeated `.interceptor(...)` calls execute as an ordered onion chain while `RequestPipeline` remains the owner of `InterceptorPre` / `InterceptorPost` transitions. Decorator-driven registration, module wiring, and response-mapping helpers remain open.
 - [ ] Implement interceptor chain (onion/RxJS-style: pre → next.handle() → post)
 - [ ] Implement response transformation in post-processing
 - [ ] Implement response mapping (map the body before sending)
-- [ ] Support async interceptor execution
+- [x] Support async interceptor execution
 
 #### 3.2.4 — Built-in Interceptors
 - [ ] Implement `LoggingInterceptor` (log method, path, status, duration)
@@ -513,22 +520,23 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.2.5 — Interceptor Tests
 - [ ] Test pre-processing interceptor adds header to request
 - [ ] Test post-processing interceptor wraps response in `{ data: ... }`
-- [ ] Test interceptor chain execution order (I1.pre → I2.pre → handler → I2.post → I1.post)
+- [x] Test interceptor chain execution order (I1.pre → I2.pre → handler → I2.post → I1.post)
 - [ ] Test timeout interceptor returns 408 on slow handler
 - [ ] Test cache interceptor returns cached response on second call
 
 ### 3.3 — Middleware System (`nivasa-http` + `nivasa-macros`)
 
 #### 3.3.1 — Middleware Trait
-- [ ] Define `NivasaMiddleware` trait: `async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse`
+- [x] Define `NivasaMiddleware` trait: `async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse`
 - [ ] Support DI in middleware structs (`#[inject]` on fields)
-- [ ] Support functional middleware (closure-based, no struct needed)
+- [x] Support functional middleware (closure-based, no struct needed)
 
 #### 3.3.2 — `#[middleware]` Attribute Macro
 - [ ] Parse `#[middleware]` on struct
 - [ ] Generate middleware registration
 
 #### 3.3.3 — Middleware Pipeline
+- Landed execution slice: `NivasaServerBuilder::middleware(...)` runs one `NivasaMiddleware` around a `NextMiddleware` capture point before `complete_middleware()`. Global registration, module-level wiring, route ordering, and decorator parsing remain open.
 - [ ] Implement global middleware registration via `NestApplication::use_()`
 - [ ] Implement module-level middleware registration via `#[module({ middlewares: [...] })]`
 - [ ] Implement route-specific middleware (`.apply(Mw).forRoutes("/users")`)

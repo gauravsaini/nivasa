@@ -91,6 +91,7 @@ pub enum ModuleOrchestratorError {
 #[async_trait]
 trait ManagedModuleRuntime: Send {
     fn state(&self) -> super::lifecycle::NivasaModuleState;
+    fn container(&self) -> DependencyContainer;
     async fn load(&mut self) -> Result<(), ModuleLifecycleError>;
     async fn initialize_and_activate(&mut self) -> Result<(), ModuleLifecycleError>;
     async fn on_application_bootstrap(&self);
@@ -119,6 +120,10 @@ where
 {
     fn state(&self) -> super::lifecycle::NivasaModuleState {
         self.runtime.state()
+    }
+
+    fn container(&self) -> DependencyContainer {
+        self.runtime.container().clone()
     }
 
     async fn load(&mut self) -> Result<(), ModuleLifecycleError> {
@@ -213,6 +218,7 @@ impl ModuleOrchestrator {
         let order = self.registry.resolve_order()?;
 
         for type_id in &order {
+            self.seed_imported_exports(*type_id).await?;
             let runtime = self.runtime_mut(*type_id)?;
             runtime.load().await?;
             runtime.initialize_and_activate().await?;
@@ -236,6 +242,28 @@ impl ModuleOrchestrator {
         for type_id in self.activation_order.iter().rev().copied().collect::<Vec<_>>() {
             let runtime = self.runtime_mut(type_id)?;
             runtime.destroy().await?;
+        }
+
+        Ok(())
+    }
+
+    async fn seed_imported_exports(
+        &self,
+        type_id: TypeId,
+    ) -> Result<(), ModuleOrchestratorError> {
+        let target_container = self.runtime_ref(type_id)?.container();
+        let import_sources = self.registry.import_sources_by_id(type_id)?;
+
+        for source_type in import_sources {
+            let source_container = self.runtime_ref(source_type)?.container();
+            let exported_surface = self.registry.exported_surface_for(source_type)?;
+
+            for exported in exported_surface {
+                if let Some((metadata, value)) = source_container.export_singleton_value(exported).await
+                {
+                    target_container.import_singleton_value(metadata, value).await;
+                }
+            }
         }
 
         Ok(())

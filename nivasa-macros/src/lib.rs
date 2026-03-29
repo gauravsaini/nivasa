@@ -71,6 +71,16 @@ pub fn scxml_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn guard(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::guard(_attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn interceptor(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::interceptor(_attr, item)
+}
+
+#[proc_macro_attribute]
 pub fn body(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
 }

@@ -170,6 +170,15 @@ impl AppBootstrapConfig {
         self.server.global_prefix.as_deref()
     }
 
+    /// Expose the configured versioning surface for bootstrap-time route setup.
+    ///
+    /// This stays read-only and pure so the bootstrap layer can inspect
+    /// versioning choices without implying any runtime wiring beyond the
+    /// existing server configuration boundary.
+    pub fn versioning(&self) -> Option<&VersioningOptions> {
+        self.server.versioning.as_ref()
+    }
+
     /// Compose a bootstrap-time route path from the configured global prefix.
     ///
     /// This stays as pure string handling so route registration can consume it
@@ -377,12 +386,18 @@ mod tests {
         let server = ServerOptions::builder()
             .host("0.0.0.0")
             .port(8080)
+            .versioning(VersioningOptions::builder(VersioningStrategy::Header).build())
             .global_prefix("api")
             .build();
         let bootstrap = AppBootstrapConfig::from(server.clone());
 
         assert_eq!(bootstrap.server, server);
+        assert_eq!(
+            bootstrap.versioning().map(|options| options.strategy),
+            Some(VersioningStrategy::Header)
+        );
         assert_eq!(AppBootstrapConfig::default().server, ServerOptions::default());
+        assert_eq!(AppBootstrapConfig::default().versioning(), None);
     }
 
     #[test]

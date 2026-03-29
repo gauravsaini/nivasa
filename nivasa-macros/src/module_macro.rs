@@ -86,6 +86,24 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let exports = args.exports;
     let middlewares = args.middlewares;
 
+    let controller_registrations = controllers.iter().map(|controller| {
+        quote! {
+            nivasa_core::module::ModuleControllerRegistration::new(
+                std::any::TypeId::of::<#controller>(),
+                #controller::__nivasa_controller_routes()
+                    .into_iter()
+                    .map(|(method, path, handler)| {
+                        nivasa_core::module::ControllerRouteRegistration::new(
+                            method,
+                            path,
+                            handler,
+                        )
+                    })
+                    .collect(),
+            )
+        }
+    });
+
     let expanded = quote! {
         #input
 
@@ -110,6 +128,13 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                 vec![#(std::any::TypeId::of::<#middlewares>()),*]
             }
 
+            pub fn __nivasa_module_controller_registrations(
+            ) -> Vec<nivasa_core::module::ModuleControllerRegistration> {
+                vec![
+                    #(#controller_registrations),*
+                ]
+            }
+
             pub fn __nivasa_module_metadata() -> nivasa_core::module::ModuleMetadata {
                 nivasa_core::module::ModuleMetadata::new()
                     .with_imports(Self::__nivasa_module_imports())
@@ -124,6 +149,10 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         impl nivasa_core::module::Module for #name {
             fn metadata(&self) -> nivasa_core::module::ModuleMetadata {
                 Self::__nivasa_module_metadata()
+            }
+
+            fn controller_registrations(&self) -> Vec<nivasa_core::module::ModuleControllerRegistration> {
+                Self::__nivasa_module_controller_registrations()
             }
 
             async fn configure(&self, container: &nivasa_core::di::container::DependencyContainer) -> Result<(), nivasa_core::di::error::DiError> {

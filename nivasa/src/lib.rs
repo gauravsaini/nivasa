@@ -22,16 +22,89 @@ pub mod prelude {
         AppBootstrapConfig, ServerOptions, ServerOptionsBuilder, VersioningOptions,
         VersioningOptionsBuilder, VersioningStrategy,
     };
-    pub use nivasa_common::HttpException;
-    pub use nivasa_core::DependencyContainer;
-    pub use nivasa_statechart::{StatechartEngine, StatechartSpec};
+    pub use nivasa_common::{HttpException, HttpStatus};
+    #[cfg(feature = "config")]
+    pub use nivasa_config as config;
+    pub use nivasa_core::di::provider::Injectable;
+    pub use nivasa_core::di::{
+        FactoryProvider, Lazy, ProviderMetadata, ProviderRegistry, ValueProvider,
+    };
+    pub use nivasa_core::module::{
+        ConfigurableModule, ControllerRouteRegistration, DynamicModule,
+        ModuleControllerRegistration, ModuleHookSet, ModuleLifecycleError, ModuleOrchestrator,
+        ModuleOrchestratorError, ModuleRuntime,
+    };
+    pub use nivasa_core::{
+        DependencyContainer, DiError, Module, ModuleEntry, ModuleMetadata, ModuleRegistry,
+        ModuleRegistryError, OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy,
+        OnModuleInit, Provider, ProviderScope,
+    };
+    pub use nivasa_http::upload::MultipartLimits;
+    pub use nivasa_http::{
+        upload, Body, ControllerResponse, Download, FromRequest, HeaderMap, Html, IntoResponse,
+        Json, NivasaRequest, NivasaResponse, NivasaServer, NivasaServerBuilder, Query, Redirect,
+        RequestExtractError, RequestPipeline, Sse, SseEvent, StreamBody, Text, UploadedFile,
+    };
+    pub use nivasa_routing::Controller;
+    pub use nivasa_macros::{
+        all, body, controller, custom_param, delete, file, files, get, head, header, headers,
+        http_code, impl_controller, injectable, ip, module, options, param, patch, post, put,
+        query, req, res, scxml_handler, session,
+    };
+    pub use nivasa_statechart::{
+        GENERATED_STATECHARTS, NivasaApplicationEvent, NivasaApplicationState,
+        NivasaApplicationStatechart, NivasaModuleEvent, NivasaModuleState,
+        NivasaModuleStatechart, NivasaProviderEvent, NivasaProviderState,
+        NivasaProviderStatechart, NivasaRequestEvent, NivasaRequestState,
+        NivasaRequestStatechart, StatechartEngine, StatechartSpec,
+    };
+    #[cfg(feature = "validation")]
+    pub use nivasa_validation as validation;
+    #[cfg(feature = "websocket")]
+    pub use nivasa_websocket as websocket;
 }
 
 pub use application::{
     AppBootstrapConfig, ServerOptions, ServerOptionsBuilder, VersioningOptions,
     VersioningOptionsBuilder, VersioningStrategy,
 };
-pub use nivasa_common;
-pub use nivasa_core;
-pub use nivasa_macros;
-pub use nivasa_statechart;
+pub use nivasa_common::{self, HttpException, HttpStatus};
+#[cfg(feature = "config")]
+pub use nivasa_config as config;
+pub use nivasa_core::di::provider::Injectable;
+pub use nivasa_core::di::{
+    FactoryProvider, Lazy, ProviderMetadata, ProviderRegistry, ValueProvider,
+};
+pub use nivasa_core::module::{
+    ConfigurableModule, ControllerRouteRegistration, DynamicModule, ModuleControllerRegistration,
+    ModuleHookSet, ModuleLifecycleError, ModuleOrchestrator, ModuleOrchestratorError,
+    ModuleRuntime,
+};
+pub use nivasa_core::{
+    self, DependencyContainer, DiError, Module, ModuleEntry, ModuleMetadata, ModuleRegistry,
+    ModuleRegistryError, OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy,
+    OnModuleInit, Provider, ProviderScope,
+};
+pub use nivasa_http::upload::MultipartLimits;
+pub use nivasa_http::{
+    self, upload, Body, ControllerResponse, Download, FromRequest, HeaderMap, Html, IntoResponse,
+    Json, NivasaRequest, NivasaResponse, NivasaServer, NivasaServerBuilder, Query, Redirect,
+    RequestExtractError, RequestPipeline, Sse, SseEvent, StreamBody, Text, UploadedFile,
+};
+pub use nivasa_routing::Controller;
+pub use nivasa_macros::{
+    self, all, body, controller, custom_param, delete, file, files, get, head, header, headers,
+    http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
+    req, res, scxml_handler, session,
+};
+pub use nivasa_statechart::{
+    self, GENERATED_STATECHARTS, NivasaApplicationEvent, NivasaApplicationState,
+    NivasaApplicationStatechart, NivasaModuleEvent, NivasaModuleState,
+    NivasaModuleStatechart, NivasaProviderEvent, NivasaProviderState,
+    NivasaProviderStatechart, NivasaRequestEvent, NivasaRequestState,
+    NivasaRequestStatechart, StatechartEngine, StatechartSpec,
+};
+#[cfg(feature = "validation")]
+pub use nivasa_validation as validation;
+#[cfg(feature = "websocket")]
+pub use nivasa_websocket as websocket;

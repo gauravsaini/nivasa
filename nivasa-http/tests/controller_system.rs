@@ -1,7 +1,11 @@
 use http::{Method, Request};
 use nivasa_http::{
-    run_controller_action, run_controller_action_with_body, Body, ControllerResponse, FromRequest,
-    Json, NivasaRequest, NivasaResponse, Query, RequestPipeline,
+    run_controller_action, run_controller_action_with_body, run_controller_action_with_file,
+    run_controller_action_with_files, run_controller_action_with_param,
+    run_controller_action_with_query, run_controller_action_with_request,
+    upload::{FileInterceptor, FilesInterceptor, UploadedFile},
+    Body, ControllerResponse, FromRequest, Json, NivasaRequest, NivasaResponse, Query,
+    RequestPipeline,
 };
 use nivasa_macros::{controller, impl_controller};
 use nivasa_routing::{
@@ -174,6 +178,108 @@ impl BodyController {
     }
 }
 
+#[controller("/requests")]
+struct RequestController;
+
+#[impl_controller]
+impl RequestController {
+    #[nivasa_macros::get("/:id")]
+    fn show(&self, request: &NivasaRequest) -> NivasaResponse {
+        let id = request
+            .path_param("id")
+            .expect("route matching must attach captures before controller execution");
+
+        NivasaResponse::json(serde_json::json!({
+            "path": request.path(),
+            "id": id,
+        }))
+        .with_header("x-controller-mode", "req")
+    }
+}
+
+#[controller("/params")]
+struct ParamController;
+
+#[impl_controller]
+impl ParamController {
+    #[nivasa_macros::get("/:id")]
+    fn show(&self, id: u32) -> NivasaResponse {
+        NivasaResponse::json(serde_json::json!({ "id": id }))
+            .with_header("x-controller-mode", "param")
+    }
+}
+
+#[controller("/queries")]
+struct QueryController;
+
+#[impl_controller]
+impl QueryController {
+    #[nivasa_macros::get("/search")]
+    fn search(&self, query: Query<UserSearch>) -> NivasaResponse {
+        let query = query.into_inner();
+
+        NivasaResponse::json(serde_json::json!({
+            "page": query.page,
+            "active": query.active,
+        }))
+        .with_header("x-controller-mode", "query")
+    }
+}
+
+#[controller("/uploads")]
+struct UploadController;
+
+#[impl_controller]
+impl UploadController {
+    #[nivasa_macros::post("/avatar")]
+    fn avatar(&self, file: UploadedFile) -> NivasaResponse {
+        NivasaResponse::json(serde_json::json!({
+            "filename": file.filename(),
+            "contentType": file.content_type(),
+            "size": file.len(),
+        }))
+        .with_header("x-controller-mode", "file")
+    }
+
+    #[nivasa_macros::post("/attachments")]
+    fn attachments(&self, files: Vec<UploadedFile>) -> NivasaResponse {
+        let filenames = files
+            .iter()
+            .map(|file| file.filename().to_string())
+            .collect::<Vec<_>>();
+
+        NivasaResponse::json(serde_json::json!({
+            "count": filenames.len(),
+            "filenames": filenames,
+        }))
+        .with_header("x-controller-mode", "files")
+    }
+}
+
+fn multipart_body(parts: &[(&str, &str, Option<&str>, &[u8])]) -> (String, Vec<u8>) {
+    let boundary = "X-BOUNDARY";
+    let mut body = Vec::new();
+
+    for (field_name, filename, content_type, bytes) in parts {
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        body.extend_from_slice(
+            format!(
+                "Content-Disposition: form-data; name=\"{field_name}\"; filename=\"{filename}\"\r\n"
+            )
+            .as_bytes(),
+        );
+        if let Some(content_type) = content_type {
+            body.extend_from_slice(format!("Content-Type: {content_type}\r\n").as_bytes());
+        }
+        body.extend_from_slice(b"\r\n");
+        body.extend_from_slice(bytes);
+        body.extend_from_slice(b"\r\n");
+    }
+
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    (format!("multipart/form-data; boundary={boundary}"), body)
+}
+
 #[test]
 fn versioned_controller_routes_and_response_metadata_are_exposed() {
     let controller = VersionedReportsController;
@@ -333,4 +439,324 @@ fn controller_body_runtime_maps_missing_body_to_bad_request() {
     assert_eq!(body["statusCode"], 400);
     assert_eq!(body["error"], "Bad Request");
     assert_eq!(body["message"], "request body is empty");
+}
+
+#[test]
+fn controller_req_runtime_exposes_raw_request_only_after_route_matching() {
+    let mut routes = RouteDispatchRegistry::new();
+    let controller = RequestController;
+    let route = RequestController::__nivasa_controller_routes()
+        .into_iter()
+        .next()
+        .expect("request controller must expose a route");
+
+    routes
+        .register_pattern(
+            RouteMethod::from(route.0),
+            route.1,
+            move |request: &NivasaRequest| {
+                run_controller_action_with_request(request, |request| controller.show(request))
+            },
+        )
+        .expect("controller request route must register");
+
+    let request = NivasaRequest::new(Method::GET, "/requests/42", Body::empty());
+    let mut pipeline = RequestPipeline::new(request);
+    pipeline.parse_request().unwrap();
+    pipeline.complete_middleware().unwrap();
+
+    let outcome = pipeline.match_route(&routes).unwrap();
+    assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
+    assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+
+    let response = match outcome {
+        RouteDispatchOutcome::Matched(entry) => (entry.value)(pipeline.request()),
+        _ => panic!("route must match"),
+    };
+
+    assert_eq!(response.status(), http::StatusCode::OK);
+    assert_eq!(response.headers().get("x-controller-mode").unwrap(), "req");
+    assert_eq!(
+        response.body(),
+        &Body::json(serde_json::json!({
+            "path": "/requests/42",
+            "id": "42",
+        }))
+    );
+}
+
+#[test]
+fn controller_param_runtime_extracts_typed_path_values_after_route_matching() {
+    let mut routes = RouteDispatchRegistry::new();
+    let controller = ParamController;
+    let route = ParamController::__nivasa_controller_routes()
+        .into_iter()
+        .next()
+        .expect("param controller must expose a route");
+
+    routes
+        .register_pattern(
+            RouteMethod::from(route.0),
+            route.1,
+            move |request: &NivasaRequest| {
+                run_controller_action_with_param::<u32, _, _>(request, "id", |id| {
+                    controller.show(id)
+                })
+            },
+        )
+        .expect("controller param route must register");
+
+    let request = NivasaRequest::new(Method::GET, "/params/42", Body::empty());
+    let mut pipeline = RequestPipeline::new(request);
+    pipeline.parse_request().unwrap();
+    pipeline.complete_middleware().unwrap();
+
+    let outcome = pipeline.match_route(&routes).unwrap();
+    assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
+    assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+
+    let response = match outcome {
+        RouteDispatchOutcome::Matched(entry) => (entry.value)(pipeline.request()),
+        _ => panic!("route must match"),
+    };
+
+    assert_eq!(response.status(), http::StatusCode::OK);
+    assert_eq!(
+        response.headers().get("x-controller-mode").unwrap(),
+        "param"
+    );
+    assert_eq!(
+        response.body(),
+        &Body::json(serde_json::json!({ "id": 42 }))
+    );
+}
+
+#[test]
+fn controller_param_runtime_maps_missing_capture_to_bad_request() {
+    let response = run_controller_action_with_param::<u32, _, _>(
+        &NivasaRequest::new(Method::GET, "/params/42", Body::empty()),
+        "id",
+        |_| NivasaResponse::text("unreachable"),
+    );
+
+    assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
+
+    let body: serde_json::Value =
+        serde_json::from_slice(&response.body().as_bytes()).expect("error payload must be json");
+    assert_eq!(body["statusCode"], 400);
+    assert_eq!(body["error"], "Bad Request");
+    assert_eq!(body["message"], "request is missing path parameter `id`");
+}
+
+#[test]
+fn controller_query_runtime_extracts_typed_query_dto_after_route_matching() {
+    let mut routes = RouteDispatchRegistry::new();
+    let controller = QueryController;
+    let route = QueryController::__nivasa_controller_routes()
+        .into_iter()
+        .next()
+        .expect("query controller must expose a route");
+
+    routes
+        .register_pattern(
+            RouteMethod::from(route.0),
+            route.1,
+            move |request: &NivasaRequest| {
+                run_controller_action_with_query::<UserSearch, _, _>(request, |query| {
+                    controller.search(query)
+                })
+            },
+        )
+        .expect("controller query route must register");
+
+    let request = NivasaRequest::new(
+        Method::GET,
+        "/queries/search?page=2&active=true",
+        Body::empty(),
+    );
+    let mut pipeline = RequestPipeline::new(request);
+    pipeline.parse_request().unwrap();
+    pipeline.complete_middleware().unwrap();
+
+    let outcome = pipeline.match_route(&routes).unwrap();
+    assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
+    assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+
+    let response = match outcome {
+        RouteDispatchOutcome::Matched(entry) => (entry.value)(pipeline.request()),
+        _ => panic!("route must match"),
+    };
+
+    assert_eq!(response.status(), http::StatusCode::OK);
+    assert_eq!(
+        response.headers().get("x-controller-mode").unwrap(),
+        "query"
+    );
+    assert_eq!(
+        response.body(),
+        &Body::json(serde_json::json!({
+            "page": 2,
+            "active": true,
+        }))
+    );
+}
+
+#[test]
+fn controller_query_runtime_maps_invalid_query_to_bad_request() {
+    let response = run_controller_action_with_query::<UserSearch, _, _>(
+        &NivasaRequest::new(
+            Method::GET,
+            "/queries/search?page=two&active=true",
+            Body::empty(),
+        ),
+        |_| NivasaResponse::text("unreachable"),
+    );
+
+    assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
+
+    let body: serde_json::Value =
+        serde_json::from_slice(&response.body().as_bytes()).expect("error payload must be json");
+    assert_eq!(body["statusCode"], 400);
+    assert_eq!(body["error"], "Bad Request");
+    assert!(body["message"]
+        .as_str()
+        .expect("message must be string")
+        .starts_with("invalid query string:"));
+}
+
+#[test]
+fn controller_file_runtime_extracts_uploaded_file_after_route_matching() {
+    let mut routes = RouteDispatchRegistry::new();
+    let controller = UploadController;
+    let route = UploadController::__nivasa_controller_routes()
+        .into_iter()
+        .find(|(_, path, _)| path == "/uploads/avatar")
+        .expect("upload controller must expose an avatar route");
+
+    routes
+        .register_pattern(
+            RouteMethod::from(route.0),
+            route.1,
+            move |request: &NivasaRequest| {
+                let interceptor = FileInterceptor::new("avatar");
+                run_controller_action_with_file(request, &interceptor, |file| {
+                    controller.avatar(file)
+                })
+            },
+        )
+        .expect("controller file route must register");
+
+    let (content_type, body) =
+        multipart_body(&[("avatar", "avatar.png", Some("image/png"), b"png-data")]);
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/uploads/avatar")
+        .header("content-type", content_type)
+        .body(Body::bytes(body))
+        .expect("request must build");
+    let request = NivasaRequest::from_http(request);
+    let mut pipeline = RequestPipeline::new(request);
+    pipeline.parse_request().unwrap();
+    pipeline.complete_middleware().unwrap();
+
+    let outcome = pipeline.match_route(&routes).unwrap();
+    assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
+    assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+
+    let response = match outcome {
+        RouteDispatchOutcome::Matched(entry) => (entry.value)(pipeline.request()),
+        _ => panic!("route must match"),
+    };
+
+    assert_eq!(response.status(), http::StatusCode::OK);
+    assert_eq!(response.headers().get("x-controller-mode").unwrap(), "file");
+    assert_eq!(
+        response.body(),
+        &Body::json(serde_json::json!({
+            "filename": "avatar.png",
+            "contentType": "image/png",
+            "size": 8,
+        }))
+    );
+}
+
+#[test]
+fn controller_files_runtime_extracts_multiple_uploaded_files_after_route_matching() {
+    let mut routes = RouteDispatchRegistry::new();
+    let controller = UploadController;
+    let route = UploadController::__nivasa_controller_routes()
+        .into_iter()
+        .find(|(_, path, _)| path == "/uploads/attachments")
+        .expect("upload controller must expose an attachments route");
+
+    routes
+        .register_pattern(
+            RouteMethod::from(route.0),
+            route.1,
+            move |request: &NivasaRequest| {
+                let interceptor = FilesInterceptor::new("attachments");
+                run_controller_action_with_files(request, &interceptor, |files| {
+                    controller.attachments(files)
+                })
+            },
+        )
+        .expect("controller files route must register");
+
+    let (content_type, body) = multipart_body(&[
+        ("attachments", "one.txt", Some("text/plain"), b"first"),
+        ("attachments", "two.txt", Some("text/plain"), b"second"),
+    ]);
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/uploads/attachments")
+        .header("content-type", content_type)
+        .body(Body::bytes(body))
+        .expect("request must build");
+    let request = NivasaRequest::from_http(request);
+    let mut pipeline = RequestPipeline::new(request);
+    pipeline.parse_request().unwrap();
+    pipeline.complete_middleware().unwrap();
+
+    let outcome = pipeline.match_route(&routes).unwrap();
+    assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
+    assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+
+    let response = match outcome {
+        RouteDispatchOutcome::Matched(entry) => (entry.value)(pipeline.request()),
+        _ => panic!("route must match"),
+    };
+
+    assert_eq!(response.status(), http::StatusCode::OK);
+    assert_eq!(
+        response.headers().get("x-controller-mode").unwrap(),
+        "files"
+    );
+    assert_eq!(
+        response.body(),
+        &Body::json(serde_json::json!({
+            "count": 2,
+            "filenames": ["one.txt", "two.txt"],
+        }))
+    );
+}
+
+#[test]
+fn controller_file_runtime_maps_missing_content_type_to_bad_request() {
+    let response = run_controller_action_with_file(
+        &NivasaRequest::new(
+            Method::POST,
+            "/uploads/avatar",
+            Body::bytes(b"raw".to_vec()),
+        ),
+        &FileInterceptor::new("avatar"),
+        |_| NivasaResponse::text("unreachable"),
+    );
+
+    assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
+
+    let body: serde_json::Value =
+        serde_json::from_slice(&response.body().as_bytes()).expect("error payload must be json");
+    assert_eq!(body["statusCode"], 400);
+    assert_eq!(body["error"], "Bad Request");
+    assert_eq!(body["message"], "request is missing header `content-type`");
 }

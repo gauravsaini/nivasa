@@ -8,6 +8,8 @@
 //! `Received -> MiddlewareChain -> RouteMatching -> GuardChain -> InterceptorPre -> PipeTransform -> HandlerExecution -> InterceptorPost -> ErrorHandling -> SendingResponse -> Done`
 
 use crate::NivasaRequest;
+use nivasa_common::HttpException;
+use nivasa_guards::{ExecutionContext, Guard};
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry};
 use nivasa_statechart::{
     InvalidTransitionError, NivasaRequestEvent, NivasaRequestState, NivasaRequestStatechart,
@@ -23,6 +25,22 @@ enum RequestEvent {
     RouteMatched,
     RouteNotFound,
     RouteMethodNotAllowed,
+    GuardsPassed,
+    GuardDenied,
+    ErrorGuard,
+    InterceptorsPreComplete,
+    ErrorInterceptor,
+    PipesComplete,
+    ErrorValidation,
+    ErrorPipe,
+    HandlerComplete,
+    ErrorHandler,
+    InterceptorsPostComplete,
+    ErrorInterceptorPost,
+    FilterHandled,
+    ErrorFilterUnhandled,
+    ResponseSent,
+    ErrorSend,
 }
 
 impl RequestEvent {
@@ -54,6 +72,70 @@ impl RequestEvent {
         Self::RouteMethodNotAllowed
     }
 
+    const fn guards_passed() -> Self {
+        Self::GuardsPassed
+    }
+
+    const fn guard_denied() -> Self {
+        Self::GuardDenied
+    }
+
+    const fn guard_error() -> Self {
+        Self::ErrorGuard
+    }
+
+    const fn interceptors_pre_complete() -> Self {
+        Self::InterceptorsPreComplete
+    }
+
+    const fn interceptor_error() -> Self {
+        Self::ErrorInterceptor
+    }
+
+    const fn pipes_complete() -> Self {
+        Self::PipesComplete
+    }
+
+    const fn validation_error() -> Self {
+        Self::ErrorValidation
+    }
+
+    const fn pipe_error() -> Self {
+        Self::ErrorPipe
+    }
+
+    const fn handler_complete() -> Self {
+        Self::HandlerComplete
+    }
+
+    const fn handler_error() -> Self {
+        Self::ErrorHandler
+    }
+
+    const fn interceptors_post_complete() -> Self {
+        Self::InterceptorsPostComplete
+    }
+
+    const fn interceptor_post_error() -> Self {
+        Self::ErrorInterceptorPost
+    }
+
+    const fn filter_handled() -> Self {
+        Self::FilterHandled
+    }
+
+    const fn filter_unhandled() -> Self {
+        Self::ErrorFilterUnhandled
+    }
+
+    const fn response_sent() -> Self {
+        Self::ResponseSent
+    }
+
+    const fn send_error() -> Self {
+        Self::ErrorSend
+    }
+
     fn for_route_outcome<'a, T>(outcome: &RouteDispatchOutcome<'a, T>) -> Self {
         match outcome {
             RouteDispatchOutcome::Matched(_) => Self::route_matched(),
@@ -73,8 +155,32 @@ impl From<RequestEvent> for NivasaRequestEvent {
             RequestEvent::RouteMatched => Self::RouteMatched,
             RequestEvent::RouteNotFound => Self::RouteNotFound,
             RequestEvent::RouteMethodNotAllowed => Self::RouteMethodNotAllowed,
+            RequestEvent::GuardsPassed => Self::GuardsPassed,
+            RequestEvent::GuardDenied => Self::GuardDenied,
+            RequestEvent::ErrorGuard => Self::ErrorGuard,
+            RequestEvent::InterceptorsPreComplete => Self::InterceptorsPreComplete,
+            RequestEvent::ErrorInterceptor => Self::ErrorInterceptor,
+            RequestEvent::PipesComplete => Self::PipesComplete,
+            RequestEvent::ErrorValidation => Self::ErrorValidation,
+            RequestEvent::ErrorPipe => Self::ErrorPipe,
+            RequestEvent::HandlerComplete => Self::HandlerComplete,
+            RequestEvent::ErrorHandler => Self::ErrorHandler,
+            RequestEvent::InterceptorsPostComplete => Self::InterceptorsPostComplete,
+            RequestEvent::ErrorInterceptorPost => Self::ErrorInterceptorPost,
+            RequestEvent::FilterHandled => Self::FilterHandled,
+            RequestEvent::ErrorFilterUnhandled => Self::ErrorFilterUnhandled,
+            RequestEvent::ResponseSent => Self::ResponseSent,
+            RequestEvent::ErrorSend => Self::ErrorSend,
         }
     }
+}
+
+/// Result of evaluating a guard against the request pipeline.
+#[derive(Clone, Debug)]
+pub enum GuardExecutionOutcome {
+    Passed,
+    Denied,
+    Error(HttpException),
 }
 
 /// SCXML-safe request coordinator for the first request pipeline stages.
@@ -162,6 +268,141 @@ impl RequestPipeline {
 
         self.advance(RequestEvent::for_route_outcome(&outcome))?;
         Ok(outcome)
+    }
+
+    /// Mark guard evaluation as successful and continue the SCXML lifecycle.
+    pub fn pass_guards(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::guards_passed())
+    }
+
+    /// Enter the SCXML error path because guard evaluation denied the request.
+    pub fn deny_guards(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::guard_denied())
+    }
+
+    /// Enter the SCXML error path because guard evaluation failed.
+    pub fn fail_guards(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::guard_error())
+    }
+
+    /// Evaluate a guard from the SCXML `GuardChain` state and advance along the
+    /// pass, deny, or error transition that the guard result dictates.
+    pub async fn evaluate_guard<G: Guard + ?Sized>(
+        &mut self,
+        guard: &G,
+        context: &ExecutionContext,
+    ) -> Result<GuardExecutionOutcome, InvalidTransitionError<NivasaRequestStatechart>> {
+        match guard.can_activate(context).await {
+            Ok(true) => {
+                self.pass_guards()?;
+                Ok(GuardExecutionOutcome::Passed)
+            }
+            Ok(false) => {
+                self.deny_guards()?;
+                Ok(GuardExecutionOutcome::Denied)
+            }
+            Err(error) => {
+                self.fail_guards()?;
+                Ok(GuardExecutionOutcome::Error(error))
+            }
+        }
+    }
+
+    /// Mark interceptor pre-processing as complete.
+    pub fn complete_interceptors_pre(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::interceptors_pre_complete())
+    }
+
+    /// Enter the SCXML error path because a pre-handler interceptor failed.
+    pub fn fail_interceptors_pre(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::interceptor_error())
+    }
+
+    /// Mark pipe execution as complete.
+    pub fn complete_pipes(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::pipes_complete())
+    }
+
+    /// Enter the SCXML error path because validation failed.
+    pub fn fail_validation(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::validation_error())
+    }
+
+    /// Enter the SCXML error path because pipe execution failed.
+    pub fn fail_pipes(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::pipe_error())
+    }
+
+    /// Mark handler execution as complete.
+    pub fn complete_handler(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::handler_complete())
+    }
+
+    /// Enter the SCXML error path because handler execution failed.
+    pub fn fail_handler(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::handler_error())
+    }
+
+    /// Mark interceptor post-processing as complete.
+    pub fn complete_interceptors_post(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::interceptors_post_complete())
+    }
+
+    /// Enter the SCXML error path because a post-handler interceptor failed.
+    pub fn fail_interceptors_post(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::interceptor_post_error())
+    }
+
+    /// Mark error filters as having produced a response.
+    pub fn handle_filter(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::filter_handled())
+    }
+
+    /// Advance from error handling when no filter handled the failure.
+    pub fn fail_filter_unhandled(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::filter_unhandled())
+    }
+
+    /// Mark response sending as complete.
+    pub fn complete_response(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::response_sent())
+    }
+
+    /// Advance through the SCXML send-error branch.
+    pub fn fail_send(
+        &mut self,
+    ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
+        self.advance(RequestEvent::send_error())
     }
 
     fn advance(

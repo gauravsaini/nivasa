@@ -6,12 +6,14 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input, parse_quote,
     spanned::Spanned,
-    Attribute, Error, Expr, ExprLit, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, ItemStruct,
-    Lit, LitInt, LitStr, Meta, PatType, Path, Result, Token,
+    Attribute, Error, Expr, ExprLit, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, ItemStruct, Lit,
+    LitInt, LitStr, Meta, PatType, Path, Result, Token,
 };
 
 const ROUTE_MARKER_PREFIX: &str = "nivasa-route:";
 const RESPONSE_MARKER_PREFIX: &str = "nivasa-response:";
+const GUARD_MARKER_PREFIX: &str = "nivasa-guard:";
+const INTERCEPTOR_MARKER_PREFIX: &str = "nivasa-interceptor:";
 
 #[derive(Debug, Default, Clone)]
 struct ControllerArgs {
@@ -36,6 +38,8 @@ struct ControllerMethodBinding {
     route: RouteBinding,
     handler: Ident,
     parameters: Vec<ParameterBinding>,
+    guards: Vec<String>,
+    interceptors: Vec<String>,
     response: Option<ResponseBinding>,
 }
 
@@ -217,10 +221,28 @@ impl Parse for ControllerArgs {
     }
 }
 
-fn expand_controller(args: ControllerArgs, input: ItemStruct) -> Result<proc_macro2::TokenStream> {
+fn expand_controller(
+    args: ControllerArgs,
+    mut input: ItemStruct,
+) -> Result<proc_macro2::TokenStream> {
     let name = &input.ident;
     let generics = input.generics.clone();
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let mut controller_guards = Vec::new();
+    let mut controller_interceptors = Vec::new();
+    let mut retained_attrs = Vec::new();
+
+    for attr in input.attrs.drain(..) {
+        match parse_guard_binding(&attr)? {
+            Some(guards) => controller_guards.extend(guards),
+            None => match parse_interceptor_binding(&attr)? {
+                Some(interceptors) => controller_interceptors.extend(interceptors),
+                None => retained_attrs.push(attr),
+            },
+        }
+    }
+
+    input.attrs = retained_attrs;
     let path = args
         .path
         .ok_or_else(|| Error::new(name.span(), "missing controller path"))?;
@@ -264,6 +286,18 @@ fn expand_controller(args: ControllerArgs, input: ItemStruct) -> Result<proc_mac
                     Self::__NIVASA_CONTROLLER_VERSION,
                 )
             }
+
+            pub fn __nivasa_controller_guards() -> Vec<&'static str> {
+                vec![
+                    #(#controller_guards),*
+                ]
+            }
+
+            pub fn __nivasa_controller_interceptors() -> Vec<&'static str> {
+                vec![
+                    #(#controller_interceptors),*
+                ]
+            }
         }
 
         impl #impl_generics ::nivasa_routing::Controller for #name #ty_generics #where_clause {
@@ -282,6 +316,32 @@ fn route_marker_attr(method: &'static str, path: &LitStr) -> Attribute {
     parse_quote!(#[doc = #marker])
 }
 
+fn guard_marker_attr(guards: &[Path]) -> Attribute {
+    let payload = guards
+        .iter()
+        .map(|guard| guard.to_token_stream().to_string().replace(' ', ""))
+        .collect::<Vec<_>>()
+        .join(",");
+    let marker = LitStr::new(
+        &format!("{GUARD_MARKER_PREFIX} {payload}"),
+        proc_macro2::Span::call_site(),
+    );
+    parse_quote!(#[doc = #marker])
+}
+
+fn interceptor_marker_attr(interceptors: &[Path]) -> Attribute {
+    let payload = interceptors
+        .iter()
+        .map(|interceptor| interceptor.to_token_stream().to_string().replace(' ', ""))
+        .collect::<Vec<_>>()
+        .join(",");
+    let marker = LitStr::new(
+        &format!("{INTERCEPTOR_MARKER_PREFIX} {payload}"),
+        proc_macro2::Span::call_site(),
+    );
+    parse_quote!(#[doc = #marker])
+}
+
 fn attr_path_matches(attr: &Attribute, name: &str) -> bool {
     attr.path().is_ident(name)
         || attr
@@ -289,6 +349,119 @@ fn attr_path_matches(attr: &Attribute, name: &str) -> bool {
             .segments
             .last()
             .is_some_and(|segment| segment.ident == name)
+}
+
+fn parse_guard_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
+    if attr_path_matches(attr, "guard") {
+        let guards: syn::punctuated::Punctuated<Path, Token![,]> =
+            attr.parse_args_with(syn::punctuated::Punctuated::parse_terminated)?;
+
+        if guards.is_empty() {
+            return Err(Error::new(
+                attr.span(),
+                "`#[guard]` requires at least one guard type",
+            ));
+        }
+
+        return Ok(Some(
+            guards
+                .into_iter()
+                .map(|path| path.to_token_stream().to_string().replace(' ', ""))
+                .collect(),
+        ));
+    }
+
+    if !attr.path().is_ident("doc") {
+        return Ok(None);
+    }
+
+    let Meta::NameValue(meta) = &attr.meta else {
+        return Ok(None);
+    };
+
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(doc), ..
+    }) = &meta.value
+    else {
+        return Ok(None);
+    };
+
+    let value = doc.value();
+    let Some(rest) = value.trim().strip_prefix(GUARD_MARKER_PREFIX) else {
+        return Ok(None);
+    };
+
+    let guards = rest
+        .trim()
+        .split(',')
+        .map(str::trim)
+        .filter(|guard| !guard.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+
+    if guards.is_empty() {
+        return Err(Error::new(doc.span(), "invalid controller guard marker"));
+    }
+
+    Ok(Some(guards))
+}
+
+fn parse_interceptor_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
+    if attr_path_matches(attr, "interceptor") {
+        let interceptors: syn::punctuated::Punctuated<Path, Token![,]> =
+            attr.parse_args_with(syn::punctuated::Punctuated::parse_terminated)?;
+
+        if interceptors.is_empty() {
+            return Err(Error::new(
+                attr.span(),
+                "`#[interceptor]` requires at least one interceptor type",
+            ));
+        }
+
+        return Ok(Some(
+            interceptors
+                .into_iter()
+                .map(|path| path.to_token_stream().to_string().replace(' ', ""))
+                .collect(),
+        ));
+    }
+
+    if !attr.path().is_ident("doc") {
+        return Ok(None);
+    }
+
+    let Meta::NameValue(meta) = &attr.meta else {
+        return Ok(None);
+    };
+
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(doc), ..
+    }) = &meta.value
+    else {
+        return Ok(None);
+    };
+
+    let value = doc.value();
+    let Some(rest) = value.trim().strip_prefix(INTERCEPTOR_MARKER_PREFIX) else {
+        return Ok(None);
+    };
+
+    let interceptors = rest
+        .trim()
+        .split(',')
+        .map(str::trim)
+        .filter(|interceptor| !interceptor.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+
+    if interceptors.is_empty() {
+        return Err(Error::new(
+            doc.span(),
+            "invalid controller interceptor marker",
+        ));
+    }
+
+    Ok(Some(interceptors))
 }
 
 fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding>> {
@@ -326,10 +499,7 @@ fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding
 
     let binding = if kind == ParameterExtractorKind::CustomParam {
         let path: Path = attr.parse_args()?;
-        let rendered = path
-            .to_token_stream()
-            .to_string()
-            .replace(' ', "");
+        let rendered = path.to_token_stream().to_string().replace(' ', "");
 
         if rendered.is_empty() {
             return Err(Error::new(
@@ -372,7 +542,10 @@ fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding
             Meta::NameValue(_) => {
                 return Err(Error::new(
                     attr.span(),
-                    format!("`#[{}]` only supports bare or string-list syntax", kind.as_str()),
+                    format!(
+                        "`#[{}]` only supports bare or string-list syntax",
+                        kind.as_str()
+                    ),
                 ));
             }
         }
@@ -435,9 +608,9 @@ fn parse_response_marker(attr: &Attribute) -> Result<Option<ResponseBinding>> {
 
     match kind {
         "http_code" => {
-            let status_code = payload.parse::<u16>().map_err(|_| {
-                Error::new(doc.span(), "invalid controller response status code")
-            })?;
+            let status_code = payload
+                .parse::<u16>()
+                .map_err(|_| Error::new(doc.span(), "invalid controller response status code"))?;
 
             if !(100..=599).contains(&status_code) {
                 return Err(Error::new(
@@ -548,9 +721,9 @@ fn parse_response_binding(attr: &Attribute) -> Result<Option<ResponseBinding>> {
 
     if is_code {
         let code: syn::LitInt = attr.parse_args()?;
-        let status_code = code.base10_parse::<u16>().map_err(|_| {
-            Error::new(code.span(), "invalid controller response status code")
-        })?;
+        let status_code = code
+            .base10_parse::<u16>()
+            .map_err(|_| Error::new(code.span(), "invalid controller response status code"))?;
 
         if !(100..=599).contains(&status_code) {
             return Err(Error::new(
@@ -683,29 +856,40 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
 
         let mut method_route: Option<RouteBinding> = None;
         let mut response_bindings = Vec::new();
+        let mut guard_bindings = Vec::new();
+        let mut interceptor_bindings = Vec::new();
         let mut retained_attrs = Vec::new();
 
         for attr in method.attrs.drain(..) {
-            match parse_route_binding(&attr)? {
-                Some(binding) => {
-                    if method_route.is_some() {
-                        return Err(Error::new(
-                            attr.span(),
-                            "a controller method can only use one HTTP method attribute",
-                        ));
-                    }
-                    method_route = Some(binding);
-                }
-                None => match parse_response_binding(&attr)? {
-                    Some(binding) => response_bindings.push(binding),
-                    None => retained_attrs.push(attr),
+            match parse_guard_binding(&attr)? {
+                Some(mut guards) => guard_bindings.append(&mut guards),
+                None => match parse_interceptor_binding(&attr)? {
+                    Some(mut interceptors) => interceptor_bindings.append(&mut interceptors),
+                    None => match parse_route_binding(&attr)? {
+                        Some(binding) => {
+                            if method_route.is_some() {
+                                return Err(Error::new(
+                                    attr.span(),
+                                    "a controller method can only use one HTTP method attribute",
+                                ));
+                            }
+                            method_route = Some(binding);
+                        }
+                        None => match parse_response_binding(&attr)? {
+                            Some(binding) => response_bindings.push(binding),
+                            None => retained_attrs.push(attr),
+                        },
+                    },
                 },
             }
         }
 
         method.attrs = retained_attrs;
         let parameters = collect_parameter_bindings(method)?;
-        let has_controller_metadata = !response_bindings.is_empty() || !parameters.is_empty();
+        let has_controller_metadata = !response_bindings.is_empty()
+            || !parameters.is_empty()
+            || !guard_bindings.is_empty()
+            || !interceptor_bindings.is_empty();
         let response = if response_bindings.is_empty() {
             None
         } else {
@@ -754,6 +938,8 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                 route: binding,
                 handler: method.sig.ident.clone(),
                 parameters,
+                guards: guard_bindings,
+                interceptors: interceptor_bindings,
                 response,
             });
         }
@@ -828,6 +1014,37 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         }
     });
 
+    let guard_entries = methods.iter().map(|method| {
+        let handler = &method.handler;
+        let guards = method.guards.iter().map(|guard| quote!(#guard));
+
+        quote! {
+            (
+                stringify!(#handler),
+                vec![
+                    #(#guards),*
+                ]
+            )
+        }
+    });
+
+    let interceptor_entries = methods.iter().map(|method| {
+        let handler = &method.handler;
+        let interceptors = method
+            .interceptors
+            .iter()
+            .map(|interceptor| quote!(#interceptor));
+
+        quote! {
+            (
+                stringify!(#handler),
+                vec![
+                    #(#interceptors),*
+                ]
+            )
+        }
+    });
+
     Ok(quote! {
         #input
 
@@ -864,6 +1081,20 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             ) -> Vec<(&'static str, Option<u16>, Vec<(&'static str, &'static str)>)> {
                 vec![
                     #(#response_entries),*
+                ]
+            }
+
+            pub fn __nivasa_controller_guard_metadata(
+            ) -> Vec<(&'static str, Vec<&'static str>)> {
+                vec![
+                    #(#guard_entries),*
+                ]
+            }
+
+            pub fn __nivasa_controller_interceptor_metadata(
+            ) -> Vec<(&'static str, Vec<&'static str>)> {
+                vec![
+                    #(#interceptor_entries),*
                 ]
             }
         }
@@ -934,6 +1165,75 @@ pub fn all(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut method = parse_macro_input!(item as ImplItemFn);
     method.attrs.insert(0, route_marker_attr("ALL", &path));
     quote!(#method).into()
+}
+
+pub fn guard(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let guards = parse_macro_input!(
+        attr with syn::punctuated::Punctuated::<Path, Token![,]>::parse_terminated
+    );
+
+    if guards.is_empty() {
+        return Error::new(
+            proc_macro2::Span::call_site(),
+            "`#[guard]` requires at least one guard type",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let guard_attr = guard_marker_attr(&guards.iter().cloned().collect::<Vec<_>>());
+
+    if let Ok(mut method) = syn::parse::<ImplItemFn>(item.clone()) {
+        method.attrs.insert(0, guard_attr);
+        return quote!(#method).into();
+    }
+
+    if let Ok(mut item_struct) = syn::parse::<ItemStruct>(item.clone()) {
+        item_struct.attrs.insert(0, guard_attr);
+        return quote!(#item_struct).into();
+    }
+
+    Error::new(
+        proc_macro2::Span::call_site(),
+        "`#[guard]` only supports controller structs and inherent controller methods",
+    )
+    .to_compile_error()
+    .into()
+}
+
+pub fn interceptor(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let interceptors = parse_macro_input!(
+        attr with syn::punctuated::Punctuated::<Path, Token![,]>::parse_terminated
+    );
+
+    if interceptors.is_empty() {
+        return Error::new(
+            proc_macro2::Span::call_site(),
+            "`#[interceptor]` requires at least one interceptor type",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let interceptor_attr =
+        interceptor_marker_attr(&interceptors.iter().cloned().collect::<Vec<_>>());
+
+    if let Ok(mut method) = syn::parse::<ImplItemFn>(item.clone()) {
+        method.attrs.insert(0, interceptor_attr);
+        return quote!(#method).into();
+    }
+
+    if let Ok(mut item_struct) = syn::parse::<ItemStruct>(item.clone()) {
+        item_struct.attrs.insert(0, interceptor_attr);
+        return quote!(#item_struct).into();
+    }
+
+    Error::new(
+        proc_macro2::Span::call_site(),
+        "`#[interceptor]` only supports controller structs and inherent controller methods",
+    )
+    .to_compile_error()
+    .into()
 }
 
 pub fn http_code(attr: TokenStream, item: TokenStream) -> TokenStream {
