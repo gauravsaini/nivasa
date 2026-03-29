@@ -3,8 +3,11 @@ use nivasa::prelude::*;
 use nivasa::prelude::{
     all, body, controller, custom_param, delete, file, files, get, head, header, headers,
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
-    req, res, scxml_handler, session, Reflector,
+    req, res, scxml_handler, session, ArgumentsHost, ExceptionFilter, ExceptionFilterFuture,
+    HttpArgumentsHost, Reflector,
 };
+#[allow(unused_imports)]
+use nivasa::filters as filters_crate;
 #[allow(unused_imports)]
 use nivasa::pipes as pipes_crate;
 use std::future::Future;
@@ -115,6 +118,13 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
     fn _assert_guard_context_is_in_scope(_: Option<GuardExecutionContext>) {}
     fn _assert_guard_outcome_is_in_scope(_: Option<GuardExecutionOutcome>) {}
     fn _assert_reflector_is_in_scope(_: Option<Reflector>) {}
+    fn _assert_exception_filter_trait_is_in_scope<T: ExceptionFilter<(), HttpException>>() {}
+    fn _assert_exception_filter_future_is_in_scope(
+        _: Option<ExceptionFilterFuture<'static, HttpException>>,
+    ) {
+    }
+    fn _assert_arguments_host_is_in_scope(_: Option<ArgumentsHost>) {}
+    fn _assert_http_arguments_host_is_in_scope(_: Option<HttpArgumentsHost>) {}
     fn _assert_interceptor_context_is_in_scope(_: Option<ExecutionContext>) {}
     fn _assert_interceptor_call_handler_is_in_scope(_: Option<CallHandler<NivasaResponse>>) {}
     fn _assert_interceptor_result_is_in_scope(_: Option<InterceptorResult<NivasaResponse>>) {}
@@ -160,6 +170,12 @@ fn crate_root_reexports_pipe_surface_as_placeholder_crate() {
 }
 
 #[test]
+#[allow(unused_imports)]
+fn crate_root_reexports_filter_surface_as_placeholder_crate() {
+    use nivasa::filters as filters_crate;
+}
+
+#[test]
 fn crate_root_and_prelude_reexport_generated_statechart_types() {
     fn _assert_root_application_state(_: nivasa::NivasaApplicationState) {}
     fn _assert_root_application_event(_: nivasa::NivasaApplicationEvent) {}
@@ -199,8 +215,25 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
     fn _assert_root_guard_context_is_in_scope(_: Option<GuardExecutionContext>) {}
     fn _assert_root_guard_outcome_is_in_scope(_: Option<GuardExecutionOutcome>) {}
     fn _assert_root_reflector_is_in_scope(_: Option<Reflector>) {}
+    fn _assert_root_exception_filter_trait_is_in_scope<T: ExceptionFilter<(), HttpException>>() {}
+    fn _assert_root_exception_filter_future_is_in_scope(
+        _: Option<ExceptionFilterFuture<'static, HttpException>>,
+    ) {
+    }
+    fn _assert_root_arguments_host_is_in_scope(_: Option<ArgumentsHost>) {}
+    fn _assert_root_http_arguments_host_is_in_scope(_: Option<HttpArgumentsHost>) {}
     fn _assert_root_middleware_trait_name_is_in_scope<T: NivasaMiddleware>() {}
     fn _assert_root_next_middleware_type_is_in_scope(_: Option<NextMiddleware>) {}
+
+    fn _assert_root_filters_crate_is_in_scope(_: Option<filters_crate::ArgumentsHost>) {}
+    fn _assert_root_filters_http_arguments_host_is_in_scope(
+        _: Option<filters_crate::HttpArgumentsHost>,
+    ) {
+    }
+    fn _assert_root_filters_exception_filter_trait_is_in_scope<
+        T: filters_crate::ExceptionFilter<(), HttpException>,
+    >() {
+    }
 }
 
 struct DemoController;
