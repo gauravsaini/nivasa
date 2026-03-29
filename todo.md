@@ -57,7 +57,7 @@
 
 ### 0.4 — Umbrella Crate Re-export Strategy
 - [x] Design `nivasa::prelude::*` — users should only need one import
-- [ ] Re-export key traits and runtime types: `Controller`, `Module`, `Injectable`, plus the landed DI/module/runtime surface; `Guard`, `Interceptor`, `Pipe`, `ExceptionFilter`, and `Middleware` still need upstream exports
+- [ ] Re-export key traits and runtime types: `Controller`, `Module`, `Injectable`, plus the landed DI/module/runtime surface; `Guard`, `Pipe`, `ExceptionFilter`, and `Middleware` still need upstream exports, and `Interceptor` is now re-exported from the umbrella crate
 - [x] Re-export key macros: `#[module]`, `#[injectable]`, `#[controller]`, `#[get]`, `#[post]`, `#[put]`, `#[delete]`, `#[patch]`, `#[head]`, `#[options]`, `#[all]`, `#[impl_controller]`, `#[scxml_handler]`
 - [x] Re-export `ServerOptions`, `HttpException`, and the existing HTTP/server surface
 - [x] Re-export `StatechartEngine`, generated state/event enums from `nivasa-statechart`
@@ -506,7 +506,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support multiple interceptors: `#[interceptor(I1, I2)]` (execute in order)
 
 #### 3.2.3 — Interceptor Chain Execution
-- Landed execution slices: `NivasaServerBuilder::interceptor(...)` now supports a thin server-side interceptor hook around matched route handlers, and repeated `.interceptor(...)` calls execute as an ordered onion chain while `RequestPipeline` remains the owner of `InterceptorPre` / `InterceptorPost` transitions. Decorator-driven registration, module wiring, and response-mapping helpers remain open.
+- Landed execution slices: `NivasaServerBuilder::interceptor(...)` now supports a thin server-side interceptor hook around matched route handlers, repeated `.interceptor(...)` calls execute as an ordered onion chain while `RequestPipeline` remains the owner of `InterceptorPre` / `InterceptorPost` transitions, and `AppBootstrapConfig::use_interceptor(...)` now forwards into that hook. Decorator-driven registration, module wiring, and response-mapping helpers remain open.
 - [ ] Implement interceptor chain (onion/RxJS-style: pre → next.handle() → post)
 - [ ] Implement response transformation in post-processing
 - [ ] Implement response mapping (map the body before sending)
