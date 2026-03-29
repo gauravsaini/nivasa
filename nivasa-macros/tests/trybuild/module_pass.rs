@@ -1,7 +1,8 @@
-use nivasa_macros::{controller, impl_controller, injectable, module};
+use nivasa_macros::{controller, impl_controller, injectable, interceptor, module};
 
 struct ImportedModule;
 struct LoggingMiddleware;
+struct AuditInterceptor;
 
 #[injectable]
 struct Service;
@@ -22,9 +23,11 @@ impl AppController {
     exports: [Service],
     middlewares: [LoggingMiddleware],
 })]
+#[interceptor(AuditInterceptor)]
 struct AppModule;
 
 fn main() {
     let _ = AppModule::__nivasa_module_middlewares();
+    let _ = AppModule::__nivasa_module_interceptors();
     let _ = AppModule::__nivasa_module_controller_registrations();
 }

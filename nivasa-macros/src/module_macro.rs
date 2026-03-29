@@ -1,8 +1,10 @@
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{
     parse::{Parse, ParseStream},
-    parse_macro_input, Error, Ident, ItemStruct, Result, Token, Type,
+    parse_macro_input, Attribute, Error, Expr, ExprLit, Ident, ItemStruct, Lit, Meta, Result,
+    spanned::Spanned,
+    Token, Type,
 };
 
 #[derive(Default)]
@@ -79,6 +81,10 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr as ModuleArgs);
     let input = parse_macro_input!(item as ItemStruct);
     let name = &input.ident;
+    let module_interceptors = match parse_module_interceptors(&input.attrs) {
+        Ok(interceptors) => interceptors,
+        Err(err) => return err.to_compile_error().into(),
+    };
 
     let imports = args.imports;
     let providers = args.providers;
@@ -128,6 +134,10 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                 vec![#(std::any::TypeId::of::<#middlewares>()),*]
             }
 
+            pub fn __nivasa_module_interceptors() -> Vec<&'static str> {
+                vec![#(#module_interceptors),*]
+            }
+
             pub fn __nivasa_module_controller_registrations(
             ) -> Vec<nivasa_core::module::ModuleControllerRegistration> {
                 vec![
@@ -168,4 +178,82 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+const INTERCEPTOR_MARKER_PREFIX: &str = "__NIVASA_INTERCEPTOR__";
+
+fn attr_path_matches(attr: &Attribute, name: &str) -> bool {
+    attr.path().is_ident(name)
+        || attr
+            .path()
+            .segments
+            .last()
+            .is_some_and(|segment| segment.ident == name)
+}
+
+fn parse_interceptor_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
+    if attr_path_matches(attr, "interceptor") {
+        let interceptors: syn::punctuated::Punctuated<syn::Path, Token![,]> =
+            attr.parse_args_with(syn::punctuated::Punctuated::parse_terminated)?;
+
+        if interceptors.is_empty() {
+            return Err(Error::new(
+                attr.span(),
+                "`#[interceptor]` requires at least one interceptor type",
+            ));
+        }
+
+        return Ok(Some(
+            interceptors
+                .into_iter()
+                .map(|path| path.into_token_stream().to_string().replace(' ', ""))
+                .collect(),
+        ));
+    }
+
+    if !attr.path().is_ident("doc") {
+        return Ok(None);
+    }
+
+    let Meta::NameValue(meta) = &attr.meta else {
+        return Ok(None);
+    };
+
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(doc), ..
+    }) = &meta.value
+    else {
+        return Ok(None);
+    };
+
+    let value = doc.value();
+    let Some(rest) = value.trim().strip_prefix(INTERCEPTOR_MARKER_PREFIX) else {
+        return Ok(None);
+    };
+
+    let interceptors = rest
+        .trim()
+        .split(',')
+        .map(str::trim)
+        .filter(|interceptor| !interceptor.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+
+    if interceptors.is_empty() {
+        return Err(Error::new(doc.span(), "invalid module interceptor marker"));
+    }
+
+    Ok(Some(interceptors))
+}
+
+fn parse_module_interceptors(attrs: &[Attribute]) -> Result<Vec<String>> {
+    let mut interceptors = Vec::new();
+
+    for attr in attrs {
+        if let Some(parsed) = parse_interceptor_binding(attr)? {
+            interceptors.extend(parsed);
+        }
+    }
+
+    Ok(interceptors)
 }
