@@ -15,7 +15,8 @@ use http::{
 };
 use nivasa_common::HttpException;
 use nivasa_filters::{
-    ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost, HttpExceptionSummary,
+    ExceptionFilter, ExceptionFilterFuture, ExceptionFilterMetadata, HttpArgumentsHost,
+    HttpExceptionSummary,
 };
 use nivasa_routing::RoutePathCaptures;
 use serde::{de::DeserializeOwned, Serialize};
@@ -352,7 +353,6 @@ impl NivasaRequest {
             .and_then(|name| self.inner.headers().get(name))
     }
 
-
     /// Add or replace a header on the request.
     pub fn set_header(&mut self, name: impl AsRef<str>, value: impl AsRef<str>) -> &mut Self {
         let name = HeaderName::from_bytes(name.as_ref().as_bytes())
@@ -363,25 +363,6 @@ impl NivasaRequest {
         self
     }
 
-    /// Add or replace a header on the request.
-    pub fn set_header(&mut self, name: impl AsRef<str>, value: impl AsRef<str>) -> &mut Self {
-        let name = HeaderName::from_bytes(name.as_ref().as_bytes())
-            .expect("request header name must be valid");
-        let value =
-            HeaderValue::from_str(value.as_ref()).expect("request header value must be valid");
-        self.inner.headers_mut().insert(name, value);
-        self
-    }
-
-    /// Add or replace a header on the request.
-    pub fn set_header(&mut self, name: impl AsRef<str>, value: impl AsRef<str>) -> &mut Self {
-        let name = HeaderName::from_bytes(name.as_ref().as_bytes())
-            .expect("request header name must be valid");
-        let value =
-            HeaderValue::from_str(value.as_ref()).expect("request header value must be valid");
-        self.inner.headers_mut().insert(name, value);
-        self
-    }
     /// Look up and coerce a single header value by name.
     pub fn header_typed<T>(&self, name: impl AsRef<str>) -> Result<T, RequestExtractError>
     where
@@ -1487,7 +1468,13 @@ impl ExceptionFilter<HttpException, NivasaResponse> for HttpExceptionFilter {
         exception: HttpException,
         _host: HttpArgumentsHost,
     ) -> ExceptionFilterFuture<'a, NivasaResponse> {
-        Box::pin(async move { HttpExceptionSummary::from(&exception).into_response() })
+            Box::pin(async move { HttpExceptionSummary::from(&exception).into_response() })
+    }
+}
+
+impl ExceptionFilterMetadata for HttpExceptionFilter {
+    fn is_catch_all(&self) -> bool {
+        true
     }
 }
 

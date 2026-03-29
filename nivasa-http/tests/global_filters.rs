@@ -4,7 +4,9 @@ use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use nivasa_common::HttpException;
-use nivasa_filters::{ArgumentsHost, ExceptionFilter, ExceptionFilterFuture};
+use nivasa_filters::{
+    ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, ExceptionFilterMetadata,
+};
 use nivasa_http::{NivasaRequest, NivasaResponse, NivasaServer};
 use nivasa_interceptors::{CallHandler, ExecutionContext, Interceptor, InterceptorFuture};
 use nivasa_routing::RouteMethod;
@@ -56,6 +58,12 @@ impl ExceptionFilter<HttpException, NivasaResponse> for RequestAwareGlobalFilter
             )
             .with_header("x-global-filter", "applied")
         })
+    }
+}
+
+impl ExceptionFilterMetadata for RequestAwareGlobalFilter {
+    fn exception_type(&self) -> Option<&'static str> {
+        Some(std::any::type_name::<HttpException>())
     }
 }
 

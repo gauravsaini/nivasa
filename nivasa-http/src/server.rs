@@ -18,7 +18,7 @@ use hyper_util::server::conn::auto::Builder as AutoBuilder;
 use nivasa_common::HttpException;
 use nivasa_common::RequestContext;
 use nivasa_filters::HttpExceptionSummary;
-use nivasa_filters::{ArgumentsHost, ExceptionFilter};
+use nivasa_filters::{ArgumentsHost, ExceptionFilter, ExceptionFilterMetadata};
 use nivasa_interceptors::{
     CallHandler, ExecutionContext as InterceptorExecutionContext, Interceptor,
 };
@@ -49,6 +49,13 @@ type GlobalFilterLayer =
     Arc<dyn ExceptionFilter<HttpException, NivasaResponse> + Send + Sync + 'static>;
 
 #[derive(Clone)]
+struct GlobalFilterBinding {
+    filter: GlobalFilterLayer,
+    exception_type: Option<&'static str>,
+    catch_all: bool,
+}
+
+#[derive(Clone)]
 struct RouteMiddlewareBinding {
     pattern: RoutePattern,
     excluded_paths: Vec<RoutePattern>,
@@ -61,7 +68,7 @@ pub struct NivasaServer {
     middleware: Option<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
-    global_filters: Vec<GlobalFilterLayer>,
+    global_filters: Vec<GlobalFilterBinding>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -76,7 +83,7 @@ pub struct NivasaServerBuilder {
     middleware: Option<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
-    global_filters: Vec<GlobalFilterLayer>,
+    global_filters: Vec<GlobalFilterBinding>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -262,9 +269,17 @@ impl NivasaServerBuilder {
     /// Register a global HTTP exception filter.
     pub fn use_global_filter<F>(mut self, filter: F) -> Self
     where
-        F: ExceptionFilter<HttpException, NivasaResponse> + Send + Sync + 'static,
+        F: ExceptionFilter<HttpException, NivasaResponse>
+            + ExceptionFilterMetadata
+            + Send
+            + Sync
+            + 'static,
     {
-        self.global_filters.push(Arc::new(filter));
+        self.global_filters.push(GlobalFilterBinding {
+            exception_type: filter.exception_type(),
+            catch_all: filter.is_catch_all(),
+            filter: Arc::new(filter),
+        });
         self
     }
 
@@ -323,7 +338,7 @@ async fn serve_connection<S>(
     middleware: Option<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
-    global_filters: Vec<GlobalFilterLayer>,
+    global_filters: Vec<GlobalFilterBinding>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -392,7 +407,7 @@ async fn handle_request(
     middleware: Option<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
-    global_filters: Vec<GlobalFilterLayer>,
+    global_filters: Vec<GlobalFilterBinding>,
     cors: bool,
     request_body_size_limit: Option<usize>,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
@@ -591,18 +606,50 @@ enum InterceptorExecution {
 
 async fn handle_http_exception(
     error: HttpException,
-    global_filters: &[GlobalFilterLayer],
+    global_filters: &[GlobalFilterBinding],
     request: &NivasaRequest,
 ) -> NivasaResponse {
-    match global_filters.last() {
+    match select_global_filter(global_filters) {
         Some(filter) => {
             let mut request_context = RequestContext::new();
             request_context.insert_request_data(request.clone());
             let host = ArgumentsHost::new().with_request_context(request_context);
-            filter.catch(error, host).await
+            filter.filter.catch(error, host).await
         }
         None => HttpExceptionSummary::from(&error).into_response(),
     }
+}
+
+fn select_global_filter(filters: &[GlobalFilterBinding]) -> Option<&GlobalFilterBinding> {
+    let exception_type = std::any::type_name::<HttpException>();
+
+    filters
+        .iter()
+        .enumerate()
+        .fold(None, |best, (index, binding)| {
+            let score = match (binding.exception_type, binding.catch_all) {
+                (Some(target), _) if target == exception_type => 2,
+                (None, true) => 1,
+                (None, false) => 0,
+                _ => 0,
+            };
+
+            if score == 0 {
+                return best;
+            }
+
+            match best {
+                None => Some((index, score, binding)),
+                Some((best_index, best_score, best_binding)) => {
+                    if score > best_score || (score == best_score && index > best_index) {
+                        Some((index, score, binding))
+                    } else {
+                        Some((best_index, best_score, best_binding))
+                    }
+                }
+            }
+        })
+        .map(|(_, _, binding)| binding)
 }
 
 async fn execute_middleware(

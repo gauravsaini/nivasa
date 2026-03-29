@@ -763,6 +763,7 @@ dependencies = [
  "hyper-util",
  "multer",
  "nivasa-common",
+ "nivasa-core",
  "nivasa-filters",
  "nivasa-guards",
  "nivasa-interceptors",
@@ -792,6 +793,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "nivasa-core",
+ "nivasa-filters",
  "nivasa-routing",
  "proc-macro2",
  "quick-xml",

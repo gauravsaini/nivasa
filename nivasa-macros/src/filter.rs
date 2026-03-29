@@ -30,6 +30,7 @@ fn expand_catch(exception: Path, input: ItemStruct) -> syn::Result<proc_macro2::
     let name = &input.ident;
     let generics = input.generics.clone();
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let exception_type = exception.clone();
     let exception = exception.to_token_stream().to_string().replace(' ', "");
     let exception = LitStr::new(&exception, proc_macro2::Span::call_site());
 
@@ -41,6 +42,16 @@ fn expand_catch(exception: Path, input: ItemStruct) -> syn::Result<proc_macro2::
 
             pub fn __nivasa_filter_exception() -> &'static str {
                 Self::__NIVASA_FILTER_EXCEPTION
+            }
+
+            pub fn __nivasa_filter_exception_type() -> &'static str {
+                ::std::any::type_name::<#exception_type>()
+            }
+        }
+
+        impl #impl_generics ::nivasa_filters::ExceptionFilterMetadata for #name #ty_generics #where_clause {
+            fn exception_type(&self) -> Option<&'static str> {
+                Some(Self::__nivasa_filter_exception_type())
             }
         }
     })
@@ -59,6 +70,12 @@ fn expand_catch_all(input: ItemStruct) -> syn::Result<proc_macro2::TokenStream> 
 
             pub fn __nivasa_filter_catch_all() -> bool {
                 Self::__NIVASA_FILTER_CATCH_ALL
+            }
+        }
+
+        impl #impl_generics ::nivasa_filters::ExceptionFilterMetadata for #name #ty_generics #where_clause {
+            fn is_catch_all(&self) -> bool {
+                true
             }
         }
     })

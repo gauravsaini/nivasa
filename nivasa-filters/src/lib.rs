@@ -57,6 +57,19 @@ impl ArgumentsHost {
 /// HTTP-specific alias for the default arguments host.
 pub type HttpArgumentsHost = ArgumentsHost;
 
+/// Runtime metadata used to order and match exception filters.
+pub trait ExceptionFilterMetadata {
+    /// Return the concrete exception type this filter targets, when known.
+    fn exception_type(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Whether this filter is an explicit catch-all fallback.
+    fn is_catch_all(&self) -> bool {
+        false
+    }
+}
+
 /// Transport-neutral summary of an HTTP exception.
 ///
 /// This keeps the filters crate free of any response type coupling while still

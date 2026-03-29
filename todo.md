@@ -540,7 +540,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.3.3 — Middleware Pipeline
 - Landed execution slice: `NivasaServerBuilder::middleware(...)` runs one `NivasaMiddleware` around a `NextMiddleware` capture point before `complete_middleware()`. `AppBootstrapConfig::use_middleware(...)` now forwards straight into that hook, while module-level wiring, route ordering, and exclusion remain open.
 - [x] Implement global middleware registration via `NestApplication::use_()` (bootstrap-only facade via `AppBootstrapConfig::use_middleware(...)`)
-- [ ] Implement module-level middleware registration via `#[module({ middlewares: [...] })]`
+- [x] Implement module-level middleware registration via `#[module({ middlewares: [...] })]` (module middleware metadata now travels with controller registrations)
 - [x] Implement route-specific middleware (`.apply(Mw).forRoutes("/users")` exact/pattern route hook on `NivasaServerBuilder`)
 - [x] Implement middleware exclusion (`.apply(Mw).exclude("/health")`)
 - [ ] Implement middleware execution order: global → module → route-specific
@@ -678,7 +678,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support global filters via `NivasaServer::builder().use_global_filter()` for HTTP exception paths
 
 #### 5.1.3 — Filter Execution
-- [ ] Implement filter matching by exception type (most specific first)
+- [x] Implement filter matching by exception type (most specific first)
 - [ ] Implement filter precedence: handler → controller → global
 - [ ] Implement fallback filter for completely unhandled exceptions (500 + log)
 - [ ] Ensure filters can themselves throw (caught by next-level filter)
