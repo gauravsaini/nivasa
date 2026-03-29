@@ -524,7 +524,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test interceptor chain execution order (I1.pre → I2.pre → handler → I2.post → I1.post)
 - [x] Test timeout interceptor returns 408 on slow handler
 - [x] Test logging interceptor records request metadata and status codes
-- [ ] Test cache interceptor returns cached response on second call
+- [x] Test cache interceptor returns cached response on second call
 
 ### 3.3 — Middleware System (`nivasa-http` + `nivasa-macros`)
 
