@@ -42,7 +42,7 @@ pub mod prelude {
     pub use nivasa_core::{
         DependencyContainer, DiError, Module, ModuleEntry, ModuleMetadata, ModuleRegistry,
         ModuleRegistryError, OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy,
-        OnModuleInit, Provider, ProviderScope,
+        OnModuleInit, Provider, ProviderScope, Reflector,
     };
     pub use nivasa_http::upload::MultipartLimits;
     pub use nivasa_http::{
@@ -93,7 +93,7 @@ pub use nivasa_core::module::{
 pub use nivasa_core::{
     self, DependencyContainer, DiError, Module, ModuleEntry, ModuleMetadata, ModuleRegistry,
     ModuleRegistryError, OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy,
-    OnModuleInit, Provider, ProviderScope,
+    OnModuleInit, Provider, ProviderScope, Reflector,
 };
 pub use nivasa_http::upload::MultipartLimits;
 pub use nivasa_http::{

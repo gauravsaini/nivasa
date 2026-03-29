@@ -3,7 +3,7 @@ use nivasa::prelude::*;
 use nivasa::prelude::{
     all, body, controller, custom_param, delete, file, files, get, head, header, headers,
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
-    req, res, scxml_handler, session,
+    req, res, scxml_handler, session, Reflector,
 };
 use std::future::Future;
 use std::pin::Pin;
@@ -112,6 +112,7 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
     fn _assert_response_type_is_in_scope(_: Option<NivasaResponse>) {}
     fn _assert_guard_context_is_in_scope(_: Option<GuardExecutionContext>) {}
     fn _assert_guard_outcome_is_in_scope(_: Option<GuardExecutionOutcome>) {}
+    fn _assert_reflector_is_in_scope(_: Option<Reflector>) {}
     fn _assert_interceptor_context_is_in_scope(_: Option<ExecutionContext>) {}
     fn _assert_interceptor_call_handler_is_in_scope(_: Option<CallHandler<NivasaResponse>>) {}
     fn _assert_interceptor_result_is_in_scope(_: Option<InterceptorResult<NivasaResponse>>) {}
@@ -157,6 +158,7 @@ fn crate_root_and_prelude_reexport_generated_statechart_types() {
     fn _assert_root_request_statechart(_: Option<nivasa::NivasaRequestStatechart>) {}
     fn _assert_root_guard_context(_: Option<nivasa::GuardExecutionContext>) {}
     fn _assert_root_guard_outcome(_: Option<nivasa::GuardExecutionOutcome>) {}
+    fn _assert_root_reflector(_: Option<nivasa::Reflector>) {}
     fn _assert_prelude_module_state(_: NivasaModuleState) {}
     fn _assert_prelude_provider_event(_: NivasaProviderEvent) {}
     fn _assert_prelude_application_statechart(_: Option<NivasaApplicationStatechart>) {}
@@ -175,8 +177,8 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
         Body, CallHandler, Controller, ControllerResponse, Download, ExecutionContext,
         Guard, GuardExecutionContext, GuardExecutionOutcome, Html, Interceptor,
         InterceptorFuture, InterceptorResult, Json, MultipartLimits, NextMiddleware,
-        NivasaMiddleware, NivasaRequest, NivasaResponse, NivasaServer, RequestPipeline,
-        Sse, Text, TimeoutInterceptor, UploadedFile,
+        NivasaMiddleware, NivasaRequest, NivasaResponse, NivasaServer, Reflector,
+        RequestPipeline, Sse, Text, TimeoutInterceptor, UploadedFile,
     };
 
     fn _assert_root_interceptor_trait_name_is_in_scope<T: Interceptor>() {}
@@ -188,6 +190,7 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
     fn _assert_root_guard_trait_name_is_in_scope<T: Guard>() {}
     fn _assert_root_guard_context_is_in_scope(_: Option<GuardExecutionContext>) {}
     fn _assert_root_guard_outcome_is_in_scope(_: Option<GuardExecutionOutcome>) {}
+    fn _assert_root_reflector_is_in_scope(_: Option<Reflector>) {}
     fn _assert_root_middleware_trait_name_is_in_scope<T: NivasaMiddleware>() {}
     fn _assert_root_next_middleware_type_is_in_scope(_: Option<NextMiddleware>) {}
 }
