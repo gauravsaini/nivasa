@@ -9,7 +9,7 @@ use nivasa_http::{
     Body, ControllerResponse, FromRequest, Json, NivasaRequest, NivasaResponse, Query,
     RequestPipeline,
 };
-use nivasa_guards::{ExecutionContext, Guard, GuardFuture};
+use nivasa_guards::{ExecutionContext, Guard, GuardFuture, RolesGuard};
 use nivasa_macros::{controller, impl_controller};
 use nivasa_routing::{
     Controller, RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod, RoutePathCaptures,
@@ -237,6 +237,20 @@ impl GuardedController {
     #[nivasa_macros::get("/second")]
     fn second(&self) -> NivasaResponse {
         NivasaResponse::text("second").with_header("x-controller-mode", "guarded-second")
+    }
+}
+
+#[controller("/roles")]
+#[nivasa_macros::roles("admin")]
+#[derive(Clone, Copy)]
+struct RolesController;
+
+#[impl_controller]
+impl RolesController {
+    #[nivasa_macros::roles("editor")]
+    #[nivasa_macros::get("/dashboard")]
+    fn dashboard(&self) -> NivasaResponse {
+        NivasaResponse::text("dashboard").with_header("x-controller-mode", "roles")
     }
 }
 
@@ -528,7 +542,7 @@ fn controller_req_runtime_exposes_raw_request_only_after_route_matching() {
     );
 }
 
-async fn evaluate_controller_guard<'a, G: Guard + ?Sized>(
+async fn evaluate_controller_guard<'a, G: Guard>(
     pipeline: &mut RequestPipeline,
     guard: &'a G,
     handler: &'static str,
@@ -563,7 +577,10 @@ async fn controller_guard_runtime_allows_all_routes_when_the_guard_passes() {
     let mut registry: RouteDispatchRegistry<GuardedRouteHandler> = RouteDispatchRegistry::new();
 
     assert_eq!(controller_guards, vec!["ControllerGuard"]);
-    assert!(handler_guard_metadata.is_empty());
+    assert_eq!(handler_guard_metadata.len(), routes.len());
+    assert!(handler_guard_metadata
+        .iter()
+        .all(|(_, guards)| guards.is_empty()));
 
     for (method, path, handler) in &routes {
         match *handler {
@@ -660,7 +677,13 @@ async fn controller_guard_metadata_applies_to_every_route() {
     let handler_guard_metadata = GuardedController::__nivasa_controller_guard_metadata();
 
     assert_eq!(controller_guards, vec!["ControllerGuard"]);
-    assert!(handler_guard_metadata.is_empty());
+    assert_eq!(
+        handler_guard_metadata.len(),
+        GuardedController::__nivasa_controller_routes().len()
+    );
+    assert!(handler_guard_metadata
+        .iter()
+        .all(|(_, guards)| guards.is_empty()));
 
     for (method, path, handler) in GuardedController::__nivasa_controller_routes() {
         let contract = resolve_controller_guard_execution(
@@ -675,6 +698,116 @@ async fn controller_guard_metadata_applies_to_every_route() {
         assert_eq!(method, "GET");
         assert!(path.starts_with("/guarded/"));
     }
+}
+
+#[tokio::test]
+async fn controller_roles_guard_uses_handler_then_class_metadata() {
+    let controller = RolesController;
+    let route = RolesController::__nivasa_controller_routes()
+        .into_iter()
+        .next()
+        .expect("roles controller must expose a route");
+    let controller_roles = RolesController::__nivasa_controller_roles();
+    let handler_roles = RolesController::__nivasa_controller_role_metadata()
+        .into_iter()
+        .find(|(handler, _)| *handler == route.2)
+        .expect("roles controller must expose handler roles")
+        .1;
+
+    let mut registry: RouteDispatchRegistry<GuardedRouteHandler> = RouteDispatchRegistry::new();
+    registry
+        .register_pattern(
+            RouteMethod::from(route.0),
+            route.1.clone(),
+            Arc::new(move |request: &NivasaRequest| {
+                run_controller_action_with_request(request, |_| controller.dashboard())
+            }),
+        )
+        .expect("roles controller route must register");
+
+    let request = NivasaRequest::new(Method::GET, "/roles/dashboard", Body::empty());
+    let mut pipeline = RequestPipeline::new(request);
+    pipeline.parse_request().unwrap();
+    pipeline.complete_middleware().unwrap();
+
+    let outcome = pipeline.match_route(&registry).unwrap();
+    assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
+    assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+
+    let mut request_context = nivasa_common::RequestContext::new();
+    request_context.set_handler_metadata("roles", serde_json::json!(handler_roles));
+    request_context.set_class_metadata("roles", serde_json::json!(controller_roles));
+    request_context.set_custom_data("roles", serde_json::json!(["editor"]));
+
+    let guard_outcome = pipeline
+        .evaluate_guard(
+            &RolesGuard::new(),
+            &ExecutionContext::new(()).with_request_context(request_context),
+        )
+        .await
+        .expect("roles guard evaluation must advance the request pipeline");
+
+    assert!(matches!(guard_outcome, GuardExecutionOutcome::Passed));
+    assert_eq!(pipeline.snapshot().current_state, "InterceptorPre");
+    pipeline.complete_interceptors_pre().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "PipeTransform");
+    pipeline.complete_pipes().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "HandlerExecution");
+
+    let response = match outcome {
+        RouteDispatchOutcome::Matched(entry) => (entry.value)(pipeline.request()),
+        _ => panic!("roles controller route must match"),
+    };
+
+    pipeline.complete_handler().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "InterceptorPost");
+    pipeline.complete_interceptors_post().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "SendingResponse");
+    pipeline.complete_response().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "Done");
+
+    assert_eq!(response.status(), http::StatusCode::OK);
+    assert_eq!(response.headers().get("x-controller-mode").unwrap(), "roles");
+    assert_eq!(response.body(), &Body::text("dashboard"));
+
+    let mut fallback_registry: RouteDispatchRegistry<GuardedRouteHandler> =
+        RouteDispatchRegistry::new();
+    fallback_registry
+        .register_pattern(
+            RouteMethod::from(route.0),
+            route.1.clone(),
+            Arc::new(move |request: &NivasaRequest| {
+                run_controller_action_with_request(request, |_| controller.dashboard())
+            }),
+        )
+        .expect("roles controller fallback route must register");
+
+    let mut fallback_context = nivasa_common::RequestContext::new();
+    fallback_context.set_class_metadata("roles", serde_json::json!(controller_roles));
+    fallback_context.set_custom_data("roles", serde_json::json!(["admin"]));
+
+    let mut fallback_pipeline = RequestPipeline::new(NivasaRequest::new(
+        Method::GET,
+        "/roles/dashboard",
+        Body::empty(),
+    ));
+    fallback_pipeline.parse_request().unwrap();
+    fallback_pipeline.complete_middleware().unwrap();
+
+    let fallback_outcome = fallback_pipeline.match_route(&fallback_registry).unwrap();
+    assert!(matches!(fallback_outcome, RouteDispatchOutcome::Matched(_)));
+    assert_eq!(fallback_pipeline.snapshot().current_state, "GuardChain");
+
+    let fallback_guard_outcome = fallback_pipeline
+        .evaluate_guard(
+            &RolesGuard::new(),
+            &ExecutionContext::new(()).with_request_context(fallback_context),
+        )
+        .await
+        .expect("roles guard fallback evaluation must advance the request pipeline");
+
+    assert!(matches!(fallback_guard_outcome, GuardExecutionOutcome::Passed));
+    assert_eq!(fallback_pipeline.snapshot().current_state, "InterceptorPre");
 }
 
 #[tokio::test]
