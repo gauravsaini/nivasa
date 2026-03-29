@@ -61,14 +61,30 @@ impl Reflector {
             .and_then(|value| serde_json::from_value(value).ok())
     }
 
+    /// Read typed metadata from the shared request context.
+    ///
+    /// The lookup order matches the existing capture surfaces:
+    /// handler metadata first, then class metadata, then custom data.
+    pub fn get_metadata<T>(
+        &self,
+        context: &RequestContext,
+        key: &str,
+    ) -> Option<T>
+    where
+        T: DeserializeOwned,
+    {
+        self.get_handler_metadata(context, key)
+            .or_else(|| self.get_class_metadata(context, key))
+            .or_else(|| self.get_custom_data(context, key))
+    }
+
     /// Read `roles` metadata from the shared request context.
     ///
     /// This prefers handler metadata and falls back to class metadata so
     /// controller-level and route-level role declarations can be consumed with
     /// a single convenience lookup.
     pub fn get_roles(&self, context: &RequestContext) -> Option<Vec<String>> {
-        self.get_handler_metadata::<Vec<String>>(context, "roles")
-            .or_else(|| self.get_class_metadata::<Vec<String>>(context, "roles"))
+        self.get_metadata::<Vec<String>>(context, "roles")
     }
 
     /// Read typed request payload data from the shared request context.
@@ -118,6 +134,14 @@ mod tests {
             Some("req-123".to_string())
         );
         assert_eq!(
+            reflector.get_metadata::<String>(&context, "controller"),
+            Some("UsersController".to_string())
+        );
+        assert_eq!(
+            reflector.get_metadata::<String>(&context, "request_id"),
+            Some("req-123".to_string())
+        );
+        assert_eq!(
             reflector.get_roles(&context),
             Some(vec!["admin".to_string(), "editor".to_string()])
         );
@@ -149,6 +173,7 @@ mod tests {
             reflector.get_custom_data::<String>(&context, "missing"),
             None
         );
+        assert_eq!(reflector.get_metadata::<String>(&context, "missing"), None);
         assert_eq!(reflector.get_roles(&context), None);
         assert_eq!(reflector.get_request_data::<RequestSnapshot>(&context), None);
     }
@@ -163,6 +188,19 @@ mod tests {
         assert_eq!(
             reflector.get_roles(&context),
             Some(vec!["reader".to_string()])
+        );
+    }
+
+    #[test]
+    fn reflector_reads_custom_metadata_through_generic_lookup() {
+        let mut context = RequestContext::new();
+        context.set_custom_data("feature", json!("enabled"));
+
+        let reflector = Reflector::new();
+
+        assert_eq!(
+            reflector.get_metadata::<String>(&context, "feature"),
+            Some("enabled".to_string())
         );
     }
 }

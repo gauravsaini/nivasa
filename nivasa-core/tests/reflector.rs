@@ -34,6 +34,14 @@ fn reflector_reads_request_context_metadata() {
         Some("req-123".to_string())
     );
     assert_eq!(
+        reflector.get_metadata::<String>(&context, "controller"),
+        Some("UsersController".to_string())
+    );
+    assert_eq!(
+        reflector.get_metadata::<String>(&context, "request_id"),
+        Some("req-123".to_string())
+    );
+    assert_eq!(
         reflector.get_roles(&context),
         Some(vec!["admin".to_string(), "editor".to_string()])
     );
@@ -65,5 +73,6 @@ fn reflector_returns_none_when_metadata_is_missing_or_typed_incorrectly() {
         reflector.get_custom_data::<String>(&context, "missing"),
         None
     );
+    assert_eq!(reflector.get_metadata::<String>(&context, "missing"), None);
     assert_eq!(reflector.get_roles(&context), None);
 }
