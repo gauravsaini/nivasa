@@ -10,6 +10,7 @@ fn controller_macro_validation() {
     t.pass("tests/trybuild/controller_guard_multi_pass.rs");
     t.pass("tests/trybuild/controller_roles_pass.rs");
     t.pass("tests/trybuild/controller_use_filters_pass.rs");
+    t.pass("tests/trybuild/controller_use_filters_controller_pass.rs");
     t.pass("tests/trybuild/controller_set_metadata_pass.rs");
     t.pass("tests/trybuild/controller_parameter_extractors_pass.rs");
     t.pass("tests/trybuild/controller_response_metadata_pass.rs");

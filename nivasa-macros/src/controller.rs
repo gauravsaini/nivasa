@@ -1715,9 +1715,14 @@ pub fn use_filters(attr: TokenStream, item: TokenStream) -> TokenStream {
         return quote!(#method).into();
     }
 
+    if let Ok(mut item_struct) = syn::parse::<ItemStruct>(item.clone()) {
+        item_struct.attrs.insert(0, filter_attr);
+        return quote!(#item_struct).into();
+    }
+
     Error::new(
         proc_macro2::Span::call_site(),
-        "`#[use_filters]` only supports controller methods",
+        "`#[use_filters]` only supports controller structs and inherent controller methods",
     )
     .to_compile_error()
     .into()
