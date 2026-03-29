@@ -79,12 +79,24 @@ impl HttpException {
         Self::new(429u16, message)
     }
 
+    pub fn request_timeout(message: impl Into<String>) -> Self {
+        Self::new(408u16, message)
+    }
+
     pub fn internal_server_error(message: impl Into<String>) -> Self {
         Self::new(500u16, message)
     }
 
+    pub fn not_implemented(message: impl Into<String>) -> Self {
+        Self::new(501u16, message)
+    }
+
     pub fn service_unavailable(message: impl Into<String>) -> Self {
         Self::new(503u16, message)
+    }
+
+    pub fn gateway_timeout(message: impl Into<String>) -> Self {
+        Self::new(504u16, message)
     }
 }
 
@@ -137,5 +149,32 @@ mod tests {
         let json = serde_json::to_value(&ex).unwrap();
         assert_eq!(json["statusCode"], 422);
         assert!(json["details"]["fields"]["email"].is_string());
+    }
+
+    #[test]
+    fn test_request_timeout_exception_constructor() {
+        let ex = HttpException::request_timeout("Request timed out");
+
+        assert_eq!(ex.status_code, 408);
+        assert_eq!(ex.message, "Request timed out");
+        assert_eq!(ex.error, "Request Timeout");
+    }
+
+    #[test]
+    fn test_not_implemented_exception_constructor() {
+        let ex = HttpException::not_implemented("Not implemented yet");
+
+        assert_eq!(ex.status_code, 501);
+        assert_eq!(ex.message, "Not implemented yet");
+        assert_eq!(ex.error, "Not Implemented");
+    }
+
+    #[test]
+    fn test_gateway_timeout_exception_constructor() {
+        let ex = HttpException::gateway_timeout("Gateway timed out");
+
+        assert_eq!(ex.status_code, 504);
+        assert_eq!(ex.message, "Gateway timed out");
+        assert_eq!(ex.error, "Gateway Timeout");
     }
 }
