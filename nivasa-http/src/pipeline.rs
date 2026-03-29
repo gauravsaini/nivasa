@@ -291,27 +291,43 @@ impl RequestPipeline {
         self.advance(RequestEvent::guard_error())
     }
 
+    /// Evaluate a guard chain from the SCXML `GuardChain` state.
+    ///
+    /// Every guard must pass before the pipeline advances to `InterceptorPre`.
+    /// The first deny or error short-circuits the chain and routes the pipeline
+    /// through the existing SCXML error transitions.
+    pub async fn evaluate_guard_chain(
+        &mut self,
+        guards: &[&dyn Guard],
+        context: &ExecutionContext,
+    ) -> Result<GuardExecutionOutcome, InvalidTransitionError<NivasaRequestStatechart>> {
+        for guard in guards {
+            match guard.can_activate(context).await {
+                Ok(true) => continue,
+                Ok(false) => {
+                    self.deny_guards()?;
+                    return Ok(GuardExecutionOutcome::Denied);
+                }
+                Err(error) => {
+                    self.fail_guards()?;
+                    return Ok(GuardExecutionOutcome::Error(error));
+                }
+            }
+        }
+
+        self.pass_guards()?;
+        Ok(GuardExecutionOutcome::Passed)
+    }
+
     /// Evaluate a guard from the SCXML `GuardChain` state and advance along the
     /// pass, deny, or error transition that the guard result dictates.
-    pub async fn evaluate_guard<G: Guard + ?Sized>(
+    pub async fn evaluate_guard<G: Guard>(
         &mut self,
         guard: &G,
         context: &ExecutionContext,
     ) -> Result<GuardExecutionOutcome, InvalidTransitionError<NivasaRequestStatechart>> {
-        match guard.can_activate(context).await {
-            Ok(true) => {
-                self.pass_guards()?;
-                Ok(GuardExecutionOutcome::Passed)
-            }
-            Ok(false) => {
-                self.deny_guards()?;
-                Ok(GuardExecutionOutcome::Denied)
-            }
-            Err(error) => {
-                self.fail_guards()?;
-                Ok(GuardExecutionOutcome::Error(error))
-            }
-        }
+        let guard: &dyn Guard = guard;
+        self.evaluate_guard_chain(&[guard], context).await
     }
 
     /// Mark interceptor pre-processing as complete.

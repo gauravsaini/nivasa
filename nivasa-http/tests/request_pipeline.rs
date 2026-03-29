@@ -3,6 +3,7 @@ use nivasa_common::HttpException;
 use nivasa_guards::{ExecutionContext, Guard, GuardFuture};
 use nivasa_http::{Body, RequestPipeline};
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod};
+use std::sync::{Arc, Mutex};
 
 fn ready_pipeline() -> RequestPipeline {
     let request = nivasa_http::NivasaRequest::new(Method::GET, "/users/42", Body::empty());
@@ -182,6 +183,38 @@ impl Guard for ErrorGuard {
     }
 }
 
+#[derive(Clone)]
+struct SequenceGuard {
+    label: &'static str,
+    outcome: SequenceGuardOutcome,
+    calls: Arc<Mutex<Vec<&'static str>>>,
+}
+
+#[derive(Clone, Copy)]
+enum SequenceGuardOutcome {
+    Allow,
+    Deny,
+    Error(&'static str),
+}
+
+impl Guard for SequenceGuard {
+    fn can_activate<'a>(&'a self, _: &'a ExecutionContext) -> GuardFuture<'a> {
+        let label = self.label;
+        let outcome = self.outcome;
+        let calls = Arc::clone(&self.calls);
+
+        Box::pin(async move {
+            calls.lock().unwrap().push(label);
+
+            match outcome {
+                SequenceGuardOutcome::Allow => Ok(true),
+                SequenceGuardOutcome::Deny => Ok(false),
+                SequenceGuardOutcome::Error(message) => Err(HttpException::forbidden(message)),
+            }
+        })
+    }
+}
+
 #[tokio::test]
 async fn request_pipeline_can_evaluate_guard_results_through_scxml() {
     let context = ExecutionContext::new(());
@@ -212,6 +245,85 @@ async fn request_pipeline_can_evaluate_guard_results_through_scxml() {
         other => panic!("expected guard error outcome, got {other:?}"),
     }
     assert_eq!(errored.snapshot().current_state, "ErrorHandling");
+}
+
+#[tokio::test]
+async fn request_pipeline_evaluates_multiple_guards_as_an_and_chain() {
+    let context = ExecutionContext::new(());
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let first = SequenceGuard {
+        label: "first",
+        outcome: SequenceGuardOutcome::Allow,
+        calls: Arc::clone(&calls),
+    };
+    let second = SequenceGuard {
+        label: "second",
+        outcome: SequenceGuardOutcome::Allow,
+        calls: Arc::clone(&calls),
+    };
+
+    let mut pipeline = matched_pipeline();
+    let outcome = pipeline
+        .evaluate_guard_chain(&[&first, &second], &context)
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        outcome,
+        nivasa_http::GuardExecutionOutcome::Passed
+    ));
+    assert_eq!(pipeline.snapshot().current_state, "InterceptorPre");
+    assert_eq!(*calls.lock().unwrap(), vec!["first", "second"]);
+}
+
+#[tokio::test]
+async fn request_pipeline_short_circuits_multiple_guards_on_the_first_failure() {
+    let context = ExecutionContext::new(());
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let allow = SequenceGuard {
+        label: "allow",
+        outcome: SequenceGuardOutcome::Allow,
+        calls: Arc::clone(&calls),
+    };
+    let deny = SequenceGuard {
+        label: "deny",
+        outcome: SequenceGuardOutcome::Deny,
+        calls: Arc::clone(&calls),
+    };
+    let error = SequenceGuard {
+        label: "error",
+        outcome: SequenceGuardOutcome::Error("blocked"),
+        calls: Arc::clone(&calls),
+    };
+
+    let mut denied = matched_pipeline();
+    let denied_outcome = denied
+        .evaluate_guard_chain(&[&allow, &deny, &error], &context)
+        .await
+        .unwrap();
+    assert!(matches!(
+        denied_outcome,
+        nivasa_http::GuardExecutionOutcome::Denied
+    ));
+    assert_eq!(denied.snapshot().current_state, "ErrorHandling");
+    assert_eq!(*calls.lock().unwrap(), vec!["allow", "deny"]);
+
+    calls.lock().unwrap().clear();
+
+    let mut errored = matched_pipeline();
+    let errored_outcome = errored
+        .evaluate_guard_chain(&[&allow, &error, &deny], &context)
+        .await
+        .unwrap();
+    match errored_outcome {
+        nivasa_http::GuardExecutionOutcome::Error(error) => {
+            assert_eq!(error.status_code, 403);
+            assert_eq!(error.message, "blocked");
+        }
+        other => panic!("expected guard error outcome, got {other:?}"),
+    }
+    assert_eq!(errored.snapshot().current_state, "ErrorHandling");
+    assert_eq!(*calls.lock().unwrap(), vec!["allow", "error"]);
 }
 
 #[test]
