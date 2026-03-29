@@ -3,6 +3,7 @@ use crate::{
     RequestPipeline,
 };
 use bytes::{Bytes, BytesMut};
+use futures_util::FutureExt;
 use http::{
     header::{
         HeaderMap, HeaderValue, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
@@ -31,6 +32,7 @@ use std::{
     future::Future,
     io,
     net::SocketAddr,
+    panic::{catch_unwind, AssertUnwindSafe},
     pin::Pin,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -614,7 +616,18 @@ async fn handle_http_exception(
             let mut request_context = RequestContext::new();
             request_context.insert_request_data(request.clone());
             let host = ArgumentsHost::new().with_request_context(request_context);
-            filter.filter.catch(error, host).await
+            let fallback_error = error.clone();
+
+            let filter_future =
+                match catch_unwind(AssertUnwindSafe(|| filter.filter.catch(error, host))) {
+                    Ok(future) => future,
+                    Err(_) => return HttpExceptionSummary::from(&fallback_error).into_response(),
+                };
+
+            match AssertUnwindSafe(filter_future).catch_unwind().await {
+                Ok(response) => response,
+                Err(_) => HttpExceptionSummary::from(&fallback_error).into_response(),
+            }
         }
         None => HttpExceptionSummary::from(&error).into_response(),
     }

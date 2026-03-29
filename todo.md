@@ -681,7 +681,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement filter matching by exception type (most specific first)
 - [ ] Implement filter precedence: handler → controller → global
 - [ ] Implement fallback filter for completely unhandled exceptions (500 + log)
-- [ ] Ensure filters can themselves throw (caught by next-level filter)
+- [x] Ensure filters can themselves throw (caught by next-level filter)
 
 #### 5.1.4 — Built-in Filters
 - [x] Implement `HttpExceptionFilter` (catch all `HttpException` variants)

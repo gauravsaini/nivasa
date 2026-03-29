@@ -67,6 +67,24 @@ impl ExceptionFilterMetadata for RequestAwareGlobalFilter {
     }
 }
 
+struct PanicGlobalFilter;
+
+impl ExceptionFilter<HttpException, NivasaResponse> for PanicGlobalFilter {
+    fn catch<'a>(
+        &'a self,
+        _exception: HttpException,
+        _host: ArgumentsHost,
+    ) -> ExceptionFilterFuture<'a, NivasaResponse> {
+        panic!("filter should not bypass the fallback path");
+    }
+}
+
+impl ExceptionFilterMetadata for PanicGlobalFilter {
+    fn exception_type(&self) -> Option<&'static str> {
+        Some(std::any::type_name::<HttpException>())
+    }
+}
+
 fn free_port() -> u16 {
     StdTcpListener::bind("127.0.0.1:0")
         .expect("must bind an ephemeral port")
@@ -138,5 +156,49 @@ async fn global_filter_handles_http_exception_and_sees_request_context(
         })
     );
     assert!(!called.load(Ordering::SeqCst));
+    Ok(())
+}
+
+#[tokio::test]
+async fn global_filter_panics_fall_back_to_the_standard_http_shape(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .use_global_filter(PanicGlobalFilter)
+        .interceptor(ErrorInterceptor)
+        .route(RouteMethod::Get, "/filters", |_| {
+            NivasaResponse::text("handler")
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("http://127.0.0.1:{port}/filters"))
+        .body(Full::new(Bytes::new()))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let body = response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+        json!({
+            "statusCode": 400,
+            "message": "global filter intercepted",
+            "error": "Bad Request"
+        })
+    );
     Ok(())
 }

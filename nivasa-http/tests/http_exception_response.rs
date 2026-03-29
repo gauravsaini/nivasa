@@ -48,11 +48,11 @@ fn result_error_maps_http_exception_to_json_response() {
 }
 
 #[test]
-fn http_exception_summary_maps_to_the_standard_three_field_shape() -> Result<(), Box<dyn std::error::Error>> {
-    let response = HttpExceptionSummary::from(&HttpException::unprocessable_entity(
-        "Validation failed",
-    ))
-    .into_response();
+fn http_exception_summary_maps_to_the_standard_three_field_shape(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let response =
+        HttpExceptionSummary::from(&HttpException::unprocessable_entity("Validation failed"))
+            .into_response();
 
     if response.status() != http::StatusCode::UNPROCESSABLE_ENTITY {
         return Err("unexpected summary response status".into());
