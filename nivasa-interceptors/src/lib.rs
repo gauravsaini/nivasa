@@ -244,6 +244,74 @@ where
     }
 }
 
+type LogSink = Arc<dyn Fn(String) + Send + Sync + 'static>;
+type StatusFormatter<T> = Arc<dyn Fn(&T) -> String + Send + Sync + 'static>;
+
+/// Interceptor that records request metadata, response status, and duration.
+///
+/// The slice stays deliberately small and testable by accepting a log sink and
+/// a response-status formatter. That keeps the helper independent from any
+/// concrete HTTP response type while still letting the HTTP test harness
+/// assert on the emitted log line.
+#[derive(Clone)]
+pub struct LoggingInterceptor<T = ()> {
+    sink: LogSink,
+    status_formatter: StatusFormatter<T>,
+    _marker: PhantomData<fn() -> T>,
+}
+
+impl<T> LoggingInterceptor<T> {
+    /// Create a logging interceptor with a caller-provided sink and response formatter.
+    pub fn new<S, F>(sink: S, status_formatter: F) -> Self
+    where
+        S: Fn(String) + Send + Sync + 'static,
+        F: Fn(&T) -> String + Send + Sync + 'static,
+    {
+        Self {
+            sink: Arc::new(sink),
+            status_formatter: Arc::new(status_formatter),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T> Interceptor for LoggingInterceptor<T>
+where
+    T: Send + 'static,
+{
+    type Response = T;
+
+    fn intercept(
+        &self,
+        context: &ExecutionContext,
+        next: CallHandler<Self::Response>,
+    ) -> InterceptorFuture<Self::Response> {
+        let sink = Arc::clone(&self.sink);
+        let status_formatter = Arc::clone(&self.status_formatter);
+        let method = context.request_method().unwrap_or("unknown").to_string();
+        let path = context.request_path().unwrap_or("unknown").to_string();
+        let handler_name = context.handler_name().unwrap_or("unknown").to_string();
+        let class_name = context.class_name().unwrap_or("unknown").to_string();
+
+        Box::pin(async move {
+            let started = Instant::now();
+            let result = next.handle().await;
+            let elapsed = started.elapsed();
+            let status = match result.as_ref() {
+                Ok(response) => status_formatter.as_ref()(response),
+                Err(error) => error.status_code.to_string(),
+            };
+
+            sink.as_ref()(format!(
+                "method={method} path={path} handler={handler_name} class={class_name} status={status} duration_ns={}",
+                elapsed.as_nanos()
+            ));
+
+            result
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -380,6 +448,32 @@ mod tests {
 
         assert_eq!(error.status_code, 408);
         assert_eq!(error.message, "request timed out");
+    }
+
+    #[test]
+    fn logging_interceptor_records_status_and_duration() {
+        let log = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = {
+            let log = Arc::clone(&log);
+            move |entry| log.lock().unwrap().push(entry)
+        };
+        let interceptor = LoggingInterceptor::new(sink, |response: &String| response.clone());
+        let context = ExecutionContext::new()
+            .with_request("GET", "/logging")
+            .with_handler_name("list_users")
+            .with_class_name("UsersController");
+        let next = CallHandler::new(|| async { Ok::<_, HttpException>("200".to_string()) });
+
+        let result = block_on(interceptor.intercept(&context, next)).unwrap();
+
+        assert_eq!(result, "200");
+        let entry = log.lock().unwrap().pop().expect("log entry must exist");
+        assert!(entry.contains("method=GET"));
+        assert!(entry.contains("path=/logging"));
+        assert!(entry.contains("handler=list_users"));
+        assert!(entry.contains("class=UsersController"));
+        assert!(entry.contains("status=200"));
+        assert!(entry.contains("duration_ns="));
     }
 
     #[derive(Debug, PartialEq)]
