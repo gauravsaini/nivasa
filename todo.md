@@ -459,7 +459,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.1.2 — `#[guard]` Attribute Macro
 - [x] Parse `#[guard(GuardType)]` on handler methods
 - [x] Parse `#[guard(GuardType)]` on controller struct (metadata capture only; runtime apply-to-all-routes still open)
-- [ ] Parse `#[guard(GuardType)]` on module (apply to all module routes)
+- [x] Parse `#[guard(GuardType)]` on module (metadata capture only; runtime apply to all module routes still open)
 - [x] Support multiple guards: `#[guard(Guard1, Guard2)]` (metadata capture)
 
 #### 3.1.3 — Guard Execution Pipeline
