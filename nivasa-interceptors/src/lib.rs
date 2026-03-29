@@ -4,10 +4,12 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use nivasa_common::{HttpException, RequestContext};
+use nivasa_common::{HttpException, HttpStatus, RequestContext};
 
 /// Standard result type returned by interceptor handlers.
 pub type InterceptorResult<T> = Result<T, HttpException>;
@@ -55,11 +57,7 @@ impl ExecutionContext {
     }
 
     /// Attach request method + path information.
-    pub fn with_request(
-        mut self,
-        method: impl Into<String>,
-        path: impl Into<String>,
-    ) -> Self {
+    pub fn with_request(mut self, method: impl Into<String>, path: impl Into<String>) -> Self {
         self.request_method = Some(method.into());
         self.request_path = Some(path.into());
         self
@@ -194,11 +192,63 @@ pub trait Interceptor: Send + Sync {
     ) -> InterceptorFuture<Self::Response>;
 }
 
+/// Interceptor that turns slow handlers into a request timeout error.
+///
+/// This stays deliberately small and dependency-free. It measures the elapsed
+/// wall-clock time around the next handler in the existing interceptor chain
+/// and returns a `408 Request Timeout` response if the handler takes too long.
+#[derive(Clone, Debug)]
+pub struct TimeoutInterceptor<T = ()> {
+    timeout: Duration,
+    _marker: PhantomData<fn() -> T>,
+}
+
+impl<T> TimeoutInterceptor<T> {
+    pub fn new(timeout: Duration) -> Self {
+        Self {
+            timeout,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+}
+
+impl<T> Interceptor for TimeoutInterceptor<T>
+where
+    T: Send + 'static,
+{
+    type Response = T;
+
+    fn intercept(
+        &self,
+        _context: &ExecutionContext,
+        next: CallHandler<Self::Response>,
+    ) -> InterceptorFuture<Self::Response> {
+        let timeout = self.timeout;
+        Box::pin(async move {
+            let started = Instant::now();
+            let result = next.handle().await;
+
+            if started.elapsed() > timeout {
+                Err(HttpException::from_status(
+                    HttpStatus::RequestTimeout,
+                    "request timed out",
+                ))
+            } else {
+                result
+            }
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
     fn block_on<F: Future>(future: F) -> F::Output {
@@ -315,6 +365,21 @@ mod tests {
 
         assert_eq!(error.status_code, 500);
         assert_eq!(error.message, "boom");
+    }
+
+    #[test]
+    fn timeout_interceptor_turns_slow_handlers_into_request_timeout_errors() {
+        let interceptor = TimeoutInterceptor::<String>::new(Duration::from_millis(1));
+        let context = ExecutionContext::new().with_handler_name("list_users");
+        let next = CallHandler::new(|| async {
+            std::thread::sleep(Duration::from_millis(5));
+            Ok::<_, HttpException>("done".to_string())
+        });
+
+        let error = block_on(interceptor.intercept(&context, next)).unwrap_err();
+
+        assert_eq!(error.status_code, 408);
+        assert_eq!(error.message, "request timed out");
     }
 
     #[derive(Debug, PartialEq)]
