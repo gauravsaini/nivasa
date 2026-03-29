@@ -19,6 +19,7 @@ hyper = { workspace = true }
 hyper-util = { workspace = true }
 multer = "3.1"
 nivasa-common = { path = "../nivasa-common" }
+nivasa-filters = { path = "../nivasa-filters" }
 nivasa-guards = { path = "../nivasa-guards" }
 nivasa-interceptors = { path = "../nivasa-interceptors" }
 nivasa-routing = { path = "../nivasa-routing" }

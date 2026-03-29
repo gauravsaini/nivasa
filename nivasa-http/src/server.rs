@@ -16,6 +16,8 @@ use hyper::{body::Incoming, service::service_fn};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder as AutoBuilder;
 use nivasa_common::HttpException;
+use nivasa_common::RequestContext;
+use nivasa_filters::{ArgumentsHost, ExceptionFilter, HttpExceptionSummary};
 use nivasa_interceptors::{
     CallHandler, ExecutionContext as InterceptorExecutionContext, Interceptor,
 };
@@ -23,6 +25,7 @@ use nivasa_routing::{
     parse_api_version_accept, parse_api_version_header, RouteDispatchError, RouteDispatchOutcome,
     RouteDispatchRegistry, RouteMethod,
 };
+use serde_json::json;
 use std::{
     future::Future,
     io,
@@ -34,7 +37,6 @@ use std::{
     },
     time::Duration,
 };
-use serde_json::json;
 use tokio::{net::TcpListener, sync::oneshot, task::JoinSet};
 #[cfg(feature = "tls")]
 use tokio_rustls::TlsAcceptor;
@@ -42,12 +44,15 @@ use tokio_rustls::TlsAcceptor;
 type RouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
 type MiddlewareLayer = Arc<dyn NivasaMiddleware + Send + Sync + 'static>;
 type InterceptorLayer = Arc<dyn Interceptor<Response = NivasaResponse> + Send + Sync + 'static>;
+type GlobalFilterLayer =
+    Arc<dyn ExceptionFilter<HttpException, NivasaResponse> + Send + Sync + 'static>;
 
 /// Minimal HTTP transport shell for Nivasa.
 pub struct NivasaServer {
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
     interceptors: Vec<InterceptorLayer>,
+    global_filters: Vec<GlobalFilterLayer>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -61,6 +66,7 @@ pub struct NivasaServerBuilder {
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
     interceptors: Vec<InterceptorLayer>,
+    global_filters: Vec<GlobalFilterLayer>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -83,6 +89,7 @@ impl NivasaServer {
         let routes = self.routes;
         let middleware = self.middleware;
         let interceptors = self.interceptors;
+        let global_filters = self.global_filters;
         let cors = self.cors;
         let request_timeout = self.request_timeout;
         let request_body_size_limit = self.request_body_size_limit;
@@ -100,6 +107,7 @@ impl NivasaServer {
                     let routes = routes.clone();
                     let middleware = middleware.clone();
                     let interceptors = interceptors.clone();
+                    let global_filters_for_connection = global_filters.clone();
                     #[cfg(feature = "tls")]
                     let tls_config = tls_config.clone();
 
@@ -113,6 +121,7 @@ impl NivasaServer {
                                     routes,
                                     middleware,
                                     interceptors,
+                                    global_filters_for_connection,
                                     cors,
                                     request_timeout,
                                     request_body_size_limit,
@@ -127,6 +136,7 @@ impl NivasaServer {
                             routes,
                             middleware,
                             interceptors,
+                            global_filters_for_connection,
                             cors,
                             request_timeout,
                             request_body_size_limit,
@@ -148,6 +158,7 @@ impl NivasaServerBuilder {
             routes: RouteDispatchRegistry::new(),
             middleware: None,
             interceptors: Vec::new(),
+            global_filters: Vec::new(),
             cors: false,
             request_timeout: None,
             request_body_size_limit: None,
@@ -221,6 +232,15 @@ impl NivasaServerBuilder {
         self
     }
 
+    /// Register a global HTTP exception filter.
+    pub fn use_global_filter<F>(mut self, filter: F) -> Self
+    where
+        F: ExceptionFilter<HttpException, NivasaResponse> + Send + Sync + 'static,
+    {
+        self.global_filters.push(Arc::new(filter));
+        self
+    }
+
     /// Toggle permissive transport-side CORS handling explicitly.
     pub fn cors(mut self, cors: bool) -> Self {
         self.cors = cors;
@@ -258,6 +278,7 @@ impl NivasaServerBuilder {
             routes: self.routes,
             middleware: self.middleware,
             interceptors: self.interceptors,
+            global_filters: self.global_filters,
             cors: self.cors,
             request_timeout: self.request_timeout,
             request_body_size_limit: self.request_body_size_limit,
@@ -273,6 +294,7 @@ async fn serve_connection<S>(
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
     interceptors: Vec<InterceptorLayer>,
+    global_filters: Vec<GlobalFilterLayer>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -284,6 +306,7 @@ async fn serve_connection<S>(
         let routes = routes.clone();
         let middleware = middleware.clone();
         let interceptors = interceptors.clone();
+        let global_filters = global_filters.clone();
         let cors = cors;
         let request_timeout = request_timeout;
         let request_body_size_limit = request_body_size_limit;
@@ -296,6 +319,7 @@ async fn serve_connection<S>(
                         routes,
                         middleware,
                         interceptors,
+                        global_filters,
                         cors,
                         request_body_size_limit,
                     ),
@@ -317,6 +341,7 @@ async fn serve_connection<S>(
                     routes,
                     middleware,
                     interceptors,
+                    global_filters,
                     cors,
                     request_body_size_limit,
                 )
@@ -334,6 +359,7 @@ async fn handle_request(
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
     interceptors: Vec<InterceptorLayer>,
+    global_filters: Vec<GlobalFilterLayer>,
     cors: bool,
     request_body_size_limit: Option<usize>,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
@@ -468,7 +494,7 @@ async fn handle_request(
                                 Body::text("request pipeline interceptor transition failed"),
                             )
                         } else {
-                            error.into_response()
+                            handle_http_exception(error, &global_filters, pipeline.request()).await
                         }
                     }
                 },
@@ -515,6 +541,22 @@ enum InterceptorExecution {
         error: HttpException,
         handler_called: bool,
     },
+}
+
+async fn handle_http_exception(
+    error: HttpException,
+    global_filters: &[GlobalFilterLayer],
+    request: &NivasaRequest,
+) -> NivasaResponse {
+    match global_filters.last() {
+        Some(filter) => {
+            let mut request_context = RequestContext::new();
+            request_context.insert_request_data(request.clone());
+            let host = ArgumentsHost::new().with_request_context(request_context);
+            filter.catch(error, host).await
+        }
+        None => HttpExceptionSummary::from(&error).into_response(),
+    }
 }
 
 async fn execute_middleware(
