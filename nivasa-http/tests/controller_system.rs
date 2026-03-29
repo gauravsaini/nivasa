@@ -1,18 +1,27 @@
 use http::{Method, Request};
+use nivasa_common::HttpException;
 use nivasa_http::{
     run_controller_action, run_controller_action_with_body, run_controller_action_with_file,
     run_controller_action_with_files, run_controller_action_with_param,
     run_controller_action_with_query, run_controller_action_with_request,
+    resolve_controller_guard_execution, GuardExecutionOutcome,
     upload::{FileInterceptor, FilesInterceptor, UploadedFile},
     Body, ControllerResponse, FromRequest, Json, NivasaRequest, NivasaResponse, Query,
     RequestPipeline,
 };
+use nivasa_guards::{ExecutionContext, Guard, GuardFuture};
 use nivasa_macros::{controller, impl_controller};
 use nivasa_routing::{
     Controller, RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod, RoutePathCaptures,
     RoutePattern,
 };
 use serde::Deserialize;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+
+type GuardedRouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 struct CreateUser {
@@ -194,6 +203,40 @@ impl RequestController {
             "id": id,
         }))
         .with_header("x-controller-mode", "req")
+    }
+}
+
+struct ControllerGuardAllow;
+
+impl Guard for ControllerGuardAllow {
+    fn can_activate<'a>(&'a self, _: &'a ExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async { Ok(true) })
+    }
+}
+
+struct ControllerGuardDeny;
+
+impl Guard for ControllerGuardDeny {
+    fn can_activate<'a>(&'a self, _: &'a ExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async { Err(HttpException::forbidden("controller guard blocked")) })
+    }
+}
+
+#[controller("/guarded")]
+#[nivasa_macros::guard(ControllerGuard)]
+#[derive(Clone, Copy)]
+struct GuardedController;
+
+#[impl_controller]
+impl GuardedController {
+    #[nivasa_macros::get("/first")]
+    fn first(&self) -> NivasaResponse {
+        NivasaResponse::text("first").with_header("x-controller-mode", "guarded-first")
+    }
+
+    #[nivasa_macros::get("/second")]
+    fn second(&self) -> NivasaResponse {
+        NivasaResponse::text("second").with_header("x-controller-mode", "guarded-second")
     }
 }
 
@@ -483,6 +526,209 @@ fn controller_req_runtime_exposes_raw_request_only_after_route_matching() {
             "id": "42",
         }))
     );
+}
+
+async fn evaluate_controller_guard<'a, G: Guard + ?Sized>(
+    pipeline: &mut RequestPipeline,
+    guard: &'a G,
+    handler: &'static str,
+    controller_guards: &[&'static str],
+    handler_guard_metadata: &[(&'static str, Vec<&'static str>)],
+) -> GuardExecutionOutcome {
+    let contract = resolve_controller_guard_execution(
+        handler,
+        controller_guards,
+        handler_guard_metadata,
+    )
+    .expect("controller guard contract must exist");
+
+    assert_eq!(contract.handler(), handler);
+    assert_eq!(contract.guards(), &["ControllerGuard"]);
+
+    pipeline
+        .evaluate_guard(guard, &ExecutionContext::new(()))
+        .await
+        .expect("guard evaluation must advance the request pipeline")
+}
+
+#[tokio::test]
+async fn controller_guard_runtime_allows_all_routes_when_the_guard_passes() {
+    let controller = GuardedController;
+    let controller_guards = GuardedController::__nivasa_controller_guards();
+    let handler_guard_metadata = GuardedController::__nivasa_controller_guard_metadata();
+    let routes = GuardedController::__nivasa_controller_routes();
+
+    let first_called = Arc::new(AtomicBool::new(false));
+    let second_called = Arc::new(AtomicBool::new(false));
+    let mut registry: RouteDispatchRegistry<GuardedRouteHandler> = RouteDispatchRegistry::new();
+
+    for (method, path, handler) in &routes {
+        match *handler {
+            "first" => {
+                let called = Arc::clone(&first_called);
+                registry
+                    .register_pattern(
+                        RouteMethod::from(*method),
+                        path.clone(),
+                        Arc::new(move |request: &NivasaRequest| {
+                            called.store(true, Ordering::SeqCst);
+                            run_controller_action_with_request(request, |_| controller.first())
+                        }),
+                    )
+                    .expect("guarded controller route must register");
+            }
+            "second" => {
+                let called = Arc::clone(&second_called);
+                registry
+                    .register_pattern(
+                        RouteMethod::from(*method),
+                        path.clone(),
+                        Arc::new(move |request: &NivasaRequest| {
+                            called.store(true, Ordering::SeqCst);
+                            run_controller_action_with_request(request, |_| controller.second())
+                        }),
+                    )
+                    .expect("guarded controller route must register");
+            }
+            other => panic!("unexpected guarded controller handler `{other}`"),
+        }
+    }
+
+    for (method, path, handler) in routes {
+        let request = NivasaRequest::new(Method::from_bytes(method.as_bytes()).unwrap(), path, Body::empty());
+        let mut pipeline = RequestPipeline::new(request);
+        pipeline.parse_request().unwrap();
+        pipeline.complete_middleware().unwrap();
+
+        let outcome = pipeline.match_route(&registry).unwrap();
+        assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
+        assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+
+        let guard_outcome = evaluate_controller_guard(
+            &mut pipeline,
+            &ControllerGuardAllow,
+            handler,
+            &controller_guards,
+            &handler_guard_metadata,
+        )
+        .await;
+
+        assert!(matches!(guard_outcome, GuardExecutionOutcome::Passed));
+        assert_eq!(pipeline.snapshot().current_state, "InterceptorPre");
+        pipeline.complete_interceptors_pre().unwrap();
+        assert_eq!(pipeline.snapshot().current_state, "PipeTransform");
+        pipeline.complete_pipes().unwrap();
+        assert_eq!(pipeline.snapshot().current_state, "HandlerExecution");
+
+        let response = match outcome {
+            RouteDispatchOutcome::Matched(entry) => entry.value.as_ref()(pipeline.request()),
+            _ => panic!("guarded controller route must match"),
+        };
+
+        pipeline.complete_handler().unwrap();
+        assert_eq!(pipeline.snapshot().current_state, "InterceptorPost");
+        pipeline.complete_interceptors_post().unwrap();
+        assert_eq!(pipeline.snapshot().current_state, "SendingResponse");
+        pipeline.complete_response().unwrap();
+        assert_eq!(pipeline.snapshot().current_state, "Done");
+
+        assert_eq!(response.status(), http::StatusCode::OK);
+        assert_eq!(
+            response.headers().get("x-controller-mode").unwrap(),
+            if handler == "first" {
+                "guarded-first"
+            } else {
+                "guarded-second"
+            }
+        );
+        assert_eq!(
+            response.body(),
+            &Body::text(if handler == "first" { "first" } else { "second" })
+        );
+    }
+
+    assert!(first_called.load(Ordering::SeqCst));
+    assert!(second_called.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn controller_guard_runtime_blocks_all_routes_when_the_guard_errors() {
+    let controller = GuardedController;
+    let controller_guards = GuardedController::__nivasa_controller_guards();
+    let handler_guard_metadata = GuardedController::__nivasa_controller_guard_metadata();
+    let routes = GuardedController::__nivasa_controller_routes();
+
+    let first_called = Arc::new(AtomicBool::new(false));
+    let second_called = Arc::new(AtomicBool::new(false));
+    let mut registry: RouteDispatchRegistry<GuardedRouteHandler> = RouteDispatchRegistry::new();
+
+    for (method, path, handler) in &routes {
+        match *handler {
+            "first" => {
+                let called = Arc::clone(&first_called);
+                registry
+                    .register_pattern(
+                        RouteMethod::from(*method),
+                        path.clone(),
+                        Arc::new(move |request: &NivasaRequest| {
+                            called.store(true, Ordering::SeqCst);
+                            run_controller_action_with_request(request, |_| controller.first())
+                        }),
+                    )
+                    .expect("guarded controller route must register");
+            }
+            "second" => {
+                let called = Arc::clone(&second_called);
+                registry
+                    .register_pattern(
+                        RouteMethod::from(*method),
+                        path.clone(),
+                        Arc::new(move |request: &NivasaRequest| {
+                            called.store(true, Ordering::SeqCst);
+                            run_controller_action_with_request(request, |_| controller.second())
+                        }),
+                    )
+                    .expect("guarded controller route must register");
+            }
+            other => panic!("unexpected guarded controller handler `{other}`"),
+        }
+    }
+
+    for (method, path, handler) in routes {
+        let request = NivasaRequest::new(Method::from_bytes(method.as_bytes()).unwrap(), path, Body::empty());
+        let mut pipeline = RequestPipeline::new(request);
+        pipeline.parse_request().unwrap();
+        pipeline.complete_middleware().unwrap();
+
+        let outcome = pipeline.match_route(&registry).unwrap();
+        assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
+        assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+
+        let guard_outcome = evaluate_controller_guard(
+            &mut pipeline,
+            &ControllerGuardDeny,
+            handler,
+            &controller_guards,
+            &handler_guard_metadata,
+        )
+        .await;
+
+        match guard_outcome {
+            GuardExecutionOutcome::Error(error) => {
+                assert_eq!(error.status_code, 403);
+                assert_eq!(error.message, "controller guard blocked");
+            }
+            other => panic!("expected controller guard error, got {other:?}"),
+        }
+        assert_eq!(pipeline.snapshot().current_state, "ErrorHandling");
+        pipeline.fail_filter_unhandled().unwrap();
+        assert_eq!(pipeline.snapshot().current_state, "SendingResponse");
+        pipeline.complete_response().unwrap();
+        assert_eq!(pipeline.snapshot().current_state, "Done");
+    }
+
+    assert!(!first_called.load(Ordering::SeqCst));
+    assert!(!second_called.load(Ordering::SeqCst));
 }
 
 #[test]

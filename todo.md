@@ -481,12 +481,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `ThrottlerGuard` (rate limiting — see Phase 3.4)
 
 #### 3.1.6 — Guard Tests
-- [ ] Test guard that always allows → handler executes
-- [ ] Test guard that always denies → 403 response
+- [x] Test guard that always allows → handler executes
+- [x] Test guard that always denies → 403 response
 - [ ] Test multiple guards — all pass
 - [ ] Test multiple guards — one fails → short-circuit
 - [ ] Test guard with injected service dependency
-- [ ] Test controller-level guard applies to all its routes
+- [x] Test controller-level guard applies to all its routes
 - [ ] Test reflector reads `#[roles]` metadata correctly
 
 ### 3.2 — Interceptor System (`nivasa-interceptors` + `nivasa-macros`)
@@ -501,7 +501,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.2.2 — `#[interceptor]` Attribute Macro
 - [x] Parse `#[interceptor(InterceptorType)]` on handler methods
 - [x] Parse `#[interceptor(InterceptorType)]` on controller struct
-- [ ] Parse `#[interceptor(InterceptorType)]` on module
+- [x] Parse `#[interceptor(InterceptorType)]` on module (metadata capture only; runtime wiring still open)
 - [x] Support multiple interceptors: `#[interceptor(I1, I2)]` (execute in order)
 
 #### 3.2.3 — Interceptor Chain Execution
@@ -536,8 +536,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Generate middleware registration
 
 #### 3.3.3 — Middleware Pipeline
-- Landed execution slice: `NivasaServerBuilder::middleware(...)` runs one `NivasaMiddleware` around a `NextMiddleware` capture point before `complete_middleware()`. Global registration, module-level wiring, and route ordering remain open.
-- [ ] Implement global middleware registration via `NestApplication::use_()`
+- Landed execution slice: `NivasaServerBuilder::middleware(...)` runs one `NivasaMiddleware` around a `NextMiddleware` capture point before `complete_middleware()`. `AppBootstrapConfig::use_middleware(...)` now forwards straight into that hook, while module-level wiring, route ordering, and exclusion remain open.
+- [x] Implement global middleware registration via `NestApplication::use_()` (bootstrap-only facade via `AppBootstrapConfig::use_middleware(...)`)
 - [ ] Implement module-level middleware registration via `#[module({ middlewares: [...] })]`
 - [ ] Implement route-specific middleware (`.apply(Mw).forRoutes("/users")`)
 - [ ] Implement middleware exclusion (`.apply(Mw).exclude("/health")`)
@@ -985,7 +985,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `.use_global_filter(Filter)` — apply exception filter globally
 - [x] Implement `.enable_cors()` — minimal transport-side CORS bridge on `ServerOptions`; richer middleware/CorsOptions work remains future
 - [ ] Implement `.enable_versioning(VersioningOptions)` — API versioning config
-- [ ] Implement `.use_(Middleware)` — apply global middleware
+- [x] Implement `.use_(Middleware)` — apply global middleware (bootstrap-only facade via `AppBootstrapConfig::use_middleware(...)`)
 - [ ] Implement startup banner with ASCII art + version
 - [ ] Implement startup logging: routes registered, modules loaded, listen address
 - [ ] Implement `.close()` — graceful shutdown API (for testing)
