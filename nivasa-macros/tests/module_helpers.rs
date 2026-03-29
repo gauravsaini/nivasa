@@ -62,6 +62,10 @@ fn module_macro_exposes_registration_metadata_helpers() {
         vec![TypeId::of::<Service>()]
     );
     assert_eq!(
+        AppModule::__nivasa_module_metadata().middlewares,
+        vec![TypeId::of::<LoggingMiddleware>()]
+    );
+    assert_eq!(
         AppModule::__nivasa_module_middlewares(),
         vec![TypeId::of::<LoggingMiddleware>()]
     );
@@ -89,4 +93,8 @@ fn module_macro_exposes_registration_metadata_helpers() {
     assert_eq!(controller_registrations[0].routes[0].method, "GET");
     assert_eq!(controller_registrations[0].routes[0].path, "/app/health");
     assert_eq!(controller_registrations[0].routes[0].handler, "health");
+    assert_eq!(
+        controller_registrations[0].middlewares,
+        vec![TypeId::of::<LoggingMiddleware>()]
+    );
 }

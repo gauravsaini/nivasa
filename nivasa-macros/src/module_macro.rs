@@ -2,9 +2,9 @@ use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
     parse::{Parse, ParseStream},
-    parse_macro_input, Attribute, Error, Expr, ExprLit, Ident, ItemStruct, Lit, Meta, Result,
+    parse_macro_input,
     spanned::Spanned,
-    Path, Token, Type,
+    Attribute, Error, Expr, ExprLit, Ident, ItemStruct, Lit, Meta, Path, Result, Token, Type,
 };
 
 #[derive(Default)]
@@ -131,6 +131,7 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                         )
                     })
                     .collect(),
+                Self::__nivasa_module_middlewares(),
             )
         }
     });
@@ -190,6 +191,7 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                     .with_providers(Self::__nivasa_module_providers())
                     .with_controllers(Self::__nivasa_module_controllers())
                     .with_exports(Self::__nivasa_module_exports())
+                    .with_middlewares(Self::__nivasa_module_middlewares())
                     .with_global(false)
             }
         }
@@ -453,18 +455,10 @@ fn parse_set_metadata_binding(attr: &Attribute) -> Result<Option<Vec<ModuleMetad
             Err(meta.error("expected `key` or `value` in `#[set_metadata]`"))
         })?;
 
-        let key = key.ok_or_else(|| {
-            Error::new(
-                attr.span(),
-                "`#[set_metadata]` requires a `key` entry",
-            )
-        })?;
-        let value = value.ok_or_else(|| {
-            Error::new(
-                attr.span(),
-                "`#[set_metadata]` requires a `value` entry",
-            )
-        })?;
+        let key =
+            key.ok_or_else(|| Error::new(attr.span(), "`#[set_metadata]` requires a `key` entry"))?;
+        let value = value
+            .ok_or_else(|| Error::new(attr.span(), "`#[set_metadata]` requires a `value` entry"))?;
 
         let key = key.value().trim().to_owned();
         let value = value.value().trim().to_owned();

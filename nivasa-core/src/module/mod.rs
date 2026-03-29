@@ -20,6 +20,7 @@ pub struct ModuleMetadata {
     pub providers: Vec<TypeId>,
     pub controllers: Vec<TypeId>,
     pub exports: Vec<TypeId>,
+    pub middlewares: Vec<TypeId>,
     pub is_global: bool,
 }
 
@@ -45,6 +46,11 @@ impl ModuleMetadata {
 
     pub fn with_exports(mut self, exports: Vec<TypeId>) -> Self {
         self.exports = exports;
+        self
+    }
+
+    pub fn with_middlewares(mut self, middlewares: Vec<TypeId>) -> Self {
+        self.middlewares = middlewares;
         self
     }
 
@@ -77,11 +83,20 @@ impl ControllerRouteRegistration {
 pub struct ModuleControllerRegistration {
     pub controller: TypeId,
     pub routes: Vec<ControllerRouteRegistration>,
+    pub middlewares: Vec<TypeId>,
 }
 
 impl ModuleControllerRegistration {
-    pub fn new(controller: TypeId, routes: Vec<ControllerRouteRegistration>) -> Self {
-        Self { controller, routes }
+    pub fn new(
+        controller: TypeId,
+        routes: Vec<ControllerRouteRegistration>,
+        middlewares: Vec<TypeId>,
+    ) -> Self {
+        Self {
+            controller,
+            routes,
+            middlewares,
+        }
     }
 }
 
