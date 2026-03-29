@@ -546,7 +546,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement middleware execution order: global → module → route-specific
 
 #### 3.3.4 — Tower Compatibility Layer
-- [ ] Implement adapter: `Tower Service<Request> → NivasaMiddleware`
+- [x] Implement adapter: `Tower Service<Request> → NivasaMiddleware`
 - [ ] Implement adapter: `NivasaMiddleware → Tower Layer`
 - [ ] Test wrapping a Tower middleware (e.g., `tower-http::cors`) for future Nivasa middleware support
 - [ ] Document how to use existing Tower ecosystem middleware
@@ -564,7 +564,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test middleware ordering (global before module before route)
 - [ ] Test richer CORS middleware/CorsOptions integration adds correct headers
 - [x] Test middleware exclusion (`.exclude()`)
-- [ ] Test Tower middleware adapter works
+- [x] Test Tower middleware adapter works
 
 ### 3.4 — Rate Limiting / Throttling
 
