@@ -532,11 +532,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support functional middleware (closure-based, no struct needed)
 
 #### 3.3.2 — `#[middleware]` Attribute Macro
-- [ ] Parse `#[middleware]` on struct
-- [ ] Generate middleware registration
+- [x] Parse `#[middleware]` on struct
+- [x] Generate middleware registration
 
 #### 3.3.3 — Middleware Pipeline
-- Landed execution slice: `NivasaServerBuilder::middleware(...)` runs one `NivasaMiddleware` around a `NextMiddleware` capture point before `complete_middleware()`. Global registration, module-level wiring, route ordering, and decorator parsing remain open.
+- Landed execution slice: `NivasaServerBuilder::middleware(...)` runs one `NivasaMiddleware` around a `NextMiddleware` capture point before `complete_middleware()`. Global registration, module-level wiring, and route ordering remain open.
 - [ ] Implement global middleware registration via `NestApplication::use_()`
 - [ ] Implement module-level middleware registration via `#[module({ middlewares: [...] })]`
 - [ ] Implement route-specific middleware (`.apply(Mw).forRoutes("/users")`)
