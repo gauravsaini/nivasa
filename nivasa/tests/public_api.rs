@@ -114,11 +114,13 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
         _: Option<Query<std::collections::BTreeMap<String, String>>>,
     ) {
     }
+    fn _assert_next_middleware_type_is_in_scope(_: Option<NextMiddleware>) {}
     fn _assert_pipeline_type_is_in_scope(_: Option<RequestPipeline>) {}
     fn _assert_server_builder_is_in_scope(_: Option<NivasaServerBuilder>) {}
     fn _assert_runtime_module_type_is_in_scope(_: Option<ModuleRuntime<DemoModule>>) {}
 
     fn _asserts_controller_trait_name_is_in_scope<T: Controller>() {}
+    fn _asserts_middleware_trait_name_is_in_scope<T: NivasaMiddleware>() {}
     fn _asserts_module_trait_name_is_in_scope<T: Module>() {}
     fn _asserts_injectable_trait_name_is_in_scope<T: Injectable>() {}
 
@@ -156,9 +158,13 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
     use nivasa::{
         all, body, controller, custom_param, delete, file, files, get, head, header, headers,
         http_code, impl_controller, options, param, patch, post, put, query, req, res, session,
-        Body, Controller, ControllerResponse, Download, Html, Json, MultipartLimits, NivasaRequest,
-        NivasaResponse, NivasaServer, RequestPipeline, Sse, Text, UploadedFile,
+        Body, Controller, ControllerResponse, Download, Html, Json, MultipartLimits,
+        NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse, NivasaServer,
+        RequestPipeline, Sse, Text, UploadedFile,
     };
+
+    fn _assert_root_middleware_trait_name_is_in_scope<T: NivasaMiddleware>() {}
+    fn _assert_root_next_middleware_type_is_in_scope(_: Option<NextMiddleware>) {}
 }
 
 struct DemoController;
@@ -208,6 +214,22 @@ fn bootstrap_config_can_compose_prefixed_route_paths_without_runtime_wiring() {
         nivasa::AppBootstrapConfig::default().prefixed_route_path("users"),
         "/users"
     );
+}
+
+#[test]
+fn bootstrap_config_can_forward_global_middleware_into_the_server_builder() {
+    fn assert_builder(_: NivasaServerBuilder) {}
+
+    let builder = nivasa::AppBootstrapConfig::default()
+        .use_middleware(|request: NivasaRequest, next: NextMiddleware| async move {
+            next.run(request).await
+        })
+        .route(nivasa_routing::RouteMethod::Get, "/health", |_| {
+            NivasaResponse::text("ok")
+        })
+        .expect("route registration should succeed");
+
+    assert_builder(builder);
 }
 
 #[cfg(feature = "config")]
