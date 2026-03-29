@@ -57,7 +57,7 @@
 
 ### 0.4 — Umbrella Crate Re-export Strategy
 - [x] Design `nivasa::prelude::*` — users should only need one import
-- [x] Re-export key traits and runtime types: `Controller`, `Module`, `Injectable`, plus the landed DI/module/runtime surface; `GuardExecutionContext`, `GuardExecutionOutcome`, `Interceptor`, `Reflector`, `ExceptionFilter`, `Middleware`, and the `filters`/`pipes` umbrella namespaces are now re-exported from the umbrella crate, while `Pipe` still needs upstream exports
+- [x] Re-export key traits and runtime types: `Controller`, `Module`, `Injectable`, plus the landed DI/module/runtime surface; `GuardExecutionContext`, `GuardExecutionOutcome`, `Interceptor`, `Reflector`, `ExceptionFilter`, and `Middleware` (the `NivasaMiddleware` alias) are now re-exported from the umbrella crate, and the `filters`/`pipes` umbrella namespaces are also re-exported; `Pipe` still needs upstream exports
 - [x] Re-export key macros: `#[module]`, `#[injectable]`, `#[controller]`, `#[get]`, `#[post]`, `#[put]`, `#[delete]`, `#[patch]`, `#[head]`, `#[options]`, `#[all]`, `#[impl_controller]`, `#[scxml_handler]`
 - [x] Re-export `ServerOptions`, `HttpException`, and the existing HTTP/server surface
 - [x] Re-export `StatechartEngine`, generated state/event enums from `nivasa-statechart`
