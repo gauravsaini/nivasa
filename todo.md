@@ -513,7 +513,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support async interceptor execution
 
 #### 3.2.4 — Built-in Interceptors
-- [ ] Implement `LoggingInterceptor` (log method, path, status, duration)
+- [x] Implement `LoggingInterceptor` (log method, path, status, duration)
 - [x] Implement `TimeoutInterceptor` (fail with 408 after N ms via `tokio::time::timeout`)
 - [ ] Implement `CacheInterceptor` (in-memory TTL cache, skip handler on cache hit)
 - [ ] Implement `ClassSerializerInterceptor` (transform response using `#[exclude]` / `#[expose]` on fields)
@@ -523,6 +523,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test post-processing interceptor wraps response in `{ data: ... }`
 - [x] Test interceptor chain execution order (I1.pre → I2.pre → handler → I2.post → I1.post)
 - [x] Test timeout interceptor returns 408 on slow handler
+- [x] Test logging interceptor records request metadata and status codes
 - [ ] Test cache interceptor returns cached response on second call
 
 ### 3.3 — Middleware System (`nivasa-http` + `nivasa-macros`)
