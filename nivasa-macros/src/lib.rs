@@ -103,6 +103,11 @@ pub fn interceptor(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn use_filters(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::use_filters(attr, item)
+}
+
+#[proc_macro_attribute]
 pub fn middleware(attr: TokenStream, item: TokenStream) -> TokenStream {
     middleware::middleware(attr, item)
 }

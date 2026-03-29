@@ -45,8 +45,8 @@ pub mod prelude {
     };
     pub use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
     pub use nivasa_http::upload::MultipartLimits;
-    pub use nivasa_http::NivasaMiddleware as Middleware;
     pub use nivasa_http::HttpExceptionFilter;
+    pub use nivasa_http::NivasaMiddleware as Middleware;
     pub use nivasa_http::{
         upload, Body, ControllerResponse, Download, FromRequest, GuardExecutionOutcome, HeaderMap,
         Html, IntoResponse, Json, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse,
@@ -60,7 +60,7 @@ pub mod prelude {
     pub use nivasa_macros::{
         all, body, controller, custom_param, delete, file, files, get, head, header, headers,
         http_code, impl_controller, injectable, ip, module, options, param, patch, post, put,
-        query, req, res, scxml_handler, session,
+        query, req, res, scxml_handler, session, use_filters,
     };
     pub use nivasa_pipes as pipes;
     pub use nivasa_routing::Controller;
@@ -103,8 +103,8 @@ pub use nivasa_filters::{
 };
 pub use nivasa_guards::{self, ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 pub use nivasa_http::upload::MultipartLimits;
-pub use nivasa_http::NivasaMiddleware as Middleware;
 pub use nivasa_http::HttpExceptionFilter;
+pub use nivasa_http::NivasaMiddleware as Middleware;
 pub use nivasa_http::{
     self, upload, Body, ControllerResponse, Download, FromRequest, GuardExecutionOutcome,
     HeaderMap, Html, IntoResponse, Json, NextMiddleware, NivasaMiddleware, NivasaRequest,
@@ -118,7 +118,7 @@ pub use nivasa_interceptors::{
 pub use nivasa_macros::{
     self, all, body, controller, custom_param, delete, file, files, get, head, header, headers,
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
-    req, res, scxml_handler, session,
+    req, res, scxml_handler, session, use_filters,
 };
 pub use nivasa_pipes as pipes;
 pub use nivasa_routing::Controller;

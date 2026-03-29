@@ -3,8 +3,8 @@ use quote::{quote, ToTokens};
 use std::collections::HashSet;
 use syn::{
     braced,
-    parse::{Parse, ParseStream},
     parse::Parser,
+    parse::{Parse, ParseStream},
     parse_macro_input, parse_quote,
     spanned::Spanned,
     Attribute, Error, Expr, ExprLit, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, ItemStruct, Lit,
@@ -16,6 +16,7 @@ const RESPONSE_MARKER_PREFIX: &str = "nivasa-response:";
 const GUARD_MARKER_PREFIX: &str = "nivasa-guard:";
 const ROLES_MARKER_PREFIX: &str = "nivasa-roles:";
 const INTERCEPTOR_MARKER_PREFIX: &str = "nivasa-interceptor:";
+const FILTER_MARKER_PREFIX: &str = "nivasa-filter:";
 const SET_METADATA_MARKER_PREFIX: &str = "nivasa-set-metadata:";
 
 #[derive(Debug, Default, Clone)]
@@ -44,6 +45,7 @@ struct ControllerMethodBinding {
     guards: Vec<String>,
     roles: Vec<String>,
     interceptors: Vec<String>,
+    filters: Vec<String>,
     metadata: Vec<MetadataBinding>,
     response: Option<ResponseBinding>,
 }
@@ -242,6 +244,7 @@ fn expand_controller(
     let mut controller_guards = Vec::new();
     let mut controller_roles = Vec::new();
     let mut controller_interceptors = Vec::new();
+    let mut controller_filters = Vec::new();
     let mut controller_metadata = Vec::new();
     let mut retained_attrs = Vec::new();
 
@@ -252,9 +255,12 @@ fn expand_controller(
                 Some(roles) => controller_roles.extend(roles),
                 None => match parse_interceptor_binding(&attr)? {
                     Some(interceptors) => controller_interceptors.extend(interceptors),
-                    None => match parse_set_metadata_binding(&attr)? {
-                        Some(metadata) => controller_metadata.extend(metadata),
-                        None => retained_attrs.push(attr),
+                    None => match parse_filter_binding(&attr)? {
+                        Some(filters) => controller_filters.extend(filters),
+                        None => match parse_set_metadata_binding(&attr)? {
+                            Some(metadata) => controller_metadata.extend(metadata),
+                            None => retained_attrs.push(attr),
+                        },
                     },
                 },
             },
@@ -331,6 +337,12 @@ fn expand_controller(
                 ]
             }
 
+            pub fn __nivasa_controller_filters() -> Vec<&'static str> {
+                vec![
+                    #(#controller_filters),*
+                ]
+            }
+
             pub fn __nivasa_controller_set_metadata(
             ) -> Vec<(&'static str, &'static str)> {
                 vec![
@@ -376,6 +388,19 @@ fn interceptor_marker_attr(interceptors: &[Path]) -> Attribute {
         .join(",");
     let marker = LitStr::new(
         &format!("{INTERCEPTOR_MARKER_PREFIX} {payload}"),
+        proc_macro2::Span::call_site(),
+    );
+    parse_quote!(#[doc = #marker])
+}
+
+fn filter_marker_attr(filters: &[Path]) -> Attribute {
+    let payload = filters
+        .iter()
+        .map(|filter| filter.to_token_stream().to_string().replace(' ', ""))
+        .collect::<Vec<_>>()
+        .join(",");
+    let marker = LitStr::new(
+        &format!("{FILTER_MARKER_PREFIX} {payload}"),
         proc_macro2::Span::call_site(),
     );
     parse_quote!(#[doc = #marker])
@@ -558,6 +583,61 @@ fn parse_interceptor_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
     Ok(Some(interceptors))
 }
 
+fn parse_filter_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
+    if attr_path_matches(attr, "use_filters") {
+        let filters: syn::punctuated::Punctuated<Path, Token![,]> =
+            attr.parse_args_with(syn::punctuated::Punctuated::parse_terminated)?;
+
+        if filters.is_empty() {
+            return Err(Error::new(
+                attr.span(),
+                "`#[use_filters]` requires at least one filter type",
+            ));
+        }
+
+        return Ok(Some(
+            filters
+                .into_iter()
+                .map(|path| path.to_token_stream().to_string().replace(' ', ""))
+                .collect(),
+        ));
+    }
+
+    if !attr.path().is_ident("doc") {
+        return Ok(None);
+    }
+
+    let Meta::NameValue(meta) = &attr.meta else {
+        return Ok(None);
+    };
+
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(doc), ..
+    }) = &meta.value
+    else {
+        return Ok(None);
+    };
+
+    let value = doc.value();
+    let Some(rest) = value.trim().strip_prefix(FILTER_MARKER_PREFIX) else {
+        return Ok(None);
+    };
+
+    let filters = rest
+        .trim()
+        .split(',')
+        .map(str::trim)
+        .filter(|filter| !filter.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+
+    if filters.is_empty() {
+        return Err(Error::new(doc.span(), "invalid controller filter marker"));
+    }
+
+    Ok(Some(filters))
+}
+
 fn parse_set_metadata_binding(attr: &Attribute) -> Result<Option<Vec<MetadataBinding>>> {
     if attr_path_matches(attr, "set_metadata") {
         let mut key: Option<LitStr> = None;
@@ -577,11 +657,10 @@ fn parse_set_metadata_binding(attr: &Attribute) -> Result<Option<Vec<MetadataBin
             Err(meta.error("expected `key` or `value` in `#[set_metadata]`"))
         })?;
 
-        let key = key
-            .ok_or_else(|| Error::new(attr.span(), "`#[set_metadata]` requires a `key` entry"))?;
-        let value = value.ok_or_else(|| {
-            Error::new(attr.span(), "`#[set_metadata]` requires a `value` entry")
-        })?;
+        let key =
+            key.ok_or_else(|| Error::new(attr.span(), "`#[set_metadata]` requires a `key` entry"))?;
+        let value = value
+            .ok_or_else(|| Error::new(attr.span(), "`#[set_metadata]` requires a `value` entry"))?;
 
         let key = key.value().trim().to_owned();
         let value = value.value().trim().to_owned();
@@ -1028,6 +1107,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         let mut guard_bindings = Vec::new();
         let mut role_bindings = Vec::new();
         let mut interceptor_bindings = Vec::new();
+        let mut filter_bindings = Vec::new();
         let mut metadata_bindings = Vec::new();
         let mut retained_attrs = Vec::new();
 
@@ -1038,21 +1118,24 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                     Some(mut roles) => role_bindings.append(&mut roles),
                     None => match parse_interceptor_binding(&attr)? {
                         Some(mut interceptors) => interceptor_bindings.append(&mut interceptors),
-                        None => match parse_set_metadata_binding(&attr)? {
-                            Some(mut metadata) => metadata_bindings.append(&mut metadata),
-                            None => match parse_route_binding(&attr)? {
-                                Some(binding) => {
-                                    if method_route.is_some() {
-                                        return Err(Error::new(
-                                            attr.span(),
-                                            "a controller method can only use one HTTP method attribute",
-                                        ));
+                        None => match parse_filter_binding(&attr)? {
+                            Some(mut filters) => filter_bindings.append(&mut filters),
+                            None => match parse_set_metadata_binding(&attr)? {
+                                Some(mut metadata) => metadata_bindings.append(&mut metadata),
+                                None => match parse_route_binding(&attr)? {
+                                    Some(binding) => {
+                                        if method_route.is_some() {
+                                            return Err(Error::new(
+                                                attr.span(),
+                                                "a controller method can only use one HTTP method attribute",
+                                            ));
+                                        }
+                                        method_route = Some(binding);
                                     }
-                                    method_route = Some(binding);
-                                }
-                                None => match parse_response_binding(&attr)? {
-                                    Some(binding) => response_bindings.push(binding),
-                                    None => retained_attrs.push(attr),
+                                    None => match parse_response_binding(&attr)? {
+                                        Some(binding) => response_bindings.push(binding),
+                                        None => retained_attrs.push(attr),
+                                    },
                                 },
                             },
                         },
@@ -1068,6 +1151,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             || !guard_bindings.is_empty()
             || !role_bindings.is_empty()
             || !interceptor_bindings.is_empty()
+            || !filter_bindings.is_empty()
             || !metadata_bindings.is_empty();
         let response = if response_bindings.is_empty() {
             None
@@ -1120,6 +1204,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                 guards: guard_bindings,
                 roles: role_bindings,
                 interceptors: interceptor_bindings,
+                filters: filter_bindings,
                 metadata: metadata_bindings,
                 response,
             });
@@ -1240,6 +1325,20 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         }
     });
 
+    let filter_entries = methods.iter().map(|method| {
+        let handler = &method.handler;
+        let filters = method.filters.iter().map(|filter| quote!(#filter));
+
+        quote! {
+            (
+                stringify!(#handler),
+                vec![
+                    #(#filters),*
+                ]
+            )
+        }
+    });
+
     let metadata_entries = methods.iter().map(|method| {
         let handler = &method.handler;
         let metadata = method.metadata.iter().map(|entry| {
@@ -1315,6 +1414,13 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             ) -> Vec<(&'static str, Vec<&'static str>)> {
                 vec![
                     #(#interceptor_entries),*
+                ]
+            }
+
+            pub fn __nivasa_controller_filter_metadata(
+            ) -> Vec<(&'static str, Vec<&'static str>)> {
+                vec![
+                    #(#filter_entries),*
                 ]
             }
 
@@ -1583,6 +1689,35 @@ pub fn interceptor(attr: TokenStream, item: TokenStream) -> TokenStream {
     Error::new(
         proc_macro2::Span::call_site(),
         "`#[interceptor]` only supports controller structs and inherent controller methods",
+    )
+    .to_compile_error()
+    .into()
+}
+
+pub fn use_filters(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let filters = parse_macro_input!(
+        attr with syn::punctuated::Punctuated::<Path, Token![,]>::parse_terminated
+    );
+
+    if filters.is_empty() {
+        return Error::new(
+            proc_macro2::Span::call_site(),
+            "`#[use_filters]` requires at least one filter type",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let filter_attr = filter_marker_attr(&filters.iter().cloned().collect::<Vec<_>>());
+
+    if let Ok(mut method) = syn::parse::<ImplItemFn>(item.clone()) {
+        method.attrs.insert(0, filter_attr);
+        return quote!(#method).into();
+    }
+
+    Error::new(
+        proc_macro2::Span::call_site(),
+        "`#[use_filters]` only supports controller methods",
     )
     .to_compile_error()
     .into()

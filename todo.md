@@ -673,7 +673,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 5.1.2 — `#[catch]` Attribute Macro
 - [x] Parse `#[catch(ExceptionType)]` on filter struct
 - [x] Parse `#[catch_all]` to catch any exception
-- [ ] Support handler-level: `#[use_filters(MyFilter)]`
+- [x] Support handler-level: `#[use_filters(MyFilter)]`
 - [ ] Support controller-level: `#[use_filters(MyFilter)]`
 - [x] Support global filters via `NivasaServer::builder().use_global_filter()` for HTTP exception paths
 
