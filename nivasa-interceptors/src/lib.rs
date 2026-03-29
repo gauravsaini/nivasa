@@ -10,6 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use nivasa_common::{HttpException, HttpStatus, RequestContext};
+use serde::Serialize;
+use serde_json::Value;
 
 /// Standard result type returned by interceptor handlers.
 pub type InterceptorResult<T> = Result<T, HttpException>;
@@ -248,6 +250,104 @@ type LogSink = Arc<dyn Fn(String) + Send + Sync + 'static>;
 type StatusFormatter<T> = Arc<dyn Fn(&T) -> String + Send + Sync + 'static>;
 type CacheKeyResolver = Arc<dyn Fn(&ExecutionContext) -> String + Send + Sync + 'static>;
 type CacheStore<T> = Arc<Mutex<BTreeMap<String, T>>>;
+
+/// Serialize a class-like response object into JSON.
+///
+/// The interceptor itself remains transport-agnostic and only projects JSON
+/// objects, but this helper gives later `#[exclude]` / `#[expose]` wiring a
+/// stable serialization entry point.
+pub fn class_serialize<T>(value: &T) -> Value
+where
+    T: Serialize,
+{
+    serde_json::to_value(value).expect("class response must serialize")
+}
+
+/// Interceptor that projects class-like JSON responses by applying field-level
+/// exclusion and exposure rules.
+///
+/// This stays transport-agnostic by working on `serde_json::Value`. The
+/// corresponding `Serialize` step is exposed via [`class_serialize`], which
+/// keeps the slice small and still lets later `#[exclude]` / `#[expose]`
+/// attribute wiring plug into a real runtime projection point.
+#[derive(Clone)]
+pub struct ClassSerializerInterceptor {
+    excluded_fields: Arc<BTreeMap<String, ()>>,
+    exposed_fields: Option<Arc<BTreeMap<String, ()>>>,
+}
+
+impl ClassSerializerInterceptor {
+    /// Create a serializer interceptor with no field projection rules.
+    pub fn new() -> Self {
+        Self {
+            excluded_fields: Arc::new(BTreeMap::new()),
+            exposed_fields: None,
+        }
+    }
+
+    /// Exclude fields from the serialized JSON object.
+    pub fn with_excluded_fields<I, S>(mut self, fields: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let mut excluded_fields = BTreeMap::new();
+        for field in fields {
+            excluded_fields.insert(field.into(), ());
+        }
+        self.excluded_fields = Arc::new(excluded_fields);
+        self
+    }
+
+    /// Restrict serialization to the provided fields.
+    pub fn with_exposed_fields<I, S>(mut self, fields: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let mut exposed_fields = BTreeMap::new();
+        for field in fields {
+            exposed_fields.insert(field.into(), ());
+        }
+        self.exposed_fields = Some(Arc::new(exposed_fields));
+        self
+    }
+}
+
+impl Default for ClassSerializerInterceptor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Interceptor for ClassSerializerInterceptor {
+    type Response = Value;
+
+    fn intercept(
+        &self,
+        _context: &ExecutionContext,
+        next: CallHandler<Self::Response>,
+    ) -> InterceptorFuture<Self::Response> {
+        let excluded_fields = Arc::clone(&self.excluded_fields);
+        let exposed_fields = self.exposed_fields.clone();
+
+        Box::pin(async move {
+            let mut serialized = next.handle().await?;
+
+            if let Value::Object(ref mut object) = serialized {
+                if let Some(exposed_fields) = exposed_fields.as_ref() {
+                    object.retain(|key, _| exposed_fields.contains_key(key));
+                }
+
+                if !excluded_fields.is_empty() {
+                    object.retain(|key, _| !excluded_fields.contains_key(key));
+                }
+            }
+
+            Ok(serialized)
+        })
+    }
+}
 
 /// Interceptor that records request metadata, response status, and duration.
 ///
@@ -554,6 +654,64 @@ mod tests {
         assert!(entry.contains("class=UsersController"));
         assert!(entry.contains("status=200"));
         assert!(entry.contains("duration_ns="));
+    }
+
+    #[derive(Debug, Clone, Serialize, PartialEq)]
+    struct SerializableProfile {
+        id: u32,
+        email: String,
+        password: String,
+        display_name: String,
+    }
+
+    #[test]
+    fn class_serializer_interceptor_excludes_fields_from_json_objects() {
+        let interceptor = ClassSerializerInterceptor::new().with_excluded_fields(["password"]);
+        let context = ExecutionContext::new().with_class_name("ProfileView");
+        let next = CallHandler::new(|| async {
+            Ok::<_, HttpException>(class_serialize(&SerializableProfile {
+                id: 7,
+                email: "dev@example.com".to_string(),
+                password: "secret".to_string(),
+                display_name: "Dev".to_string(),
+            }))
+        });
+
+        let result = block_on(interceptor.intercept(&context, next)).unwrap();
+
+        assert_eq!(
+            result,
+            serde_json::json!({
+                "id": 7,
+                "email": "dev@example.com",
+                "display_name": "Dev"
+            })
+        );
+    }
+
+    #[test]
+    fn class_serializer_interceptor_can_expose_only_selected_fields() {
+        let interceptor =
+            ClassSerializerInterceptor::new().with_exposed_fields(["id", "display_name"]);
+        let context = ExecutionContext::new().with_class_name("ProfileView");
+        let next = CallHandler::new(|| async {
+            Ok::<_, HttpException>(class_serialize(&SerializableProfile {
+                id: 11,
+                email: "ignored@example.com".to_string(),
+                password: "secret".to_string(),
+                display_name: "Reader".to_string(),
+            }))
+        });
+
+        let result = block_on(interceptor.intercept(&context, next)).unwrap();
+
+        assert_eq!(
+            result,
+            serde_json::json!({
+                "id": 11,
+                "display_name": "Reader"
+            })
+        );
     }
 
     #[derive(Debug, PartialEq)]

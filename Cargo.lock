@@ -763,6 +763,7 @@ dependencies = [
  "hyper-util",
  "multer",
  "nivasa-common",
+ "nivasa-filters",
  "nivasa-guards",
  "nivasa-interceptors",
  "nivasa-macros",
@@ -781,6 +782,8 @@ name = "nivasa-interceptors"
 version = "0.1.0"
 dependencies = [
  "nivasa-common",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
