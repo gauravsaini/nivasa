@@ -516,7 +516,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `LoggingInterceptor` (log method, path, status, duration)
 - [x] Implement `TimeoutInterceptor` (fail with 408 after N ms via `tokio::time::timeout`)
 - [ ] Implement `CacheInterceptor` (in-memory TTL cache, skip handler on cache hit)
-- [ ] Implement `ClassSerializerInterceptor` (transform response using `#[exclude]` / `#[expose]` on fields)
+- [x] Implement `ClassSerializerInterceptor` (transform response using `#[exclude]` / `#[expose]` on fields)
 
 #### 3.2.5 — Interceptor Tests
 - [ ] Test pre-processing interceptor adds header to request
