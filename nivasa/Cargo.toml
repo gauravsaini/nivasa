@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 nivasa-core = { path = "../nivasa-core" }
 nivasa-common = { path = "../nivasa-common" }
+nivasa-guards = { path = "../nivasa-guards" }
 nivasa-statechart = { path = "../nivasa-statechart" }
 nivasa-macros = { path = "../nivasa-macros" }
 nivasa-http = { path = "../nivasa-http" }

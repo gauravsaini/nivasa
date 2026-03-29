@@ -110,6 +110,8 @@ fn crate_root_reexports_bootstrap_config_as_pure_data() {
 fn prelude_reexports_core_traits_macros_and_http_types() {
     fn _assert_request_type_is_in_scope(_: Option<NivasaRequest>) {}
     fn _assert_response_type_is_in_scope(_: Option<NivasaResponse>) {}
+    fn _assert_guard_context_is_in_scope(_: Option<GuardExecutionContext>) {}
+    fn _assert_guard_outcome_is_in_scope(_: Option<GuardExecutionOutcome>) {}
     fn _assert_query_type_is_in_scope(
         _: Option<Query<std::collections::BTreeMap<String, String>>>,
     ) {
@@ -120,6 +122,7 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
     fn _assert_runtime_module_type_is_in_scope(_: Option<ModuleRuntime<DemoModule>>) {}
 
     fn _asserts_controller_trait_name_is_in_scope<T: Controller>() {}
+    fn _asserts_guard_trait_name_is_in_scope<T: Guard>() {}
     fn _asserts_middleware_trait_name_is_in_scope<T: NivasaMiddleware>() {}
     fn _asserts_module_trait_name_is_in_scope<T: Module>() {}
     fn _asserts_injectable_trait_name_is_in_scope<T: Injectable>() {}
@@ -137,6 +140,7 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
     let _ = HttpStatus::Ok;
     let _ = HttpException::bad_request("boom");
     let _ = TimeoutInterceptor::<NivasaResponse>::new(std::time::Duration::from_millis(1));
+    let _ = GuardExecutionOutcome::Passed;
 }
 
 #[test]
@@ -144,6 +148,8 @@ fn crate_root_and_prelude_reexport_generated_statechart_types() {
     fn _assert_root_application_state(_: nivasa::NivasaApplicationState) {}
     fn _assert_root_application_event(_: nivasa::NivasaApplicationEvent) {}
     fn _assert_root_request_statechart(_: Option<nivasa::NivasaRequestStatechart>) {}
+    fn _assert_root_guard_context(_: Option<nivasa::GuardExecutionContext>) {}
+    fn _assert_root_guard_outcome(_: Option<nivasa::GuardExecutionOutcome>) {}
     fn _assert_prelude_module_state(_: NivasaModuleState) {}
     fn _assert_prelude_provider_event(_: NivasaProviderEvent) {}
     fn _assert_prelude_application_statechart(_: Option<NivasaApplicationStatechart>) {}
@@ -159,11 +165,14 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
     use nivasa::{
         all, body, controller, custom_param, delete, file, files, get, head, header, headers,
         http_code, impl_controller, options, param, patch, post, put, query, req, res, session,
-        Body, Controller, ControllerResponse, Download, Html, Json, MultipartLimits,
-        NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse, NivasaServer,
-        RequestPipeline, Sse, Text, UploadedFile,
+        Body, Controller, ControllerResponse, Download, Guard, GuardExecutionContext,
+        GuardExecutionOutcome, Html, Json, MultipartLimits, NextMiddleware, NivasaMiddleware,
+        NivasaRequest, NivasaResponse, NivasaServer, RequestPipeline, Sse, Text, UploadedFile,
     };
 
+    fn _assert_root_guard_trait_name_is_in_scope<T: Guard>() {}
+    fn _assert_root_guard_context_is_in_scope(_: Option<GuardExecutionContext>) {}
+    fn _assert_root_guard_outcome_is_in_scope(_: Option<GuardExecutionOutcome>) {}
     fn _assert_root_middleware_trait_name_is_in_scope<T: NivasaMiddleware>() {}
     fn _assert_root_next_middleware_type_is_in_scope(_: Option<NextMiddleware>) {}
 }

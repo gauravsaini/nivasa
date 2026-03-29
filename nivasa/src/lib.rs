@@ -23,6 +23,7 @@ pub mod prelude {
         VersioningOptionsBuilder, VersioningStrategy,
     };
     pub use nivasa_common::{HttpException, HttpStatus};
+    pub use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
     pub use nivasa_interceptors::{
         CallHandler, ExecutionContext, Interceptor, InterceptorFuture, InterceptorResult,
         TimeoutInterceptor,
@@ -45,10 +46,10 @@ pub mod prelude {
     };
     pub use nivasa_http::upload::MultipartLimits;
     pub use nivasa_http::{
-        upload, Body, ControllerResponse, Download, FromRequest, HeaderMap, Html, IntoResponse,
-        Json, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse, NivasaServer,
-        NivasaServerBuilder, Query, Redirect, RequestExtractError, RequestPipeline, Sse, SseEvent,
-        StreamBody, Text, UploadedFile,
+        upload, Body, ControllerResponse, Download, FromRequest, GuardExecutionOutcome, HeaderMap,
+        Html, IntoResponse, Json, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse,
+        NivasaServer, NivasaServerBuilder, Query, Redirect, RequestExtractError, RequestPipeline,
+        Sse, SseEvent, StreamBody, Text, UploadedFile,
     };
     pub use nivasa_macros::{
         all, body, controller, custom_param, delete, file, files, get, head, header, headers,
@@ -73,6 +74,7 @@ pub use application::{
     VersioningOptionsBuilder, VersioningStrategy,
 };
 pub use nivasa_common::{self, HttpException, HttpStatus};
+pub use nivasa_guards::{self, ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 pub use nivasa_interceptors::{
     self, CallHandler, ExecutionContext, Interceptor, InterceptorFuture, InterceptorResult,
     TimeoutInterceptor,
@@ -95,10 +97,10 @@ pub use nivasa_core::{
 };
 pub use nivasa_http::upload::MultipartLimits;
 pub use nivasa_http::{
-    self, upload, Body, ControllerResponse, Download, FromRequest, HeaderMap, Html, IntoResponse,
-    Json, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse, NivasaServer,
-    NivasaServerBuilder, Query, Redirect, RequestExtractError, RequestPipeline, Sse, SseEvent,
-    StreamBody, Text, UploadedFile,
+    self, upload, Body, ControllerResponse, Download, FromRequest, GuardExecutionOutcome,
+    HeaderMap, Html, IntoResponse, Json, NextMiddleware, NivasaMiddleware, NivasaRequest,
+    NivasaResponse, NivasaServer, NivasaServerBuilder, Query, Redirect, RequestExtractError,
+    RequestPipeline, Sse, SseEvent, StreamBody, Text, UploadedFile,
 };
 pub use nivasa_macros::{
     self, all, body, controller, custom_param, delete, file, files, get, head, header, headers,
