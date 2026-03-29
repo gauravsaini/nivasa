@@ -470,7 +470,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support async guard execution
 
 #### 3.1.4 — Reflector / Metadata (NestJS `SetMetadata`)
-- [ ] Implement `#[set_metadata(key, value)]` decorator
+- [x] Implement `#[set_metadata(key, value)]` decorator (metadata capture only; runtime Reflector/guard enforcement still open)
 - [x] Implement `Reflector` service — read metadata in guards/interceptors
 - [x] Implement `#[roles("admin", "editor")]` as sugar over `set_metadata` (metadata capture only; handler/controller/module capture landed; runtime authorization and module-wide enforcement still open)
 - [ ] Test reflector reads metadata set on handler
