@@ -7,7 +7,7 @@ use http::{
     header::{
         HeaderMap, HeaderValue, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
         ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_REQUEST_HEADERS, ACCESS_CONTROL_REQUEST_METHOD,
-        ALLOW, ORIGIN,
+        ALLOW, CONTENT_TYPE, ORIGIN,
     },
     Method, Request, Response, StatusCode,
 };
@@ -34,6 +34,7 @@ use std::{
     },
     time::Duration,
 };
+use serde_json::json;
 use tokio::{net::TcpListener, sync::oneshot, task::JoinSet};
 #[cfg(feature = "tls")]
 use tokio_rustls::TlsAcceptor;
@@ -431,7 +432,7 @@ async fn handle_request(
                                 Body::text("request pipeline interceptor transition failed"),
                             )
                         } else {
-                            response
+                            map_interceptor_response(response)
                         }
                     }
                     InterceptorExecution::ShortCircuited(response) => {
@@ -443,7 +444,7 @@ async fn handle_request(
                                 Body::text("request pipeline interceptor transition failed"),
                             )
                         } else {
-                            response
+                            map_interceptor_response(response)
                         }
                     }
                     InterceptorExecution::Error {
@@ -573,6 +574,35 @@ async fn execute_interceptors(
             handler_called: handler_called.load(Ordering::SeqCst),
         },
     }
+}
+
+fn map_interceptor_response(response: NivasaResponse) -> NivasaResponse {
+    let status = response.status();
+    let headers = response.headers().clone();
+    let mapped_body = json!({
+        "data": match response.body() {
+            Body::Empty => serde_json::Value::Null,
+            Body::Text(value) | Body::Html(value) => serde_json::Value::String(value.clone()),
+            Body::Json(value) => value.clone(),
+            Body::Bytes(bytes) => serde_json::Value::Array(
+                bytes.iter().copied().map(serde_json::Value::from).collect(),
+            ),
+        }
+    });
+
+    let mut mapped_response = NivasaResponse::new(status, Body::json(mapped_body));
+    for (name, value) in headers.iter() {
+        if name.as_str() != CONTENT_TYPE.as_str() {
+            mapped_response = mapped_response.with_header(
+                name.as_str(),
+                value
+                    .to_str()
+                    .expect("response header value must be valid utf-8"),
+            );
+        }
+    }
+
+    mapped_response
 }
 
 fn interceptor_chain_handler(
