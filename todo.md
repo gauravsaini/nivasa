@@ -666,8 +666,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 5.1.1 — ExceptionFilter Trait
 - [ ] Define `ExceptionFilter<E>` trait: `async fn catch(&self, exception: E, host: ArgumentsHost) -> NivasaResponse`
-- [ ] Define `ArgumentsHost` struct (access to request, response, next, underlying context)
-- [ ] Define `HttpArgumentsHost` for HTTP-specific context
+- [x] Define `ArgumentsHost` struct (access to request, response, next, underlying context)
+- [x] Define `HttpArgumentsHost` for HTTP-specific context
 - [ ] Define `WsArgumentsHost` for WebSocket-specific context (future)
 
 #### 5.1.2 — `#[catch]` Attribute Macro
