@@ -36,3 +36,4 @@ tokio-rustls = { version = "0.26", optional = true }
 nivasa-core = { path = "../nivasa-core" }
 nivasa-macros = { path = "../nivasa-macros" }
 rustls-pemfile = "2"
+tower-http = { workspace = true }
