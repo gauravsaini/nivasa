@@ -460,7 +460,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Parse `#[guard(GuardType)]` on handler methods
 - [x] Parse `#[guard(GuardType)]` on controller struct (metadata capture only; runtime apply-to-all-routes still open)
 - [ ] Parse `#[guard(GuardType)]` on module (apply to all module routes)
-- [ ] Support multiple guards: `#[guard(Guard1, Guard2)]`
+- [x] Support multiple guards: `#[guard(Guard1, Guard2)]` (metadata capture)
 
 #### 3.1.3 — Guard Execution Pipeline
 - [ ] Implement guard chain execution (AND logic: all must pass)
@@ -487,6 +487,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test multiple guards — one fails → short-circuit
 - [ ] Test guard with injected service dependency
 - [x] Test controller-level guard applies to all its routes
+- [x] Test controller guard metadata applies to every route
 - [ ] Test reflector reads `#[roles]` metadata correctly
 
 ### 3.2 — Interceptor System (`nivasa-interceptors` + `nivasa-macros`)
@@ -1032,6 +1033,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 10.1 — Testing
 - [ ] Achieve >90% code coverage across all crates
+- [x] Add in-process request lifecycle integration coverage (middleware → guard → interceptor → handler → Done)
 - [ ] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
 - [ ] Write integration tests: module composition (nested modules, imports/exports)
 - [ ] Write integration tests: error handling pipeline (exception → filter → response)
