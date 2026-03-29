@@ -691,7 +691,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test global filter catches unhandled HttpException
 - [ ] Test handler-level filter overrides global for specific exception
 - [x] Test filter formats response correctly (`{ statusCode, message, error }`)
-- [ ] Test unhandled non-HttpException returns 500 Internal Server Error
+- [x] Test unhandled non-HttpException returns 500 Internal Server Error
 - [x] Test filter has access to request via ArgumentsHost
 
 ### 5.2 — Custom Exceptions (`nivasa-common`)
