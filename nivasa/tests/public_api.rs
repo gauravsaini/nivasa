@@ -136,6 +136,7 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
     let _ = ProviderScope::Singleton;
     let _ = HttpStatus::Ok;
     let _ = HttpException::bad_request("boom");
+    let _ = TimeoutInterceptor::<NivasaResponse>::new(std::time::Duration::from_millis(1));
 }
 
 #[test]
@@ -224,6 +225,34 @@ fn bootstrap_config_can_forward_global_middleware_into_the_server_builder() {
         .use_middleware(|request: NivasaRequest, next: NextMiddleware| async move {
             next.run(request).await
         })
+        .route(nivasa_routing::RouteMethod::Get, "/health", |_| {
+            NivasaResponse::text("ok")
+        })
+        .expect("route registration should succeed");
+
+    assert_builder(builder);
+}
+
+#[test]
+fn bootstrap_config_can_forward_global_interceptors_into_the_server_builder() {
+    struct DemoInterceptor;
+
+    impl Interceptor for DemoInterceptor {
+        type Response = NivasaResponse;
+
+        fn intercept(
+            &self,
+            _context: &ExecutionContext,
+            next: CallHandler<Self::Response>,
+        ) -> InterceptorFuture<Self::Response> {
+            Box::pin(async move { next.handle().await })
+        }
+    }
+
+    fn assert_builder(_: NivasaServerBuilder) {}
+
+    let builder = nivasa::AppBootstrapConfig::default()
+        .use_interceptor(DemoInterceptor)
         .route(nivasa_routing::RouteMethod::Get, "/health", |_| {
             NivasaResponse::text("ok")
         })

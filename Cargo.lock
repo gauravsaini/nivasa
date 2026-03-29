@@ -684,6 +684,7 @@ dependencies = [
  "nivasa-config",
  "nivasa-core",
  "nivasa-http",
+ "nivasa-interceptors",
  "nivasa-macros",
  "nivasa-routing",
  "nivasa-statechart",

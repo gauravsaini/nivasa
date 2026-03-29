@@ -23,6 +23,10 @@ pub mod prelude {
         VersioningOptionsBuilder, VersioningStrategy,
     };
     pub use nivasa_common::{HttpException, HttpStatus};
+    pub use nivasa_interceptors::{
+        CallHandler, ExecutionContext, Interceptor, InterceptorFuture, InterceptorResult,
+        TimeoutInterceptor,
+    };
     #[cfg(feature = "config")]
     pub use nivasa_config as config;
     pub use nivasa_core::di::provider::Injectable;
@@ -69,6 +73,10 @@ pub use application::{
     VersioningOptionsBuilder, VersioningStrategy,
 };
 pub use nivasa_common::{self, HttpException, HttpStatus};
+pub use nivasa_interceptors::{
+    self, CallHandler, ExecutionContext, Interceptor, InterceptorFuture, InterceptorResult,
+    TimeoutInterceptor,
+};
 #[cfg(feature = "config")]
 pub use nivasa_config as config;
 pub use nivasa_core::di::provider::Injectable;

@@ -5,6 +5,7 @@
 //! configuration without pulling transport details into the main crate yet.
 
 use nivasa_http::{NivasaMiddleware, NivasaServer, NivasaServerBuilder};
+use nivasa_interceptors::Interceptor;
 
 /// Supported API versioning strategies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -206,6 +207,17 @@ impl AppBootstrapConfig {
         M: NivasaMiddleware + Send + Sync + 'static,
     {
         self.server_builder().middleware(middleware)
+    }
+
+    /// Register a single global interceptor at bootstrap time.
+    ///
+    /// This remains a thin facade over the existing transport interceptor
+    /// hook. It does not imply module wiring, ordering, or response mapping.
+    pub fn use_interceptor<I>(&self, interceptor: I) -> NivasaServerBuilder
+    where
+        I: Interceptor<Response = nivasa_http::NivasaResponse> + Send + Sync + 'static,
+    {
+        self.server_builder().interceptor(interceptor)
     }
 
     /// Compose a bootstrap-time route path from the configured global prefix.
