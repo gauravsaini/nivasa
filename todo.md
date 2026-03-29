@@ -473,7 +473,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `#[set_metadata(key, value)]` decorator (metadata capture only; handler/controller/module capture landed; runtime Reflector/guard enforcement still open)
 - [x] Implement `Reflector` service — read metadata in guards/interceptors
 - [x] Implement `#[roles("admin", "editor")]` as sugar over `set_metadata` (metadata capture only; handler/controller/module capture landed; runtime authorization and module-wide enforcement still open)
-- [ ] Test reflector reads metadata set on handler
+- [x] Test reflector reads metadata set on handler
 
 #### 3.1.5 — Built-in Guards
 - [ ] Implement `AuthGuard` skeleton (JWT validation pattern)
@@ -488,7 +488,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test guard with injected service dependency
 - [x] Test controller-level guard applies to all its routes
 - [x] Test controller guard metadata applies to every route
-- [ ] Test reflector reads `#[roles]` metadata correctly
+- [x] Test reflector reads `#[roles]` metadata correctly
 
 ### 3.2 — Interceptor System (`nivasa-interceptors` + `nivasa-macros`)
 
