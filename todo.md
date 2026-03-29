@@ -671,8 +671,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Define `WsArgumentsHost` for WebSocket-specific context (future)
 
 #### 5.1.2 — `#[catch]` Attribute Macro
-- [ ] Parse `#[catch(ExceptionType)]` on filter struct
-- [ ] Parse `#[catch_all]` to catch any exception
+- [x] Parse `#[catch(ExceptionType)]` on filter struct
+- [x] Parse `#[catch_all]` to catch any exception
 - [ ] Support handler-level: `#[use_filters(MyFilter)]`
 - [ ] Support controller-level: `#[use_filters(MyFilter)]`
 - [ ] Support global filters via `NestApplication::use_global_filter()`
