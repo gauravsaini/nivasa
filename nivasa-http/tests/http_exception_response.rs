@@ -1,4 +1,5 @@
 use nivasa_common::HttpException;
+use nivasa_filters::HttpExceptionSummary;
 use nivasa_http::IntoResponse;
 
 #[test]
@@ -44,4 +45,35 @@ fn result_error_maps_http_exception_to_json_response() {
             }
         })
     );
+}
+
+#[test]
+fn http_exception_summary_maps_to_the_standard_three_field_shape() -> Result<(), Box<dyn std::error::Error>> {
+    let response = HttpExceptionSummary::from(&HttpException::unprocessable_entity(
+        "Validation failed",
+    ))
+    .into_response();
+
+    if response.status() != http::StatusCode::UNPROCESSABLE_ENTITY {
+        return Err("unexpected summary response status".into());
+    }
+    if response.headers().get(http::header::CONTENT_TYPE).unwrap() != "application/json" {
+        return Err("unexpected summary response content type".into());
+    }
+
+    let json: serde_json::Value = serde_json::from_slice(&response.body().as_bytes())?;
+    if json["statusCode"] != serde_json::Value::from(422) {
+        return Err("unexpected summary statusCode".into());
+    }
+    if json["message"] != "Validation failed" {
+        return Err("unexpected summary message".into());
+    }
+    if json["error"] != "Unprocessable Entity" {
+        return Err("unexpected summary error".into());
+    }
+    if json.get("details").is_some() {
+        return Err("summary payload must not include details".into());
+    }
+
+    Ok(())
 }

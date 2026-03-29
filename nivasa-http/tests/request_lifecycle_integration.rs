@@ -1,5 +1,5 @@
-use bytes::Bytes;
 use async_trait::async_trait;
+use bytes::Bytes;
 use http::header::CONTENT_TYPE;
 use http::{Method, StatusCode};
 use http_body_util::{BodyExt, Full};
@@ -17,10 +17,10 @@ use nivasa_interceptors::{
 use nivasa_macros::{controller, impl_controller};
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod};
 use serde_json::json;
-use std::sync::{Arc, Mutex};
 use std::net::TcpListener as StdTcpListener;
-use tokio::{sync::oneshot, time::sleep};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::{sync::oneshot, time::sleep};
 
 type LifecycleRouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
 
@@ -103,6 +103,35 @@ impl Interceptor for LifecycleInterceptor {
             let response = next.handle().await?;
             log.push("interceptor.post");
             Ok(response.with_header("x-interceptor", "applied"))
+        })
+    }
+}
+
+struct RequestHeaderInterceptor {
+    log: LifecycleLog,
+    request: Arc<Mutex<NivasaRequest>>,
+}
+
+impl Interceptor for RequestHeaderInterceptor {
+    type Response = NivasaResponse;
+
+    fn intercept(
+        &self,
+        _context: &InterceptorExecutionContext,
+        next: CallHandler<Self::Response>,
+    ) -> InterceptorFuture<Self::Response> {
+        let log = self.log.clone();
+        let request = Arc::clone(&self.request);
+
+        Box::pin(async move {
+            log.push("interceptor.pre");
+            request
+                .lock()
+                .unwrap()
+                .set_header("x-pre-processing", "applied");
+            let response = next.handle().await?;
+            log.push("interceptor.post");
+            Ok(response)
         })
     }
 }
@@ -267,6 +296,108 @@ async fn request_lifecycle_runs_middleware_guard_interceptor_and_handler_in_orde
             "handler",
             "interceptor.post"
         ]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn request_lifecycle_allows_pre_processing_interceptors_to_add_request_headers(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let log = LifecycleLog::new();
+    let guard = LifecycleGuard { log: log.clone() };
+    let request = Arc::new(Mutex::new(NivasaRequest::new(
+        Method::GET,
+        "/lifecycle/flow",
+        Body::text("from-middleware"),
+    )));
+    let interceptor = RequestHeaderInterceptor {
+        log: log.clone(),
+        request: Arc::clone(&request),
+    };
+
+    let mut registry: RouteDispatchRegistry<LifecycleRouteHandler> = RouteDispatchRegistry::new();
+    let (method, path, handler_name) = LifecycleController::__nivasa_controller_routes()
+        .into_iter()
+        .next()
+        .expect("controller must expose a route");
+
+    assert_eq!(handler_name, "flow");
+    registry
+        .register_pattern(
+            RouteMethod::from(method),
+            path.clone(),
+            Arc::new({
+                move |request: &NivasaRequest| {
+                    let pre_processing_header = request
+                        .header("x-pre-processing")
+                        .and_then(|value| value.to_str().ok());
+                    assert_eq!(pre_processing_header, Some("applied"));
+                    assert_eq!(request.path(), "/lifecycle/flow");
+                    NivasaResponse::text("handler")
+                }
+            }),
+        )
+        .expect("lifecycle route must register");
+
+    let mut pipeline = RequestPipeline::new(
+        request
+            .lock()
+            .expect("test request lock must be available")
+            .clone(),
+    );
+    pipeline.parse_request()?;
+    pipeline.complete_middleware()?;
+
+    let outcome = pipeline.match_route(&registry)?;
+    let matched_entry = match outcome {
+        RouteDispatchOutcome::Matched(entry) => entry,
+        _ => panic!("expected route match"),
+    };
+    assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+
+    let guard_context = GuardExecutionContext::new(pipeline.request().clone());
+    let guard_outcome = pipeline
+        .evaluate_guard(&guard, &guard_context)
+        .await
+        .expect("guard execution must advance the request pipeline");
+    assert!(matches!(guard_outcome, GuardExecutionOutcome::Passed));
+    assert_eq!(pipeline.snapshot().current_state, "InterceptorPre");
+
+    let handler = Arc::clone(&matched_entry.value);
+    let handler_request = Arc::clone(&request);
+    let interceptor_context = InterceptorExecutionContext::new()
+        .with_request("GET", "/lifecycle/flow")
+        .with_handler_name("flow")
+        .with_class_name("LifecycleController");
+    let response = interceptor
+        .intercept(
+            &interceptor_context,
+            CallHandler::new(move || {
+                let handler = Arc::clone(&handler);
+                let request = Arc::clone(&handler_request);
+                async move {
+                    let request = request
+                        .lock()
+                        .expect("test request lock must be available")
+                        .clone();
+                    Ok((handler)(&request))
+                }
+            }),
+        )
+        .await?;
+
+    pipeline.complete_interceptors_pre()?;
+    pipeline.complete_pipes()?;
+    pipeline.complete_handler()?;
+    pipeline.complete_interceptors_post()?;
+    pipeline.complete_response()?;
+
+    assert_eq!(pipeline.snapshot().current_state, "Done");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        log.snapshot(),
+        vec!["guard", "interceptor.pre", "interceptor.post"]
     );
 
     Ok(())

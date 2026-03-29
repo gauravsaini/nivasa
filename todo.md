@@ -497,7 +497,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.2.1 — Interceptor Trait
 - [x] Define `Interceptor` trait: `async fn intercept(&self, context: &ExecutionContext, next: CallHandler) -> Result<Response>`
 - [x] Define `CallHandler` struct: `async fn handle(self) -> Result<Response>`
-- [ ] Support DI in interceptor structs
+- [x] Support DI in interceptor structs
 
 #### 3.2.2 — `#[interceptor]` Attribute Macro
 - [x] Parse `#[interceptor(InterceptorType)]` on handler methods
@@ -519,7 +519,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `ClassSerializerInterceptor` (transform response using `#[exclude]` / `#[expose]` on fields)
 
 #### 3.2.5 — Interceptor Tests
-- [ ] Test pre-processing interceptor adds header to request
+- [x] Test pre-processing interceptor adds header to request
 - [x] Test post-processing interceptor wraps response in `{ data: ... }`
 - [x] Test interceptor chain execution order (I1.pre → I2.pre → handler → I2.post → I1.post)
 - [x] Test timeout interceptor returns 408 on slow handler
@@ -685,14 +685,14 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 5.1.4 — Built-in Filters
 - [ ] Implement `HttpExceptionFilter` (catch all `HttpException` variants)
-- [ ] Implement default global filter (standard error response shape)
+- [x] Implement default global filter (standard error response shape)
 
 #### 5.1.5 — Filter Tests
 - [ ] Test global filter catches unhandled HttpException
 - [ ] Test handler-level filter overrides global for specific exception
-- [ ] Test filter formats response correctly (`{ statusCode, message, error }`)
+- [x] Test filter formats response correctly (`{ statusCode, message, error }`)
 - [ ] Test unhandled non-HttpException returns 500 Internal Server Error
-- [ ] Test filter has access to request via ArgumentsHost
+- [x] Test filter has access to request via ArgumentsHost
 
 ### 5.2 — Custom Exceptions (`nivasa-common`)
 
