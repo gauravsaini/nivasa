@@ -506,10 +506,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support multiple interceptors: `#[interceptor(I1, I2)]` (execute in order)
 
 #### 3.2.3 — Interceptor Chain Execution
-- Landed execution slices: `NivasaServerBuilder::interceptor(...)` now supports a thin server-side interceptor hook around matched route handlers, repeated `.interceptor(...)` calls execute as an ordered onion chain while `RequestPipeline` remains the owner of `InterceptorPre` / `InterceptorPost` transitions, and `AppBootstrapConfig::use_interceptor(...)` now forwards into that hook. Decorator-driven registration, module wiring, and response-mapping helpers remain open.
+- Landed execution slices: `NivasaServerBuilder::interceptor(...)` now supports a thin server-side interceptor hook around matched route handlers, repeated `.interceptor(...)` calls execute as an ordered onion chain while `RequestPipeline` remains the owner of `InterceptorPre` / `InterceptorPost` transitions, `AppBootstrapConfig::use_interceptor(...)` now forwards into that hook, and the response-mapping hook now wraps mapped bodies before final send. Decorator-driven registration and module wiring remain open.
 - [ ] Implement interceptor chain (onion/RxJS-style: pre → next.handle() → post)
-- [ ] Implement response transformation in post-processing
-- [ ] Implement response mapping (map the body before sending)
+- [x] Implement response transformation in post-processing
+- [x] Implement response mapping (map the body before sending)
 - [x] Support async interceptor execution
 
 #### 3.2.4 — Built-in Interceptors
@@ -520,7 +520,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 3.2.5 — Interceptor Tests
 - [ ] Test pre-processing interceptor adds header to request
-- [ ] Test post-processing interceptor wraps response in `{ data: ... }`
+- [x] Test post-processing interceptor wraps response in `{ data: ... }`
 - [x] Test interceptor chain execution order (I1.pre → I2.pre → handler → I2.post → I1.post)
 - [ ] Test timeout interceptor returns 408 on slow handler
 - [ ] Test cache interceptor returns cached response on second call
