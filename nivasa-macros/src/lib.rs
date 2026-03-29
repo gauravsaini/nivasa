@@ -82,6 +82,11 @@ pub fn roles(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn set_metadata(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::set_metadata(attr, item)
+}
+
+#[proc_macro_attribute]
 pub fn interceptor(_attr: TokenStream, item: TokenStream) -> TokenStream {
     controller::interceptor(_attr, item)
 }
