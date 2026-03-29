@@ -57,15 +57,44 @@ impl ArgumentsHost {
 /// HTTP-specific alias for the default arguments host.
 pub type HttpArgumentsHost = ArgumentsHost;
 
+/// Transport-neutral summary of an HTTP exception.
+///
+/// This keeps the filters crate free of any response type coupling while still
+/// providing a stable default shape that HTTP adapters can turn into a response
+/// body later.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HttpExceptionSummary {
+    pub status_code: u16,
+    pub error: String,
+    pub message: String,
+}
+
+impl From<&HttpException> for HttpExceptionSummary {
+    fn from(exception: &HttpException) -> Self {
+        Self {
+            status_code: exception.status_code,
+            error: exception.error.clone(),
+            message: exception.message.clone(),
+        }
+    }
+}
+
+impl fmt::Display for HttpExceptionSummary {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}: {}", self.status_code, self.error, self.message)
+    }
+}
+
+/// Build the default HTTP exception summary used by adapters and filters.
+pub fn http_exception_summary(exception: &HttpException) -> HttpExceptionSummary {
+    HttpExceptionSummary::from(exception)
+}
+
 /// Request exception filter surface.
 ///
 /// The runtime hook is intentionally lightweight for now so the umbrella crate
 /// can expose the API surface without coupling the filters crate to the HTTP
 /// response type yet.
 pub trait ExceptionFilter<E, R = HttpException>: Send + Sync {
-    fn catch<'a>(
-        &'a self,
-        exception: E,
-        host: HttpArgumentsHost,
-    ) -> ExceptionFilterFuture<'a, R>;
+    fn catch<'a>(&'a self, exception: E, host: HttpArgumentsHost) -> ExceptionFilterFuture<'a, R>;
 }
