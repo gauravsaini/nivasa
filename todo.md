@@ -559,7 +559,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `LoggerMiddleware` (structured request logging via `tracing`)
 
 #### 3.3.6 — Middleware Tests
-- [ ] Test global middleware runs on every request
+- [x] Test global middleware runs on every request
 - [ ] Test module-level middleware runs only for that module's routes
 - [x] Test middleware ordering (global before module before route)
 - [ ] Test richer CORS middleware/CorsOptions integration adds correct headers
@@ -727,9 +727,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 5.2.3 — Exception Tests
 - [ ] Test each exception type returns correct status code
-- [ ] Test exception serialization to JSON matches expected shape
-- [ ] Test custom exception with additional details
-- [ ] Test `Display` / `Error` trait implementations
+- [x] Test exception serialization to JSON matches expected shape
+- [x] Test custom exception with additional details
+- [x] Test `Display` / `Error` trait implementations
 
 ---
 

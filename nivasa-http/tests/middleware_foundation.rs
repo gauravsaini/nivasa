@@ -10,7 +10,7 @@ use nivasa_http::{
 use nivasa_routing::RouteMethod;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Mutex,
 };
 use std::time::Duration;
@@ -164,6 +164,53 @@ async fn server_executes_middleware_before_route_dispatch() -> Result<(), Box<dy
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body.as_ref(), b"middleware");
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_runs_global_middleware_on_every_request(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let request_count = Arc::new(AtomicUsize::new(0));
+
+    let middleware_request_count = Arc::clone(&request_count);
+    let server = NivasaServer::builder()
+        .middleware(move |request: NivasaRequest, next: NextMiddleware| {
+            let request_count = Arc::clone(&middleware_request_count);
+            async move {
+                request_count.fetch_add(1, Ordering::SeqCst);
+                next.run(request).await
+            }
+        })
+        .route(RouteMethod::Get, "/middleware", |_| NivasaResponse::text("ok"))?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+
+    for _ in 0..2 {
+        let request = http::Request::builder()
+            .method(Method::GET)
+            .uri(format!("http://127.0.0.1:{port}/middleware"))
+            .body(Full::new(Bytes::new()))?;
+
+        let response = client.request(request).await?;
+        let status = response.status();
+        let body = response.into_body().collect().await?.to_bytes();
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.as_ref(), b"ok");
+    }
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    assert_eq!(request_count.load(Ordering::SeqCst), 2);
     Ok(())
 }
 
