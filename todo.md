@@ -541,7 +541,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - Landed execution slice: `NivasaServerBuilder::middleware(...)` runs one `NivasaMiddleware` around a `NextMiddleware` capture point before `complete_middleware()`. `AppBootstrapConfig::use_middleware(...)` now forwards straight into that hook, while module-level wiring, route ordering, and exclusion remain open.
 - [x] Implement global middleware registration via `NestApplication::use_()` (bootstrap-only facade via `AppBootstrapConfig::use_middleware(...)`)
 - [ ] Implement module-level middleware registration via `#[module({ middlewares: [...] })]`
-- [ ] Implement route-specific middleware (`.apply(Mw).forRoutes("/users")`)
+- [x] Implement route-specific middleware (`.apply(Mw).forRoutes("/users")` exact/pattern route hook on `NivasaServerBuilder`)
 - [ ] Implement middleware exclusion (`.apply(Mw).exclude("/health")`)
 - [ ] Implement middleware execution order: global → module → route-specific
 

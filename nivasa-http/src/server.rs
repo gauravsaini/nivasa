@@ -24,7 +24,7 @@ use nivasa_interceptors::{
 };
 use nivasa_routing::{
     parse_api_version_accept, parse_api_version_header, RouteDispatchError, RouteDispatchOutcome,
-    RouteDispatchRegistry, RouteMethod,
+    RouteDispatchRegistry, RouteMethod, RoutePattern, RouteRegistryError,
 };
 use serde_json::json;
 use std::{
@@ -48,10 +48,17 @@ type InterceptorLayer = Arc<dyn Interceptor<Response = NivasaResponse> + Send + 
 type GlobalFilterLayer =
     Arc<dyn ExceptionFilter<HttpException, NivasaResponse> + Send + Sync + 'static>;
 
+#[derive(Clone)]
+struct RouteMiddlewareBinding {
+    pattern: RoutePattern,
+    middleware: MiddlewareLayer,
+}
+
 /// Minimal HTTP transport shell for Nivasa.
 pub struct NivasaServer {
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
+    route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterLayer>,
     cors: bool,
@@ -66,6 +73,7 @@ pub struct NivasaServer {
 pub struct NivasaServerBuilder {
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
+    route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterLayer>,
     cors: bool,
@@ -89,6 +97,7 @@ impl NivasaServer {
         let mut shutdown = shutdown_future(self.shutdown.take());
         let routes = self.routes;
         let middleware = self.middleware;
+        let route_middlewares = self.route_middlewares;
         let interceptors = self.interceptors;
         let global_filters = self.global_filters;
         let cors = self.cors;
@@ -107,6 +116,7 @@ impl NivasaServer {
                     let (stream, _) = accept?;
                     let routes = routes.clone();
                     let middleware = middleware.clone();
+                    let route_middlewares = route_middlewares.clone();
                     let interceptors = interceptors.clone();
                     let global_filters_for_connection = global_filters.clone();
                     #[cfg(feature = "tls")]
@@ -121,6 +131,7 @@ impl NivasaServer {
                                     stream,
                                     routes,
                                     middleware,
+                                    route_middlewares,
                                     interceptors,
                                     global_filters_for_connection,
                                     cors,
@@ -136,6 +147,7 @@ impl NivasaServer {
                             stream,
                             routes,
                             middleware,
+                            route_middlewares,
                             interceptors,
                             global_filters_for_connection,
                             cors,
@@ -158,6 +170,7 @@ impl NivasaServerBuilder {
         Self {
             routes: RouteDispatchRegistry::new(),
             middleware: None,
+            route_middlewares: Vec::new(),
             interceptors: Vec::new(),
             global_filters: Vec::new(),
             cors: false,
@@ -224,6 +237,17 @@ impl NivasaServerBuilder {
         self
     }
 
+    /// Start configuring middleware for one or more matched routes.
+    pub fn apply<M>(self, middleware: M) -> RouteMiddlewareBuilder
+    where
+        M: NivasaMiddleware + Send + Sync + 'static,
+    {
+        RouteMiddlewareBuilder {
+            builder: self,
+            middleware: Arc::new(middleware),
+        }
+    }
+
     /// Register a single interceptor hook around a matched route handler.
     pub fn interceptor<I>(mut self, interceptor: I) -> Self
     where
@@ -278,6 +302,7 @@ impl NivasaServerBuilder {
         NivasaServer {
             routes: self.routes,
             middleware: self.middleware,
+            route_middlewares: self.route_middlewares,
             interceptors: self.interceptors,
             global_filters: self.global_filters,
             cors: self.cors,
@@ -294,6 +319,7 @@ async fn serve_connection<S>(
     stream: S,
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
+    route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterLayer>,
     cors: bool,
@@ -306,6 +332,7 @@ async fn serve_connection<S>(
     let service = service_fn(move |request| {
         let routes = routes.clone();
         let middleware = middleware.clone();
+        let route_middlewares = route_middlewares.clone();
         let interceptors = interceptors.clone();
         let global_filters = global_filters.clone();
         let cors = cors;
@@ -319,6 +346,7 @@ async fn serve_connection<S>(
                         request,
                         routes,
                         middleware,
+                        route_middlewares,
                         interceptors,
                         global_filters,
                         cors,
@@ -341,6 +369,7 @@ async fn serve_connection<S>(
                     request,
                     routes,
                     middleware,
+                    route_middlewares,
                     interceptors,
                     global_filters,
                     cors,
@@ -359,6 +388,7 @@ async fn handle_request(
     request: hyper::Request<Incoming>,
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
+    route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterLayer>,
     cors: bool,
@@ -444,6 +474,14 @@ async fn handle_request(
         Ok(RouteDispatchOutcome::Matched(entry)) => {
             let handler = Arc::clone(&entry.value);
             let request = pipeline.request().clone();
+            let route_middlewares =
+                matching_route_middlewares(request.path(), route_middlewares.as_slice());
+            let request = match execute_route_middlewares(route_middlewares, request).await {
+                RouteMiddlewareExecution::Forwarded(request) => request,
+                RouteMiddlewareExecution::ShortCircuited(response) => {
+                    return Ok(finalize_response(response, cors));
+                }
+            };
             match interceptors.is_empty() {
                 false => match execute_interceptors(interceptors, request, handler).await {
                     InterceptorExecution::Completed(response) => {
@@ -535,6 +573,11 @@ enum MiddlewareExecution {
     },
 }
 
+enum RouteMiddlewareExecution {
+    Forwarded(NivasaRequest),
+    ShortCircuited(NivasaResponse),
+}
+
 enum InterceptorExecution {
     Completed(NivasaResponse),
     ShortCircuited(NivasaResponse),
@@ -585,6 +628,37 @@ async fn execute_middleware(
             response,
         },
     }
+}
+
+fn matching_route_middlewares(
+    request_path: &str,
+    route_middlewares: &[RouteMiddlewareBinding],
+) -> Vec<MiddlewareLayer> {
+    route_middlewares
+        .iter()
+        .filter(|binding| binding.pattern.matches(request_path))
+        .map(|binding| Arc::clone(&binding.middleware))
+        .collect()
+}
+
+async fn execute_route_middlewares(
+    middlewares: Vec<MiddlewareLayer>,
+    request: NivasaRequest,
+) -> RouteMiddlewareExecution {
+    let mut request = request;
+
+    for middleware in middlewares {
+        match execute_middleware(middleware, request).await {
+            MiddlewareExecution::Forwarded(next_request) => {
+                request = next_request;
+            }
+            MiddlewareExecution::ShortCircuited { response, .. } => {
+                return RouteMiddlewareExecution::ShortCircuited(response);
+            }
+        }
+    }
+
+    RouteMiddlewareExecution::Forwarded(request)
 }
 
 async fn execute_interceptors(
@@ -781,6 +855,26 @@ fn finalize_response(response: NivasaResponse, cors: bool) -> Response<Full<Byte
         apply_cors_headers(response.headers_mut());
     }
     response
+}
+
+pub struct RouteMiddlewareBuilder {
+    builder: NivasaServerBuilder,
+    middleware: MiddlewareLayer,
+}
+
+impl RouteMiddlewareBuilder {
+    /// Apply the middleware to one or more matched routes.
+    pub fn for_routes(
+        mut self,
+        path: impl Into<String>,
+    ) -> Result<NivasaServerBuilder, RouteRegistryError> {
+        let pattern = RoutePattern::parse(path)?;
+        self.builder.route_middlewares.push(RouteMiddlewareBinding {
+            pattern,
+            middleware: self.middleware,
+        });
+        Ok(self.builder)
+    }
 }
 
 fn is_cors_preflight(headers: &HeaderMap, method: &Method) -> bool {

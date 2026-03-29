@@ -168,6 +168,56 @@ async fn server_executes_middleware_before_route_dispatch() -> Result<(), Box<dy
 }
 
 #[tokio::test]
+async fn server_applies_route_specific_middleware_only_to_matching_route(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .apply(HeaderInjectingMiddleware)
+        .for_routes("/middleware")?
+        .route(RouteMethod::Post, "/middleware", |request| {
+            NivasaResponse::new(StatusCode::OK, request.body().clone())
+        })?
+        .route(RouteMethod::Post, "/other", |request| {
+            NivasaResponse::new(StatusCode::OK, request.body().clone())
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+
+    let routed_request = http::Request::builder()
+        .method(Method::POST)
+        .uri(format!("http://127.0.0.1:{port}/middleware"))
+        .body(Full::new(Bytes::from_static(b"original")))?;
+    let routed_response = client.request(routed_request).await?;
+    let routed_status = routed_response.status();
+    let routed_body = routed_response.into_body().collect().await?.to_bytes();
+
+    let passthrough_request = http::Request::builder()
+        .method(Method::POST)
+        .uri(format!("http://127.0.0.1:{port}/other"))
+        .body(Full::new(Bytes::from_static(b"original")))?;
+    let passthrough_response = client.request(passthrough_request).await?;
+    let passthrough_status = passthrough_response.status();
+    let passthrough_body = passthrough_response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    assert_eq!(routed_status, StatusCode::OK);
+    assert_eq!(routed_body.as_ref(), b"middleware");
+    assert_eq!(passthrough_status, StatusCode::OK);
+    assert_eq!(passthrough_body.as_ref(), b"original");
+    Ok(())
+}
+
+#[tokio::test]
 async fn server_short_circuits_when_middleware_does_not_delegate(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let port = free_port();
