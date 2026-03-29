@@ -10,6 +10,7 @@ license.workspace = true
 nivasa-core = { path = "../nivasa-core" }
 nivasa-common = { path = "../nivasa-common" }
 nivasa-guards = { path = "../nivasa-guards" }
+nivasa-pipes = { path = "../nivasa-pipes" }
 nivasa-statechart = { path = "../nivasa-statechart" }
 nivasa-macros = { path = "../nivasa-macros" }
 nivasa-http = { path = "../nivasa-http" }

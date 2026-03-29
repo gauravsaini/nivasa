@@ -5,6 +5,8 @@ use nivasa::prelude::{
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
     req, res, scxml_handler, session, Reflector,
 };
+#[allow(unused_imports)]
+use nivasa::pipes as pipes_crate;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -149,6 +151,12 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
         Body::empty(),
     ));
     let _ = GuardExecutionOutcome::Passed;
+}
+
+#[test]
+#[allow(unused_imports)]
+fn crate_root_reexports_pipe_surface_as_placeholder_crate() {
+    use nivasa::pipes as pipes_crate;
 }
 
 #[test]

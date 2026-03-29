@@ -24,6 +24,7 @@ pub mod prelude {
     };
     pub use nivasa_common::{HttpException, HttpStatus};
     pub use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
+    pub use nivasa_pipes as pipes;
     pub use nivasa_interceptors::{
         CallHandler, ExecutionContext, Interceptor, InterceptorFuture, InterceptorResult,
         TimeoutInterceptor,
@@ -75,6 +76,7 @@ pub use application::{
 };
 pub use nivasa_common::{self, HttpException, HttpStatus};
 pub use nivasa_guards::{self, ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
+pub use nivasa_pipes as pipes;
 pub use nivasa_interceptors::{
     self, CallHandler, ExecutionContext, Interceptor, InterceptorFuture, InterceptorResult,
     TimeoutInterceptor,
