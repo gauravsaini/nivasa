@@ -20,7 +20,9 @@ use nivasa_filters::{
 };
 use nivasa_routing::RoutePathCaptures;
 use serde::{de::DeserializeOwned, Serialize};
-use std::{fmt, future::Future, pin::Pin, sync::Arc};
+use std::{convert::Infallible, fmt, future::Future, pin::Pin, sync::Arc};
+use tokio::sync::Mutex;
+use tower::Service;
 
 /// Minimal response/request body abstraction for the HTTP wrapper layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1126,6 +1128,47 @@ impl NextMiddleware {
     }
 }
 
+/// Adapter that turns a Tower service into a `NivasaMiddleware`.
+///
+/// This first slice keeps the service terminal and intentionally does not
+/// involve the `next` continuation yet. That lets us prove the Tower side of
+/// the bridge without widening the middleware pipeline surface.
+#[derive(Clone)]
+pub struct TowerServiceMiddleware<S> {
+    service: Arc<Mutex<S>>,
+}
+
+impl<S> TowerServiceMiddleware<S> {
+    /// Wrap a Tower service so it can be used where a `NivasaMiddleware` is expected.
+    pub fn new(service: S) -> Self {
+        Self {
+            service: Arc::new(Mutex::new(service)),
+        }
+    }
+}
+
+impl<S> fmt::Debug for TowerServiceMiddleware<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TowerServiceMiddleware")
+            .finish_non_exhaustive()
+    }
+}
+
+#[async_trait]
+impl<S> NivasaMiddleware for TowerServiceMiddleware<S>
+where
+    S: Service<NivasaRequest, Response = NivasaResponse, Error = Infallible> + Send + 'static,
+    S::Future: Send + 'static,
+{
+    async fn use_(&self, req: NivasaRequest, _next: NextMiddleware) -> NivasaResponse {
+        let mut service = self.service.lock().await;
+        match service.call(req).await {
+            Ok(response) => response,
+            Err(error) => match error {},
+        }
+    }
+}
+
 /// Middleware surface for request pre-processing and delegation.
 ///
 /// This is intentionally just the foundational trait and continuation handle.
@@ -1468,7 +1511,7 @@ impl ExceptionFilter<HttpException, NivasaResponse> for HttpExceptionFilter {
         exception: HttpException,
         _host: HttpArgumentsHost,
     ) -> ExceptionFilterFuture<'a, NivasaResponse> {
-            Box::pin(async move { HttpExceptionSummary::from(&exception).into_response() })
+        Box::pin(async move { HttpExceptionSummary::from(&exception).into_response() })
     }
 }
 
