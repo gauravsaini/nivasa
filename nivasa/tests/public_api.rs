@@ -112,6 +112,9 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
     fn _assert_response_type_is_in_scope(_: Option<NivasaResponse>) {}
     fn _assert_guard_context_is_in_scope(_: Option<GuardExecutionContext>) {}
     fn _assert_guard_outcome_is_in_scope(_: Option<GuardExecutionOutcome>) {}
+    fn _assert_interceptor_context_is_in_scope(_: Option<ExecutionContext>) {}
+    fn _assert_interceptor_call_handler_is_in_scope(_: Option<CallHandler<NivasaResponse>>) {}
+    fn _assert_interceptor_result_is_in_scope(_: Option<InterceptorResult<NivasaResponse>>) {}
     fn _assert_query_type_is_in_scope(
         _: Option<Query<std::collections::BTreeMap<String, String>>>,
     ) {
@@ -140,6 +143,7 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
     let _ = HttpStatus::Ok;
     let _ = HttpException::bad_request("boom");
     let _ = TimeoutInterceptor::<NivasaResponse>::new(std::time::Duration::from_millis(1));
+    let _ = InterceptorResult::<NivasaResponse>::Ok(NivasaResponse::empty());
     let _ = GuardExecutionOutcome::Passed;
 }
 
@@ -165,11 +169,19 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
     use nivasa::{
         all, body, controller, custom_param, delete, file, files, get, head, header, headers,
         http_code, impl_controller, options, param, patch, post, put, query, req, res, session,
-        Body, Controller, ControllerResponse, Download, Guard, GuardExecutionContext,
-        GuardExecutionOutcome, Html, Json, MultipartLimits, NextMiddleware, NivasaMiddleware,
-        NivasaRequest, NivasaResponse, NivasaServer, RequestPipeline, Sse, Text, UploadedFile,
+        Body, CallHandler, Controller, ControllerResponse, Download, ExecutionContext,
+        Guard, GuardExecutionContext, GuardExecutionOutcome, Html, Interceptor,
+        InterceptorFuture, InterceptorResult, Json, MultipartLimits, NextMiddleware,
+        NivasaMiddleware, NivasaRequest, NivasaResponse, NivasaServer, RequestPipeline,
+        Sse, Text, TimeoutInterceptor, UploadedFile,
     };
 
+    fn _assert_root_interceptor_trait_name_is_in_scope<T: Interceptor>() {}
+    fn _assert_root_interceptor_context_is_in_scope(_: Option<ExecutionContext>) {}
+    fn _assert_root_interceptor_call_handler_is_in_scope(_: Option<CallHandler<NivasaResponse>>) {}
+    fn _assert_root_interceptor_future_is_in_scope(_: Option<InterceptorFuture<NivasaResponse>>) {}
+    fn _assert_root_interceptor_result_is_in_scope(_: Option<InterceptorResult<NivasaResponse>>) {}
+    fn _assert_root_timeout_interceptor_is_in_scope(_: Option<TimeoutInterceptor<NivasaResponse>>) {}
     fn _assert_root_guard_trait_name_is_in_scope<T: Guard>() {}
     fn _assert_root_guard_context_is_in_scope(_: Option<GuardExecutionContext>) {}
     fn _assert_root_guard_outcome_is_in_scope(_: Option<GuardExecutionOutcome>) {}
