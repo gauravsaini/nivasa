@@ -1,6 +1,6 @@
 use nivasa_common::HttpException;
-use nivasa_filters::HttpExceptionSummary;
-use nivasa_http::IntoResponse;
+use nivasa_filters::{ExceptionFilter, HttpArgumentsHost, HttpExceptionSummary};
+use nivasa_http::{HttpExceptionFilter, IntoResponse};
 
 #[test]
 fn result_success_maps_through_existing_response_wrappers() {
@@ -76,4 +76,37 @@ fn http_exception_summary_maps_to_the_standard_three_field_shape() -> Result<(),
     }
 
     Ok(())
+}
+
+#[tokio::test]
+async fn http_exception_filter_maps_any_http_exception_to_the_standard_shape() {
+    let response = HttpExceptionFilter::new()
+        .catch(
+            HttpException::unprocessable_entity("Validation failed").with_details(
+                serde_json::json!({
+                    "fields": {
+                        "email": "must be a valid email",
+                    }
+                }),
+            ),
+            HttpArgumentsHost::new(),
+        )
+        .await;
+
+    assert_eq!(response.status(), http::StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        response.headers().get(http::header::CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
+
+    let json: serde_json::Value = serde_json::from_slice(&response.body().as_bytes()).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "statusCode": 422,
+            "message": "Validation failed",
+            "error": "Unprocessable Entity"
+        })
+    );
+    assert!(json.get("details").is_none());
 }

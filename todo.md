@@ -684,7 +684,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Ensure filters can themselves throw (caught by next-level filter)
 
 #### 5.1.4 — Built-in Filters
-- [ ] Implement `HttpExceptionFilter` (catch all `HttpException` variants)
+- [x] Implement `HttpExceptionFilter` (catch all `HttpException` variants)
 - [x] Implement default global filter (standard error response shape)
 
 #### 5.1.5 — Filter Tests

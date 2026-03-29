@@ -14,6 +14,9 @@ use http::{
     Method, Request, Response, StatusCode, Uri,
 };
 use nivasa_common::HttpException;
+use nivasa_filters::{
+    ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost, HttpExceptionSummary,
+};
 use nivasa_routing::RoutePathCaptures;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
@@ -1450,6 +1453,41 @@ impl IntoResponse for HttpException {
             status,
             serde_json::to_value(self).expect("HttpException must serialize"),
         )
+    }
+}
+
+impl IntoResponse for HttpExceptionSummary {
+    fn into_response(self) -> NivasaResponse {
+        let status =
+            StatusCode::from_u16(self.status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        NivasaResponse::new(
+            status,
+            serde_json::json!({
+                "statusCode": self.status_code,
+                "message": self.message,
+                "error": self.error,
+            }),
+        )
+    }
+}
+
+/// Built-in adapter that maps any `HttpException` into the standard HTTP error body.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HttpExceptionFilter;
+
+impl HttpExceptionFilter {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl ExceptionFilter<HttpException, NivasaResponse> for HttpExceptionFilter {
+    fn catch<'a>(
+        &'a self,
+        exception: HttpException,
+        _host: HttpArgumentsHost,
+    ) -> ExceptionFilterFuture<'a, NivasaResponse> {
+        Box::pin(async move { HttpExceptionSummary::from(&exception).into_response() })
     }
 }
 
