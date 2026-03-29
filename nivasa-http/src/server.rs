@@ -16,6 +16,7 @@ use hyper::{body::Incoming, service::service_fn};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder as AutoBuilder;
 use nivasa_common::HttpException;
+use nivasa_filters::HttpExceptionSummary;
 use nivasa_common::RequestContext;
 use nivasa_filters::{ArgumentsHost, ExceptionFilter, HttpExceptionSummary};
 use nivasa_interceptors::{
