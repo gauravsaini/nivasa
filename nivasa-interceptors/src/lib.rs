@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use nivasa_common::{HttpException, HttpStatus, RequestContext};
@@ -246,6 +246,8 @@ where
 
 type LogSink = Arc<dyn Fn(String) + Send + Sync + 'static>;
 type StatusFormatter<T> = Arc<dyn Fn(&T) -> String + Send + Sync + 'static>;
+type CacheKeyResolver = Arc<dyn Fn(&ExecutionContext) -> String + Send + Sync + 'static>;
+type CacheStore<T> = Arc<Mutex<BTreeMap<String, T>>>;
 
 /// Interceptor that records request metadata, response status, and duration.
 ///
@@ -310,6 +312,84 @@ where
             result
         })
     }
+}
+
+/// Interceptor that memoizes successful responses in a small in-memory store.
+///
+/// The helper is intentionally simple: it derives a cache key from the request
+/// shape already present on [`ExecutionContext`], stores cloned successful
+/// responses in a process-local map, and skips the next handler when a matching
+/// entry is present.
+#[derive(Clone)]
+pub struct CacheInterceptor<T = ()> {
+    store: CacheStore<T>,
+    key_resolver: CacheKeyResolver,
+    _marker: PhantomData<fn() -> T>,
+}
+
+impl<T> CacheInterceptor<T> {
+    /// Create a cache interceptor using the default request-shape key.
+    pub fn new() -> Self {
+        Self::with_key_resolver(default_cache_key)
+    }
+
+    /// Create a cache interceptor with a caller-provided cache key resolver.
+    pub fn with_key_resolver<F>(key_resolver: F) -> Self
+    where
+        F: Fn(&ExecutionContext) -> String + Send + Sync + 'static,
+    {
+        Self {
+            store: Arc::new(Mutex::new(BTreeMap::new())),
+            key_resolver: Arc::new(key_resolver),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T> Default for CacheInterceptor<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> Interceptor for CacheInterceptor<T>
+where
+    T: Clone + Send + 'static,
+{
+    type Response = T;
+
+    fn intercept(
+        &self,
+        context: &ExecutionContext,
+        next: CallHandler<Self::Response>,
+    ) -> InterceptorFuture<Self::Response> {
+        let store = Arc::clone(&self.store);
+        let key_resolver = Arc::clone(&self.key_resolver);
+        let cache_key = key_resolver.as_ref()(context);
+
+        Box::pin(async move {
+            if let Some(response) = store.lock().unwrap().get(&cache_key).cloned() {
+                return Ok(response);
+            }
+
+            let result = next.handle().await;
+            if let Ok(response) = &result {
+                store.lock().unwrap().insert(cache_key, response.clone());
+            }
+
+            result
+        })
+    }
+}
+
+fn default_cache_key(context: &ExecutionContext) -> String {
+    format!(
+        "method={};path={};handler={};class={}",
+        context.request_method().unwrap_or("unknown"),
+        context.request_path().unwrap_or("unknown"),
+        context.handler_name().unwrap_or("unknown"),
+        context.class_name().unwrap_or("unknown")
+    )
 }
 
 #[cfg(test)]
