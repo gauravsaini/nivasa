@@ -11,7 +11,7 @@ use nivasa_routing::RouteMethod;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use std::time::Duration;
 use tokio::{sync::oneshot, time::sleep};
@@ -164,6 +164,75 @@ async fn server_executes_middleware_before_route_dispatch() -> Result<(), Box<dy
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body.as_ref(), b"middleware");
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_orders_global_module_and_route_specific_middleware(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let events = Arc::new(Mutex::new(Vec::new()));
+
+    let global_events = Arc::clone(&events);
+    let module_events = Arc::clone(&events);
+    let route_events = Arc::clone(&events);
+    let handler_events = Arc::clone(&events);
+
+    let server = NivasaServer::builder()
+        .middleware(move |request: NivasaRequest, next: NextMiddleware| {
+            let events = Arc::clone(&global_events);
+            async move {
+                events.lock().expect("events lock").push("global");
+                next.run(request).await
+            }
+        })
+        .module_middleware(move |request: NivasaRequest, next: NextMiddleware| {
+            let events = Arc::clone(&module_events);
+            async move {
+                events.lock().expect("events lock").push("module");
+                next.run(request).await
+            }
+        })
+        .apply(move |request: NivasaRequest, next: NextMiddleware| {
+            let events = Arc::clone(&route_events);
+            async move {
+                events.lock().expect("events lock").push("route");
+                next.run(request).await
+            }
+        })
+        .for_routes("/middleware")?
+        .route(RouteMethod::Post, "/middleware", move |_| {
+            handler_events
+                .lock()
+                .expect("events lock")
+                .push("handler");
+            NivasaResponse::text("ok")
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::POST)
+        .uri(format!("http://127.0.0.1:{port}/middleware"))
+        .body(Full::new(Bytes::new()))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let body = response.into_body().collect().await?.to_bytes();
+    let recorded = events.lock().expect("events lock").clone();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body.as_ref(), b"ok");
+    assert_eq!(recorded, vec!["global", "module", "route", "handler"]);
     Ok(())
 }
 

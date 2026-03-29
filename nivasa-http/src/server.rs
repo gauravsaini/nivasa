@@ -68,6 +68,7 @@ struct RouteMiddlewareBinding {
 pub struct NivasaServer {
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
+    module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
@@ -83,6 +84,7 @@ pub struct NivasaServer {
 pub struct NivasaServerBuilder {
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
+    module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
@@ -107,6 +109,7 @@ impl NivasaServer {
         let mut shutdown = shutdown_future(self.shutdown.take());
         let routes = self.routes;
         let middleware = self.middleware;
+        let module_middlewares = self.module_middlewares;
         let route_middlewares = self.route_middlewares;
         let interceptors = self.interceptors;
         let global_filters = self.global_filters;
@@ -126,6 +129,7 @@ impl NivasaServer {
                     let (stream, _) = accept?;
                     let routes = routes.clone();
                     let middleware = middleware.clone();
+                    let module_middlewares = module_middlewares.clone();
                     let route_middlewares = route_middlewares.clone();
                     let interceptors = interceptors.clone();
                     let global_filters_for_connection = global_filters.clone();
@@ -141,6 +145,7 @@ impl NivasaServer {
                                     stream,
                                     routes,
                                     middleware,
+                                    module_middlewares,
                                     route_middlewares,
                                     interceptors,
                                     global_filters_for_connection,
@@ -157,6 +162,7 @@ impl NivasaServer {
                             stream,
                             routes,
                             middleware,
+                            module_middlewares,
                             route_middlewares,
                             interceptors,
                             global_filters_for_connection,
@@ -180,6 +186,7 @@ impl NivasaServerBuilder {
         Self {
             routes: RouteDispatchRegistry::new(),
             middleware: None,
+            module_middlewares: Vec::new(),
             route_middlewares: Vec::new(),
             interceptors: Vec::new(),
             global_filters: Vec::new(),
@@ -244,6 +251,15 @@ impl NivasaServerBuilder {
         M: NivasaMiddleware + Send + Sync + 'static,
     {
         self.middleware = Some(Arc::new(middleware));
+        self
+    }
+
+    /// Register a middleware stage between the global hook and route-specific middleware.
+    pub fn module_middleware<M>(mut self, middleware: M) -> Self
+    where
+        M: NivasaMiddleware + Send + Sync + 'static,
+    {
+        self.module_middlewares.push(Arc::new(middleware));
         self
     }
 
@@ -321,6 +337,7 @@ impl NivasaServerBuilder {
         NivasaServer {
             routes: self.routes,
             middleware: self.middleware,
+            module_middlewares: self.module_middlewares,
             route_middlewares: self.route_middlewares,
             interceptors: self.interceptors,
             global_filters: self.global_filters,
@@ -338,6 +355,7 @@ async fn serve_connection<S>(
     stream: S,
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
+    module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
@@ -351,6 +369,7 @@ async fn serve_connection<S>(
     let service = service_fn(move |request| {
         let routes = routes.clone();
         let middleware = middleware.clone();
+        let module_middlewares = module_middlewares.clone();
         let route_middlewares = route_middlewares.clone();
         let interceptors = interceptors.clone();
         let global_filters = global_filters.clone();
@@ -365,6 +384,7 @@ async fn serve_connection<S>(
                         request,
                         routes,
                         middleware,
+                        module_middlewares,
                         route_middlewares,
                         interceptors,
                         global_filters,
@@ -388,6 +408,7 @@ async fn serve_connection<S>(
                     request,
                     routes,
                     middleware,
+                    module_middlewares,
                     route_middlewares,
                     interceptors,
                     global_filters,
@@ -407,6 +428,7 @@ async fn handle_request(
     request: hyper::Request<Incoming>,
     routes: RouteDispatchRegistry<RouteHandler>,
     middleware: Option<MiddlewareLayer>,
+    module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
@@ -493,11 +515,18 @@ async fn handle_request(
         Ok(RouteDispatchOutcome::Matched(entry)) => {
             let handler = Arc::clone(&entry.value);
             let request = pipeline.request().clone();
+            let module_middlewares = module_middlewares.clone();
             let route_middlewares =
                 matching_route_middlewares(request.path(), route_middlewares.as_slice());
-            let request = match execute_route_middlewares(route_middlewares, request).await {
-                RouteMiddlewareExecution::Forwarded(request) => request,
-                RouteMiddlewareExecution::ShortCircuited(response) => {
+            let request = match execute_middleware_sequence(module_middlewares, request).await {
+                MiddlewareExecution::Forwarded(request) => request,
+                MiddlewareExecution::ShortCircuited { response, .. } => {
+                    return Ok(finalize_response(response, cors));
+                }
+            };
+            let request = match execute_middleware_sequence(route_middlewares, request).await {
+                MiddlewareExecution::Forwarded(request) => request,
+                MiddlewareExecution::ShortCircuited { response, .. } => {
                     return Ok(finalize_response(response, cors));
                 }
             };
@@ -590,11 +619,6 @@ enum MiddlewareExecution {
         request: NivasaRequest,
         response: NivasaResponse,
     },
-}
-
-enum RouteMiddlewareExecution {
-    Forwarded(NivasaRequest),
-    ShortCircuited(NivasaResponse),
 }
 
 enum InterceptorExecution {
@@ -709,24 +733,25 @@ fn matching_route_middlewares(
         .collect()
 }
 
-async fn execute_route_middlewares(
+async fn execute_middleware_sequence(
     middlewares: Vec<MiddlewareLayer>,
     request: NivasaRequest,
-) -> RouteMiddlewareExecution {
+) -> MiddlewareExecution {
     let mut request = request;
 
     for middleware in middlewares {
-        match execute_middleware(middleware, request).await {
+        let current_request = request.clone();
+        match execute_middleware(middleware, current_request).await {
             MiddlewareExecution::Forwarded(next_request) => {
                 request = next_request;
             }
             MiddlewareExecution::ShortCircuited { response, .. } => {
-                return RouteMiddlewareExecution::ShortCircuited(response);
+                return MiddlewareExecution::ShortCircuited { request, response };
             }
         }
     }
 
-    RouteMiddlewareExecution::Forwarded(request)
+    MiddlewareExecution::Forwarded(request)
 }
 
 async fn execute_interceptors(
