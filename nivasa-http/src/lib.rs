@@ -20,9 +20,16 @@ use nivasa_filters::{
 };
 use nivasa_routing::RoutePathCaptures;
 use serde::{de::DeserializeOwned, Serialize};
-use std::{convert::Infallible, fmt, future::Future, pin::Pin, sync::Arc};
+use std::{
+    convert::Infallible,
+    fmt,
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 use tokio::sync::Mutex;
-use tower::Service;
+use tower::{Layer, Service};
 
 /// Minimal response/request body abstraction for the HTTP wrapper layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1166,6 +1173,96 @@ where
             Ok(response) => response,
             Err(error) => match error {},
         }
+    }
+}
+
+/// Adapter that turns a `NivasaMiddleware` into a Tower `Layer`.
+#[derive(Clone)]
+pub struct NivasaMiddlewareLayer<M> {
+    middleware: Arc<M>,
+}
+
+impl<M> NivasaMiddlewareLayer<M> {
+    /// Wrap middleware so it can be applied as a Tower layer.
+    pub fn new(middleware: M) -> Self {
+        Self {
+            middleware: Arc::new(middleware),
+        }
+    }
+}
+
+impl<M> fmt::Debug for NivasaMiddlewareLayer<M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NivasaMiddlewareLayer")
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone)]
+pub struct NivasaMiddlewareService<S, M> {
+    service: Arc<Mutex<S>>,
+    middleware: Arc<M>,
+}
+
+impl<S, M> fmt::Debug for NivasaMiddlewareService<S, M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NivasaMiddlewareService")
+            .finish_non_exhaustive()
+    }
+}
+
+impl<S, M> Layer<S> for NivasaMiddlewareLayer<M>
+where
+    M: NivasaMiddleware + Send + Sync + 'static,
+{
+    type Service = NivasaMiddlewareService<S, M>;
+
+    fn layer(&self, service: S) -> Self::Service {
+        NivasaMiddlewareService {
+            service: Arc::new(Mutex::new(service)),
+            middleware: Arc::clone(&self.middleware),
+        }
+    }
+}
+
+impl<S, M> Service<NivasaRequest> for NivasaMiddlewareService<S, M>
+where
+    S: Service<NivasaRequest, Response = NivasaResponse, Error = Infallible> + Send + 'static,
+    S::Future: Send + 'static,
+    M: NivasaMiddleware + Send + Sync + 'static,
+{
+    type Response = NivasaResponse;
+    type Error = Infallible;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: NivasaRequest) -> Self::Future {
+        let service = Arc::clone(&self.service);
+        let middleware = Arc::clone(&self.middleware);
+
+        Box::pin(async move {
+            let next = NextMiddleware::new(move |request| {
+                let service = Arc::clone(&service);
+
+                async move {
+                    let future = {
+                        let mut service = service.lock().await;
+                        service.call(request)
+                    };
+
+                    match future.await {
+                        Ok(response) => response,
+                        Err(error) => match error {},
+                    }
+                }
+            });
+
+            Ok(middleware.use_(req, next).await)
+        })
     }
 }
 

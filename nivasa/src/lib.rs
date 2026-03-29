@@ -47,6 +47,7 @@ pub mod prelude {
     pub use nivasa_http::upload::MultipartLimits;
     pub use nivasa_http::HttpExceptionFilter;
     pub use nivasa_http::NivasaMiddleware as Middleware;
+    pub use nivasa_http::NivasaMiddlewareLayer;
     pub use nivasa_http::TowerServiceMiddleware;
     pub use nivasa_http::{
         upload, Body, ControllerResponse, Download, FromRequest, GuardExecutionOutcome, HeaderMap,
@@ -106,6 +107,7 @@ pub use nivasa_guards::{self, ExecutionContext as GuardExecutionContext, Guard, 
 pub use nivasa_http::upload::MultipartLimits;
 pub use nivasa_http::HttpExceptionFilter;
 pub use nivasa_http::NivasaMiddleware as Middleware;
+pub use nivasa_http::NivasaMiddlewareLayer;
 pub use nivasa_http::TowerServiceMiddleware;
 pub use nivasa_http::{
     self, upload, Body, ControllerResponse, Download, FromRequest, GuardExecutionOutcome,

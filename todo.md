@@ -538,16 +538,16 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Generate middleware registration
 
 #### 3.3.3 — Middleware Pipeline
-- Landed execution slice: `NivasaServerBuilder::middleware(...)` runs one `NivasaMiddleware` around a `NextMiddleware` capture point before `complete_middleware()`. `AppBootstrapConfig::use_middleware(...)` now forwards straight into that hook, while module-level wiring, route ordering, and exclusion remain open.
+- Landed execution slice: `NivasaServerBuilder::middleware(...)` runs one `NivasaMiddleware` around a `NextMiddleware` capture point before `complete_middleware()`, and the runtime now sequences module middleware before route-specific middleware. `AppBootstrapConfig::use_middleware(...)` still forwards straight into that hook, while module-to-route wiring and exclusion remain open.
 - [x] Implement global middleware registration via `NestApplication::use_()` (bootstrap-only facade via `AppBootstrapConfig::use_middleware(...)`)
 - [x] Implement module-level middleware registration via `#[module({ middlewares: [...] })]` (module middleware metadata now travels with controller registrations)
 - [x] Implement route-specific middleware (`.apply(Mw).forRoutes("/users")` exact/pattern route hook on `NivasaServerBuilder`)
 - [x] Implement middleware exclusion (`.apply(Mw).exclude("/health")`)
-- [ ] Implement middleware execution order: global → module → route-specific
+- [x] Implement middleware execution order: global → module → route-specific
 
 #### 3.3.4 — Tower Compatibility Layer
 - [x] Implement adapter: `Tower Service<Request> → NivasaMiddleware`
-- [ ] Implement adapter: `NivasaMiddleware → Tower Layer`
+- [x] Implement adapter: `NivasaMiddleware → Tower Layer`
 - [ ] Test wrapping a Tower middleware (e.g., `tower-http::cors`) for future Nivasa middleware support
 - [ ] Document how to use existing Tower ecosystem middleware
 
@@ -561,7 +561,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.3.6 — Middleware Tests
 - [ ] Test global middleware runs on every request
 - [ ] Test module-level middleware runs only for that module's routes
-- [ ] Test middleware ordering (global before module before route)
+- [x] Test middleware ordering (global before module before route)
 - [ ] Test richer CORS middleware/CorsOptions integration adds correct headers
 - [x] Test middleware exclusion (`.exclude()`)
 - [x] Test Tower middleware adapter works
