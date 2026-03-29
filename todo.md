@@ -688,7 +688,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement default global filter (standard error response shape)
 
 #### 5.1.5 — Filter Tests
-- [ ] Test global filter catches unhandled HttpException
+- [x] Test global filter catches unhandled HttpException
 - [ ] Test handler-level filter overrides global for specific exception
 - [x] Test filter formats response correctly (`{ statusCode, message, error }`)
 - [ ] Test unhandled non-HttpException returns 500 Internal Server Error
