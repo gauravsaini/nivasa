@@ -471,7 +471,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 3.1.4 — Reflector / Metadata (NestJS `SetMetadata`)
 - [ ] Implement `#[set_metadata(key, value)]` decorator
-- [ ] Implement `Reflector` service — read metadata in guards/interceptors
+- [x] Implement `Reflector` service — read metadata in guards/interceptors
 - [ ] Implement `#[roles("admin", "editor")]` as sugar over `set_metadata`
 - [ ] Test reflector reads metadata set on handler
 
