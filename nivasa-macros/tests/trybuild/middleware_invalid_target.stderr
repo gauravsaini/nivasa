@@ -1,0 +1,7 @@
+error: `#[middleware]` only supports structs
+ --> tests/trybuild/middleware_invalid_target.rs:1:1
+  |
+1 | #[nivasa_macros::middleware]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `nivasa_macros::middleware` (in Nightly builds, run with -Z macro-backtrace for more info)

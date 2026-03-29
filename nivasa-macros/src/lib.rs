@@ -1,5 +1,6 @@
 mod controller;
 mod injectable;
+mod middleware;
 mod module_macro;
 mod scxml_handler;
 
@@ -78,6 +79,11 @@ pub fn guard(_attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn interceptor(_attr: TokenStream, item: TokenStream) -> TokenStream {
     controller::interceptor(_attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn middleware(attr: TokenStream, item: TokenStream) -> TokenStream {
+    middleware::middleware(attr, item)
 }
 
 #[proc_macro_attribute]
