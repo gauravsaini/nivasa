@@ -1,9 +1,11 @@
 use std::any::TypeId;
 
 use nivasa_core::module::Module;
-use nivasa_macros::{controller, impl_controller, injectable, interceptor, module};
+use nivasa_macros::{controller, guard, impl_controller, injectable, interceptor, module};
 
 struct ImportedModule;
+struct OwnerGuard;
+struct AuditGuard;
 struct LoggingMiddleware;
 struct AuditInterceptor;
 struct TraceInterceptor;
@@ -27,6 +29,7 @@ impl AppController {
     exports: [Service],
     middlewares: [LoggingMiddleware],
 })]
+#[guard(OwnerGuard, AuditGuard)]
 #[interceptor(AuditInterceptor, TraceInterceptor)]
 struct AppModule;
 
@@ -55,6 +58,10 @@ fn module_macro_exposes_registration_metadata_helpers() {
     assert_eq!(
         AppModule::__nivasa_module_middlewares(),
         vec![TypeId::of::<LoggingMiddleware>()]
+    );
+    assert_eq!(
+        AppModule::__nivasa_module_guards(),
+        vec!["OwnerGuard", "AuditGuard"]
     );
     assert_eq!(
         AppModule::__nivasa_module_interceptors(),

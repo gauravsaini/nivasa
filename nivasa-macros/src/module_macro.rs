@@ -4,7 +4,7 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input, Attribute, Error, Expr, ExprLit, Ident, ItemStruct, Lit, Meta, Result,
     spanned::Spanned,
-    Token, Type,
+    Path, Token, Type,
 };
 
 #[derive(Default)]
@@ -91,6 +91,10 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let controllers = args.controllers;
     let exports = args.exports;
     let middlewares = args.middlewares;
+    let module_guards = match parse_module_guards(&input.attrs) {
+        Ok(guards) => guards,
+        Err(err) => return err.to_compile_error().into(),
+    };
 
     let controller_registrations = controllers.iter().map(|controller| {
         quote! {
@@ -132,6 +136,10 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             pub fn __nivasa_module_middlewares() -> Vec<std::any::TypeId> {
                 vec![#(std::any::TypeId::of::<#middlewares>()),*]
+            }
+
+            pub fn __nivasa_module_guards() -> Vec<&'static str> {
+                vec![#(#module_guards),*]
             }
 
             pub fn __nivasa_module_interceptors() -> Vec<&'static str> {
@@ -181,6 +189,7 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 const INTERCEPTOR_MARKER_PREFIX: &str = "__NIVASA_INTERCEPTOR__";
+const GUARD_MARKER_PREFIX: &str = "__NIVASA_GUARD__";
 
 fn attr_path_matches(attr: &Attribute, name: &str) -> bool {
     attr.path().is_ident(name)
@@ -246,6 +255,61 @@ fn parse_interceptor_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
     Ok(Some(interceptors))
 }
 
+fn parse_guard_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
+    if attr_path_matches(attr, "guard") {
+        let guards: syn::punctuated::Punctuated<Path, Token![,]> =
+            attr.parse_args_with(syn::punctuated::Punctuated::parse_terminated)?;
+
+        if guards.is_empty() {
+            return Err(Error::new(
+                attr.span(),
+                "`#[guard]` requires at least one guard type",
+            ));
+        }
+
+        return Ok(Some(
+            guards
+                .into_iter()
+                .map(|path| path.into_token_stream().to_string().replace(' ', ""))
+                .collect(),
+        ));
+    }
+
+    if !attr.path().is_ident("doc") {
+        return Ok(None);
+    }
+
+    let Meta::NameValue(meta) = &attr.meta else {
+        return Ok(None);
+    };
+
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(doc), ..
+    }) = &meta.value
+    else {
+        return Ok(None);
+    };
+
+    let value = doc.value();
+    let Some(rest) = value.trim().strip_prefix(GUARD_MARKER_PREFIX) else {
+        return Ok(None);
+    };
+
+    let guards = rest
+        .trim()
+        .split(',')
+        .map(str::trim)
+        .filter(|guard| !guard.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+
+    if guards.is_empty() {
+        return Err(Error::new(doc.span(), "invalid module guard marker"));
+    }
+
+    Ok(Some(guards))
+}
+
 fn parse_module_interceptors(attrs: &[Attribute]) -> Result<Vec<String>> {
     let mut interceptors = Vec::new();
 
@@ -256,4 +320,16 @@ fn parse_module_interceptors(attrs: &[Attribute]) -> Result<Vec<String>> {
     }
 
     Ok(interceptors)
+}
+
+fn parse_module_guards(attrs: &[Attribute]) -> Result<Vec<String>> {
+    let mut guards = Vec::new();
+
+    for attr in attrs {
+        if let Some(parsed) = parse_guard_binding(attr)? {
+            guards.extend(parsed);
+        }
+    }
+
+    Ok(guards)
 }
