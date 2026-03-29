@@ -485,7 +485,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test guard that always denies → 403 response
 - [x] Test multiple guards — all pass
 - [x] Test multiple guards — one fails → short-circuit
-- [ ] Test guard with injected service dependency
+- [x] Test guard with injected service dependency
 - [x] Test controller-level guard applies to all its routes
 - [x] Test controller guard metadata applies to every route
 - [x] Test reflector reads `#[roles]` metadata correctly
@@ -1036,7 +1036,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Add in-process request lifecycle integration coverage (middleware → guard → interceptor → handler → Done)
 - [ ] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
 - [ ] Write integration tests: module composition (nested modules, imports/exports)
-- [ ] Write integration tests: error handling pipeline (exception → filter → response)
+- [x] Write integration tests: error handling pipeline (exception → filter → response)
 - [ ] Write integration tests: authentication flow (login → JWT → protected route)
 - [ ] Write integration tests: validation flow (invalid DTO → ValidationPipe → 400 response)
 - [ ] Write integration tests: WebSocket lifecycle
