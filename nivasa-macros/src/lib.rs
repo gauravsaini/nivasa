@@ -1,4 +1,5 @@
 mod controller;
+mod filter;
 mod injectable;
 mod middleware;
 mod module_macro;
@@ -84,6 +85,16 @@ pub fn roles(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn set_metadata(attr: TokenStream, item: TokenStream) -> TokenStream {
     controller::set_metadata(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn catch(attr: TokenStream, item: TokenStream) -> TokenStream {
+    filter::catch(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn catch_all(attr: TokenStream, item: TokenStream) -> TokenStream {
+    filter::catch_all(attr, item)
 }
 
 #[proc_macro_attribute]
