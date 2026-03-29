@@ -4,7 +4,7 @@ use nivasa::prelude::{
     all, body, controller, custom_param, delete, file, files, get, head, header, headers,
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
     req, res, scxml_handler, session, ArgumentsHost, ExceptionFilter, ExceptionFilterFuture,
-    HttpArgumentsHost, Reflector,
+    HttpArgumentsHost, Middleware, Reflector,
 };
 #[allow(unused_imports)]
 use nivasa::filters as filters_crate;
@@ -133,6 +133,7 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
     ) {
     }
     fn _assert_next_middleware_type_is_in_scope(_: Option<NextMiddleware>) {}
+    fn _assert_middleware_trait_name_is_in_scope<T: Middleware>() {}
     fn _assert_pipeline_type_is_in_scope(_: Option<RequestPipeline>) {}
     fn _assert_server_builder_is_in_scope(_: Option<NivasaServerBuilder>) {}
     fn _assert_runtime_module_type_is_in_scope(_: Option<ModuleRuntime<DemoModule>>) {}
@@ -200,7 +201,7 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
         http_code, impl_controller, options, param, patch, post, put, query, req, res, session,
         Body, CallHandler, Controller, ControllerResponse, Download, ExecutionContext,
         Guard, GuardExecutionContext, GuardExecutionOutcome, Html, Interceptor,
-        InterceptorFuture, InterceptorResult, Json, MultipartLimits, NextMiddleware,
+        InterceptorFuture, InterceptorResult, Json, Middleware, MultipartLimits, NextMiddleware,
         NivasaMiddleware, NivasaRequest, NivasaResponse, NivasaServer, Reflector,
         RequestPipeline, Sse, Text, TimeoutInterceptor, UploadedFile,
     };
@@ -223,6 +224,7 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
     fn _assert_root_arguments_host_is_in_scope(_: Option<ArgumentsHost>) {}
     fn _assert_root_http_arguments_host_is_in_scope(_: Option<HttpArgumentsHost>) {}
     fn _assert_root_middleware_trait_name_is_in_scope<T: NivasaMiddleware>() {}
+    fn _assert_root_middleware_alias_is_in_scope<T: Middleware>() {}
     fn _assert_root_next_middleware_type_is_in_scope(_: Option<NextMiddleware>) {}
 
     fn _assert_root_filters_crate_is_in_scope(_: Option<filters_crate::ArgumentsHost>) {}

@@ -52,6 +52,7 @@ pub mod prelude {
         NivasaServer, NivasaServerBuilder, Query, Redirect, RequestExtractError, RequestPipeline,
         Sse, SseEvent, StreamBody, Text, UploadedFile,
     };
+    pub use nivasa_http::NivasaMiddleware as Middleware;
     pub use nivasa_macros::{
         all, body, controller, custom_param, delete, file, files, get, head, header, headers,
         http_code, impl_controller, injectable, ip, module, options, param, patch, post, put,
@@ -104,6 +105,7 @@ pub use nivasa_http::{
     NivasaResponse, NivasaServer, NivasaServerBuilder, Query, Redirect, RequestExtractError,
     RequestPipeline, Sse, SseEvent, StreamBody, Text, UploadedFile,
 };
+pub use nivasa_http::NivasaMiddleware as Middleware;
 pub use nivasa_macros::{
     self, all, body, controller, custom_param, delete, file, files, get, head, header, headers,
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,

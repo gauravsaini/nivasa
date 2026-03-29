@@ -1,17 +1,26 @@
+use bytes::Bytes;
 use async_trait::async_trait;
+use http::header::CONTENT_TYPE;
 use http::{Method, StatusCode};
+use http_body_util::{BodyExt, Full};
+use hyper_util::client::legacy::Client;
+use hyper_util::rt::TokioExecutor;
 use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 use nivasa_http::{
     resolve_controller_guard_execution, run_controller_action_with_request, Body,
     GuardExecutionOutcome, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse,
-    RequestPipeline,
+    NivasaServer, RequestPipeline,
 };
 use nivasa_interceptors::{
     CallHandler, ExecutionContext as InterceptorExecutionContext, Interceptor, InterceptorFuture,
 };
 use nivasa_macros::{controller, impl_controller};
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod};
+use serde_json::json;
 use std::sync::{Arc, Mutex};
+use std::net::TcpListener as StdTcpListener;
+use tokio::{sync::oneshot, time::sleep};
+use std::time::Duration;
 
 type LifecycleRouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
 
@@ -78,12 +87,16 @@ impl Interceptor for LifecycleInterceptor {
         next: CallHandler<Self::Response>,
     ) -> InterceptorFuture<Self::Response> {
         let log = self.log.clone();
-        let handler_name = context
-            .handler_name()
-            .expect("interceptor context must carry a handler name");
-        assert_eq!(handler_name, "flow");
         assert_eq!(context.request_method(), Some("GET"));
-        assert_eq!(context.request_path(), Some("/lifecycle/flow"));
+        match context.request_path() {
+            Some("/lifecycle/flow") => {
+                assert_eq!(context.handler_name(), Some("flow"));
+            }
+            Some("/lifecycle/mapping") => {
+                assert_eq!(context.handler_name(), None);
+            }
+            other => panic!("unexpected lifecycle path: {other:?}"),
+        }
 
         Box::pin(async move {
             log.push("interceptor.pre");
@@ -254,6 +267,98 @@ async fn request_lifecycle_runs_middleware_guard_interceptor_and_handler_in_orde
             "handler",
             "interceptor.post"
         ]
+    );
+
+    Ok(())
+}
+
+fn free_port() -> u16 {
+    StdTcpListener::bind("127.0.0.1:0")
+        .expect("must bind an ephemeral port")
+        .local_addr()
+        .expect("must inspect ephemeral addr")
+        .port()
+}
+
+async fn wait_for_server(port: u16) {
+    for _ in 0..50 {
+        if tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .is_ok()
+        {
+            return;
+        }
+
+        sleep(Duration::from_millis(20)).await;
+    }
+
+    panic!("server did not become ready");
+}
+
+#[tokio::test]
+async fn request_lifecycle_maps_interceptor_responses_into_a_data_envelope(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let log = LifecycleLog::new();
+    let interceptor = LifecycleInterceptor { log: log.clone() };
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .interceptor(interceptor)
+        .route(RouteMethod::Get, "/lifecycle/mapping", {
+            let log = log.clone();
+            move |_| {
+                log.push("handler");
+                NivasaResponse::json(json!({ "message": "handler" }))
+                    .with_header("x-handler", "applied")
+            }
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("http://127.0.0.1:{port}/lifecycle/mapping"))
+        .body(Full::new(Bytes::new()))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let handler_header = response
+        .headers()
+        .get("x-handler")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let interceptor_header = response
+        .headers()
+        .get("x-interceptor")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let body = response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(content_type.as_deref(), Some("application/json"));
+    assert_eq!(handler_header.as_deref(), Some("applied"));
+    assert_eq!(interceptor_header.as_deref(), Some("applied"));
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body)?,
+        json!({ "data": { "message": "handler" } })
+    );
+    assert_eq!(
+        log.snapshot(),
+        vec!["interceptor.pre", "handler", "interceptor.post"]
     );
 
     Ok(())
