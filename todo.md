@@ -706,7 +706,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `NotFoundException` (404)
 - [ ] Implement `MethodNotAllowedException` (405)
 - [ ] Implement `NotAcceptableException` (406)
-- [ ] Implement `RequestTimeoutException` (408)
+- [x] Implement `RequestTimeoutException` (408)
 - [ ] Implement `ConflictException` (409)
 - [ ] Implement `GoneException` (410)
 - [ ] Implement `PayloadTooLargeException` (413)
@@ -714,10 +714,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `UnprocessableEntityException` (422)
 - [ ] Implement `TooManyRequestsException` (429)
 - [ ] Implement `InternalServerErrorException` (500)
-- [ ] Implement `NotImplementedException` (501)
+- [x] Implement `NotImplementedException` (501)
 - [ ] Implement `BadGatewayException` (502)
 - [ ] Implement `ServiceUnavailableException` (503)
-- [ ] Implement `GatewayTimeoutException` (504)
+- [x] Implement `GatewayTimeoutException` (504)
 
 #### 5.2.2 — Exception Serialization
 - [ ] Implement `Serialize` for `HttpException`
