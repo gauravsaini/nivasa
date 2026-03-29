@@ -13,6 +13,7 @@ use syn::{
 const ROUTE_MARKER_PREFIX: &str = "nivasa-route:";
 const RESPONSE_MARKER_PREFIX: &str = "nivasa-response:";
 const GUARD_MARKER_PREFIX: &str = "nivasa-guard:";
+const ROLES_MARKER_PREFIX: &str = "nivasa-roles:";
 const INTERCEPTOR_MARKER_PREFIX: &str = "nivasa-interceptor:";
 
 #[derive(Debug, Default, Clone)]
@@ -39,6 +40,7 @@ struct ControllerMethodBinding {
     handler: Ident,
     parameters: Vec<ParameterBinding>,
     guards: Vec<String>,
+    roles: Vec<String>,
     interceptors: Vec<String>,
     response: Option<ResponseBinding>,
 }
@@ -229,15 +231,19 @@ fn expand_controller(
     let generics = input.generics.clone();
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let mut controller_guards = Vec::new();
+    let mut controller_roles = Vec::new();
     let mut controller_interceptors = Vec::new();
     let mut retained_attrs = Vec::new();
 
     for attr in input.attrs.drain(..) {
         match parse_guard_binding(&attr)? {
             Some(guards) => controller_guards.extend(guards),
-            None => match parse_interceptor_binding(&attr)? {
-                Some(interceptors) => controller_interceptors.extend(interceptors),
-                None => retained_attrs.push(attr),
+            None => match parse_roles_binding(&attr)? {
+                Some(roles) => controller_roles.extend(roles),
+                None => match parse_interceptor_binding(&attr)? {
+                    Some(interceptors) => controller_interceptors.extend(interceptors),
+                    None => retained_attrs.push(attr),
+                },
             },
         }
     }
@@ -290,6 +296,12 @@ fn expand_controller(
             pub fn __nivasa_controller_guards() -> Vec<&'static str> {
                 vec![
                     #(#controller_guards),*
+                ]
+            }
+
+            pub fn __nivasa_controller_roles() -> Vec<&'static str> {
+                vec![
+                    #(#controller_roles),*
                 ]
             }
 
@@ -404,6 +416,61 @@ fn parse_guard_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
     }
 
     Ok(Some(guards))
+}
+
+fn parse_roles_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
+    if attr_path_matches(attr, "roles") {
+        let roles: syn::punctuated::Punctuated<LitStr, Token![,]> =
+            attr.parse_args_with(syn::punctuated::Punctuated::parse_terminated)?;
+
+        if roles.is_empty() {
+            return Err(Error::new(
+                attr.span(),
+                "`#[roles]` requires at least one role name",
+            ));
+        }
+
+        return Ok(Some(
+            roles
+                .into_iter()
+                .map(|role| role.value().trim().to_owned())
+                .collect(),
+        ));
+    }
+
+    if !attr.path().is_ident("doc") {
+        return Ok(None);
+    }
+
+    let Meta::NameValue(meta) = &attr.meta else {
+        return Ok(None);
+    };
+
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(doc), ..
+    }) = &meta.value
+    else {
+        return Ok(None);
+    };
+
+    let value = doc.value();
+    let Some(rest) = value.trim().strip_prefix(ROLES_MARKER_PREFIX) else {
+        return Ok(None);
+    };
+
+    let roles = rest
+        .trim()
+        .split(',')
+        .map(str::trim)
+        .filter(|role| !role.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+
+    if roles.is_empty() {
+        return Err(Error::new(doc.span(), "invalid controller roles marker"));
+    }
+
+    Ok(Some(roles))
 }
 
 fn parse_interceptor_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
@@ -857,27 +924,31 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         let mut method_route: Option<RouteBinding> = None;
         let mut response_bindings = Vec::new();
         let mut guard_bindings = Vec::new();
+        let mut role_bindings = Vec::new();
         let mut interceptor_bindings = Vec::new();
         let mut retained_attrs = Vec::new();
 
         for attr in method.attrs.drain(..) {
             match parse_guard_binding(&attr)? {
                 Some(mut guards) => guard_bindings.append(&mut guards),
-                None => match parse_interceptor_binding(&attr)? {
-                    Some(mut interceptors) => interceptor_bindings.append(&mut interceptors),
-                    None => match parse_route_binding(&attr)? {
-                        Some(binding) => {
-                            if method_route.is_some() {
-                                return Err(Error::new(
-                                    attr.span(),
-                                    "a controller method can only use one HTTP method attribute",
-                                ));
+                None => match parse_roles_binding(&attr)? {
+                    Some(mut roles) => role_bindings.append(&mut roles),
+                    None => match parse_interceptor_binding(&attr)? {
+                        Some(mut interceptors) => interceptor_bindings.append(&mut interceptors),
+                        None => match parse_route_binding(&attr)? {
+                            Some(binding) => {
+                                if method_route.is_some() {
+                                    return Err(Error::new(
+                                        attr.span(),
+                                        "a controller method can only use one HTTP method attribute",
+                                    ));
+                                }
+                                method_route = Some(binding);
                             }
-                            method_route = Some(binding);
-                        }
-                        None => match parse_response_binding(&attr)? {
-                            Some(binding) => response_bindings.push(binding),
-                            None => retained_attrs.push(attr),
+                            None => match parse_response_binding(&attr)? {
+                                Some(binding) => response_bindings.push(binding),
+                                None => retained_attrs.push(attr),
+                            },
                         },
                     },
                 },
@@ -889,6 +960,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         let has_controller_metadata = !response_bindings.is_empty()
             || !parameters.is_empty()
             || !guard_bindings.is_empty()
+            || !role_bindings.is_empty()
             || !interceptor_bindings.is_empty();
         let response = if response_bindings.is_empty() {
             None
@@ -939,6 +1011,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                 handler: method.sig.ident.clone(),
                 parameters,
                 guards: guard_bindings,
+                roles: role_bindings,
                 interceptors: interceptor_bindings,
                 response,
             });
@@ -1028,6 +1101,20 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         }
     });
 
+    let role_entries = methods.iter().map(|method| {
+        let handler = &method.handler;
+        let roles = method.roles.iter().map(|role| quote!(#role));
+
+        quote! {
+            (
+                stringify!(#handler),
+                vec![
+                    #(#roles),*
+                ]
+            )
+        }
+    });
+
     let interceptor_entries = methods.iter().map(|method| {
         let handler = &method.handler;
         let interceptors = method
@@ -1088,6 +1175,13 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             ) -> Vec<(&'static str, Vec<&'static str>)> {
                 vec![
                     #(#guard_entries),*
+                ]
+            }
+
+            pub fn __nivasa_controller_role_metadata(
+            ) -> Vec<(&'static str, Vec<&'static str>)> {
+                vec![
+                    #(#role_entries),*
                 ]
             }
 
@@ -1196,6 +1290,49 @@ pub fn guard(attr: TokenStream, item: TokenStream) -> TokenStream {
     Error::new(
         proc_macro2::Span::call_site(),
         "`#[guard]` only supports controller structs and inherent controller methods",
+    )
+    .to_compile_error()
+    .into()
+}
+
+pub fn roles(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let roles = parse_macro_input!(
+        attr with syn::punctuated::Punctuated::<LitStr, Token![,]>::parse_terminated
+    );
+
+    if roles.is_empty() {
+        return Error::new(
+            proc_macro2::Span::call_site(),
+            "`#[roles]` requires at least one role name",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let role_payload = roles
+        .iter()
+        .map(|role| role.value().trim().to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let marker = LitStr::new(
+        &format!("{ROLES_MARKER_PREFIX} {role_payload}"),
+        proc_macro2::Span::call_site(),
+    );
+    let role_attr = parse_quote!(#[doc = #marker]);
+
+    if let Ok(mut method) = syn::parse::<ImplItemFn>(item.clone()) {
+        method.attrs.insert(0, role_attr);
+        return quote!(#method).into();
+    }
+
+    if let Ok(mut item_struct) = syn::parse::<ItemStruct>(item.clone()) {
+        item_struct.attrs.insert(0, role_attr);
+        return quote!(#item_struct).into();
+    }
+
+    Error::new(
+        proc_macro2::Span::call_site(),
+        "`#[roles]` only supports controller structs and inherent controller methods",
     )
     .to_compile_error()
     .into()

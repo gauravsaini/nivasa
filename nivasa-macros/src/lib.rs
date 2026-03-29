@@ -77,6 +77,11 @@ pub fn guard(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn roles(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::roles(attr, item)
+}
+
+#[proc_macro_attribute]
 pub fn interceptor(_attr: TokenStream, item: TokenStream) -> TokenStream {
     controller::interceptor(_attr, item)
 }
