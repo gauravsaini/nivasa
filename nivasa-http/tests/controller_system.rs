@@ -1,5 +1,101 @@
+extern crate self as nivasa_core;
+
+pub mod di {
+    use std::any::{Any, TypeId};
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ProviderScope {
+        Singleton,
+        Scoped,
+        Transient,
+    }
+
+    pub mod error {
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        pub enum DiError {
+            ProviderNotFound(&'static str),
+            TypeMismatch(&'static str),
+        }
+    }
+
+    pub mod provider {
+        use super::error::DiError;
+        use async_trait::async_trait;
+        use std::any::TypeId;
+
+        #[async_trait]
+        pub trait Injectable: Sized + Send + Sync + 'static {
+            async fn build(
+                container: &super::container::DependencyContainer,
+            ) -> Result<Self, DiError>;
+
+            fn dependencies() -> Vec<TypeId>;
+        }
+    }
+
+    pub mod container {
+        use super::error::DiError;
+        use super::provider::Injectable;
+        use super::{Any, Arc, HashMap, Mutex, TypeId};
+
+        #[derive(Clone, Default)]
+        pub struct DependencyContainer {
+            values: Arc<Mutex<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>>,
+        }
+
+        impl DependencyContainer {
+            pub fn new() -> Self {
+                Self::default()
+            }
+
+            pub async fn register_value<T: Send + Sync + 'static>(&self, value: T) {
+                self.values
+                    .lock()
+                    .expect("test dependency container lock must be available")
+                    .insert(TypeId::of::<T>(), Arc::new(value));
+            }
+
+            pub async fn register_injectable<T: Injectable>(
+                &self,
+                _scope: super::ProviderScope,
+                _dependencies: Vec<TypeId>,
+            ) {
+                let instance = T::build(self)
+                    .await
+                    .expect("test injectable must build successfully");
+                self.values
+                    .lock()
+                    .expect("test dependency container lock must be available")
+                    .insert(TypeId::of::<T>(), Arc::new(instance));
+            }
+
+            pub async fn initialize(&self) -> Result<(), DiError> {
+                Ok(())
+            }
+
+            pub async fn resolve<T: Send + Sync + 'static>(&self) -> Result<Arc<T>, DiError> {
+                let value = self
+                    .values
+                    .lock()
+                    .expect("test dependency container lock must be available")
+                    .get(&TypeId::of::<T>())
+                    .cloned()
+                    .ok_or(DiError::ProviderNotFound(std::any::type_name::<T>()))?;
+
+                Arc::downcast::<T>(value)
+                    .map_err(|_| DiError::TypeMismatch(std::any::type_name::<T>()))
+            }
+        }
+    }
+
+    pub use container::DependencyContainer;
+}
+
 use http::{Method, Request};
 use nivasa_common::HttpException;
+use nivasa_core::di::{DependencyContainer, ProviderScope};
 use nivasa_http::{
     run_controller_action, run_controller_action_with_body, run_controller_action_with_file,
     run_controller_action_with_files, run_controller_action_with_param,
@@ -251,6 +347,36 @@ impl RolesController {
     #[nivasa_macros::get("/dashboard")]
     fn dashboard(&self) -> NivasaResponse {
         NivasaResponse::text("dashboard").with_header("x-controller-mode", "roles")
+    }
+}
+
+#[derive(Debug)]
+struct GuardAllowance {
+    allowed: bool,
+}
+
+#[nivasa_macros::injectable]
+struct InjectableGuard {
+    #[inject]
+    allowance: Arc<GuardAllowance>,
+}
+
+impl Guard for InjectableGuard {
+    fn can_activate<'a>(&'a self, _: &'a ExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async move { Ok(self.allowance.allowed) })
+    }
+}
+
+#[controller("/injected-guard")]
+#[nivasa_macros::guard(InjectableGuard)]
+#[derive(Clone, Copy)]
+struct InjectableGuardController;
+
+#[impl_controller]
+impl InjectableGuardController {
+    #[nivasa_macros::get("/check")]
+    fn check(&self) -> NivasaResponse {
+        NivasaResponse::text("guarded").with_header("x-controller-mode", "injectable-guard")
     }
 }
 
@@ -808,6 +934,95 @@ async fn controller_roles_guard_uses_handler_then_class_metadata() {
 
     assert!(matches!(fallback_guard_outcome, GuardExecutionOutcome::Passed));
     assert_eq!(fallback_pipeline.snapshot().current_state, "InterceptorPre");
+}
+
+#[tokio::test]
+async fn controller_guard_resolves_from_dependency_container() {
+    let controller = InjectableGuardController;
+    let controller_guards = InjectableGuardController::__nivasa_controller_guards();
+    let handler_guard_metadata = InjectableGuardController::__nivasa_controller_guard_metadata();
+    let route = InjectableGuardController::__nivasa_controller_routes()
+        .into_iter()
+        .next()
+        .expect("injectable guard controller must expose a route");
+
+    let container = DependencyContainer::new();
+    container
+        .register_value(GuardAllowance { allowed: true })
+        .await;
+    container
+        .register_injectable::<InjectableGuard>(
+            ProviderScope::Singleton,
+            <InjectableGuard as nivasa_core::di::provider::Injectable>::dependencies(),
+        )
+        .await;
+    container.initialize().await.unwrap();
+
+    let guard = container.resolve::<InjectableGuard>().await.unwrap();
+
+    let mut registry: RouteDispatchRegistry<GuardedRouteHandler> = RouteDispatchRegistry::new();
+    registry
+        .register_pattern(
+            RouteMethod::from(route.0),
+            route.1.clone(),
+            Arc::new(move |request: &NivasaRequest| {
+                run_controller_action_with_request(request, |_| controller.check())
+            }),
+        )
+        .expect("injectable guard controller route must register");
+
+    let request = NivasaRequest::new(Method::GET, "/injected-guard/check", Body::empty());
+    let mut pipeline = RequestPipeline::new(request);
+    pipeline.parse_request().unwrap();
+    pipeline.complete_middleware().unwrap();
+
+    let outcome = pipeline.match_route(&registry).unwrap();
+    assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
+    assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+
+    let contract = resolve_controller_guard_execution(
+        route.2,
+        &controller_guards,
+        &handler_guard_metadata,
+    )
+    .expect("injectable guard contract must exist");
+    assert_eq!(contract.guards(), &["InjectableGuard"]);
+
+    let guard_outcome = pipeline
+        .evaluate_guard(guard.as_ref(), &ExecutionContext::new(()))
+        .await
+        .expect("injectable guard evaluation must advance the request pipeline");
+
+    assert!(matches!(guard_outcome, GuardExecutionOutcome::Passed));
+    assert_eq!(pipeline.snapshot().current_state, "InterceptorPre");
+    pipeline.complete_interceptors_pre().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "PipeTransform");
+    pipeline.complete_pipes().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "HandlerExecution");
+
+    let response = match outcome {
+        RouteDispatchOutcome::Matched(entry) => (entry.value)(pipeline.request()),
+        _ => panic!("injectable guard controller route must match"),
+    };
+
+    pipeline.complete_handler().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "InterceptorPost");
+    pipeline.complete_interceptors_post().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "SendingResponse");
+    pipeline.complete_response().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "Done");
+
+    assert_eq!(response.status(), http::StatusCode::OK);
+    assert_eq!(
+        response.headers().get("x-controller-mode").unwrap(),
+        "injectable-guard"
+    );
+    assert_eq!(response.body(), &Body::text("guarded"));
+
+    assert_eq!(
+        container.resolve::<InjectableGuard>().await.unwrap().allowance.allowed,
+        true
+    );
 }
 
 #[tokio::test]
