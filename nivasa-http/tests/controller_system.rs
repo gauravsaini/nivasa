@@ -562,6 +562,9 @@ async fn controller_guard_runtime_allows_all_routes_when_the_guard_passes() {
     let second_called = Arc::new(AtomicBool::new(false));
     let mut registry: RouteDispatchRegistry<GuardedRouteHandler> = RouteDispatchRegistry::new();
 
+    assert_eq!(controller_guards, vec!["ControllerGuard"]);
+    assert!(handler_guard_metadata.is_empty());
+
     for (method, path, handler) in &routes {
         match *handler {
             "first" => {
@@ -649,6 +652,29 @@ async fn controller_guard_runtime_allows_all_routes_when_the_guard_passes() {
 
     assert!(first_called.load(Ordering::SeqCst));
     assert!(second_called.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn controller_guard_metadata_applies_to_every_route() {
+    let controller_guards = GuardedController::__nivasa_controller_guards();
+    let handler_guard_metadata = GuardedController::__nivasa_controller_guard_metadata();
+
+    assert_eq!(controller_guards, vec!["ControllerGuard"]);
+    assert!(handler_guard_metadata.is_empty());
+
+    for (method, path, handler) in GuardedController::__nivasa_controller_routes() {
+        let contract = resolve_controller_guard_execution(
+            handler,
+            &controller_guards,
+            &handler_guard_metadata,
+        )
+        .expect("controller guard contract must exist");
+
+        assert_eq!(contract.handler(), handler);
+        assert_eq!(contract.guards(), &["ControllerGuard"]);
+        assert_eq!(method, "GET");
+        assert!(path.starts_with("/guarded/"));
+    }
 }
 
 #[tokio::test]
