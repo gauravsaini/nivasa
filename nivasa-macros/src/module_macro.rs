@@ -16,6 +16,12 @@ struct ModuleArgs {
     middlewares: Vec<Type>,
 }
 
+#[derive(Debug, Clone)]
+struct ModuleMetadataBinding {
+    key: String,
+    value: String,
+}
+
 impl ModuleArgs {
     fn insert_unique(target: &mut Vec<Type>, values: Vec<Type>, key: &Ident) -> Result<()> {
         if !target.is_empty() {
@@ -89,6 +95,17 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         Ok(roles) => roles,
         Err(err) => return err.to_compile_error().into(),
     };
+    let module_set_metadata = match parse_module_set_metadata(&input.attrs) {
+        Ok(metadata) => metadata,
+        Err(err) => return err.to_compile_error().into(),
+    };
+    let module_set_metadata_entries = module_set_metadata.iter().map(|entry| {
+        let key = &entry.key;
+        let value = &entry.value;
+        quote! {
+            (#key, #value)
+        }
+    });
 
     let imports = args.imports;
     let providers = args.providers;
@@ -154,6 +171,12 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                 vec![#(#module_roles),*]
             }
 
+            pub fn __nivasa_module_set_metadata() -> Vec<(&'static str, &'static str)> {
+                vec![
+                    #(#module_set_metadata_entries),*
+                ]
+            }
+
             pub fn __nivasa_module_controller_registrations(
             ) -> Vec<nivasa_core::module::ModuleControllerRegistration> {
                 vec![
@@ -199,6 +222,7 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 const INTERCEPTOR_MARKER_PREFIX: &str = "__NIVASA_INTERCEPTOR__";
 const GUARD_MARKER_PREFIX: &str = "__NIVASA_GUARD__";
 const ROLES_MARKER_PREFIX: &str = "__NIVASA_ROLES__";
+const SET_METADATA_MARKER_PREFIX: &str = "nivasa-set-metadata:";
 
 fn attr_path_matches(attr: &Attribute, name: &str) -> bool {
     attr.path().is_ident(name)
@@ -408,4 +432,98 @@ fn parse_module_roles(attrs: &[Attribute]) -> Result<Vec<String>> {
     }
 
     Ok(roles)
+}
+
+fn parse_set_metadata_binding(attr: &Attribute) -> Result<Option<Vec<ModuleMetadataBinding>>> {
+    if attr_path_matches(attr, "set_metadata") {
+        let mut key: Option<syn::LitStr> = None;
+        let mut value: Option<syn::LitStr> = None;
+
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("key") {
+                key = Some(meta.value()?.parse()?);
+                return Ok(());
+            }
+
+            if meta.path.is_ident("value") {
+                value = Some(meta.value()?.parse()?);
+                return Ok(());
+            }
+
+            Err(meta.error("expected `key` or `value` in `#[set_metadata]`"))
+        })?;
+
+        let key = key.ok_or_else(|| {
+            Error::new(
+                attr.span(),
+                "`#[set_metadata]` requires a `key` entry",
+            )
+        })?;
+        let value = value.ok_or_else(|| {
+            Error::new(
+                attr.span(),
+                "`#[set_metadata]` requires a `value` entry",
+            )
+        })?;
+
+        let key = key.value().trim().to_owned();
+        let value = value.value().trim().to_owned();
+
+        if key.is_empty() || value.is_empty() {
+            return Err(Error::new(
+                attr.span(),
+                "`#[set_metadata]` key and value cannot be empty",
+            ));
+        }
+
+        return Ok(Some(vec![ModuleMetadataBinding { key, value }]));
+    }
+
+    if !attr.path().is_ident("doc") {
+        return Ok(None);
+    }
+
+    let Meta::NameValue(meta) = &attr.meta else {
+        return Ok(None);
+    };
+
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(doc), ..
+    }) = &meta.value
+    else {
+        return Ok(None);
+    };
+
+    let value = doc.value();
+    let Some(rest) = value.trim().strip_prefix(SET_METADATA_MARKER_PREFIX) else {
+        return Ok(None);
+    };
+
+    let rest = rest.trim();
+    let Some((key, value)) = rest.split_once('=') else {
+        return Err(Error::new(doc.span(), "invalid module set_metadata marker"));
+    };
+
+    let key = key.trim();
+    let value = value.trim();
+    if key.is_empty() || value.is_empty() {
+        return Err(Error::new(doc.span(), "invalid module set_metadata marker"));
+    }
+
+    Ok(Some(vec![ModuleMetadataBinding {
+        key: key.to_owned(),
+        value: value.to_owned(),
+    }]))
+}
+
+fn parse_module_set_metadata(attrs: &[Attribute]) -> Result<Vec<ModuleMetadataBinding>> {
+    let mut metadata = Vec::new();
+
+    for attr in attrs {
+        if let Some(parsed) = parse_set_metadata_binding(attr)? {
+            metadata.extend(parsed);
+        }
+    }
+
+    Ok(metadata)
 }

@@ -1,7 +1,9 @@
 use std::any::TypeId;
 
 use nivasa_core::module::Module;
-use nivasa_macros::{controller, guard, impl_controller, injectable, interceptor, module};
+use nivasa_macros::{
+    controller, guard, impl_controller, injectable, interceptor, module, set_metadata,
+};
 
 struct ImportedModule;
 struct OwnerGuard;
@@ -32,8 +34,9 @@ impl AppController {
     middlewares: [LoggingMiddleware],
 })]
 #[guard(OwnerGuard, AuditGuard)]
-#[roles(OwnerRole, AuditorRole)]
 #[interceptor(AuditInterceptor, TraceInterceptor)]
+#[set_metadata(key = "tenant", value = "billing")]
+#[set_metadata(key = "region", value = "ap-southeast-2")]
 struct AppModule;
 
 #[test]
@@ -67,12 +70,12 @@ fn module_macro_exposes_registration_metadata_helpers() {
         vec!["OwnerGuard", "AuditGuard"]
     );
     assert_eq!(
-        AppModule::__nivasa_module_roles(),
-        vec!["OwnerRole", "AuditorRole"]
-    );
-    assert_eq!(
         AppModule::__nivasa_module_interceptors(),
         vec!["AuditInterceptor", "TraceInterceptor"]
+    );
+    assert_eq!(
+        AppModule::__nivasa_module_set_metadata(),
+        vec![("tenant", "billing"), ("region", "ap-southeast-2")]
     );
     assert_eq!(
         AppModule::__nivasa_module_controller_registrations(),
