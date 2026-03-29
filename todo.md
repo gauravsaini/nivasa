@@ -57,7 +57,7 @@
 
 ### 0.4 — Umbrella Crate Re-export Strategy
 - [x] Design `nivasa::prelude::*` — users should only need one import
-- [ ] Re-export key traits and runtime types: `Controller`, `Module`, `Injectable`, plus the landed DI/module/runtime surface; `GuardExecutionContext`, `GuardExecutionOutcome`, and `Interceptor` are now re-exported from the umbrella crate, while `Pipe`, `ExceptionFilter`, and `Middleware` still need upstream exports
+- [ ] Re-export key traits and runtime types: `Controller`, `Module`, `Injectable`, plus the landed DI/module/runtime surface; `GuardExecutionContext`, `GuardExecutionOutcome`, `Interceptor`, `Reflector`, `Pipe`, and `ExceptionFilter` are now re-exported from the umbrella crate, while `Middleware` still needs upstream exports
 - [x] Re-export key macros: `#[module]`, `#[injectable]`, `#[controller]`, `#[get]`, `#[post]`, `#[put]`, `#[delete]`, `#[patch]`, `#[head]`, `#[options]`, `#[all]`, `#[impl_controller]`, `#[scxml_handler]`
 - [x] Re-export `ServerOptions`, `HttpException`, and the existing HTTP/server surface
 - [x] Re-export `StatechartEngine`, generated state/event enums from `nivasa-statechart`
@@ -477,7 +477,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 3.1.5 — Built-in Guards
 - [ ] Implement `AuthGuard` skeleton (JWT validation pattern)
-- [ ] Implement `RolesGuard` (check roles via Reflector + `#[roles(...)]`)
+- [x] Implement `RolesGuard` (check roles via Reflector + `#[roles(...)]`)
 - [ ] Implement `ThrottlerGuard` (rate limiting — see Phase 3.4)
 
 #### 3.1.6 — Guard Tests
