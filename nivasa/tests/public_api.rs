@@ -143,7 +143,10 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
     let _ = HttpStatus::Ok;
     let _ = HttpException::bad_request("boom");
     let _ = TimeoutInterceptor::<NivasaResponse>::new(std::time::Duration::from_millis(1));
-    let _ = InterceptorResult::<NivasaResponse>::Ok(NivasaResponse::empty());
+    let _ = InterceptorResult::<NivasaResponse>::Ok(NivasaResponse::new(
+        HttpStatus::NoContent.into(),
+        Body::empty(),
+    ));
     let _ = GuardExecutionOutcome::Passed;
 }
 
