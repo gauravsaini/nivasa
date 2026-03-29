@@ -249,7 +249,13 @@ where
 type LogSink = Arc<dyn Fn(String) + Send + Sync + 'static>;
 type StatusFormatter<T> = Arc<dyn Fn(&T) -> String + Send + Sync + 'static>;
 type CacheKeyResolver = Arc<dyn Fn(&ExecutionContext) -> String + Send + Sync + 'static>;
-type CacheStore<T> = Arc<Mutex<BTreeMap<String, T>>>;
+type CacheStore<T> = Arc<Mutex<BTreeMap<String, CacheEntry<T>>>>;
+
+#[derive(Clone)]
+struct CacheEntry<T> {
+    value: T,
+    inserted_at: Instant,
+}
 
 /// Serialize a class-like response object into JSON.
 ///
@@ -424,6 +430,7 @@ where
 pub struct CacheInterceptor<T = ()> {
     store: CacheStore<T>,
     key_resolver: CacheKeyResolver,
+    ttl: Option<Duration>,
     _marker: PhantomData<fn() -> T>,
 }
 
@@ -438,11 +445,25 @@ impl<T> CacheInterceptor<T> {
     where
         F: Fn(&ExecutionContext) -> String + Send + Sync + 'static,
     {
+        Self::with_key_resolver_and_ttl(key_resolver, None)
+    }
+
+    /// Create a cache interceptor with a key resolver and TTL.
+    pub fn with_key_resolver_and_ttl<F>(key_resolver: F, ttl: Option<Duration>) -> Self
+    where
+        F: Fn(&ExecutionContext) -> String + Send + Sync + 'static,
+    {
         Self {
             store: Arc::new(Mutex::new(BTreeMap::new())),
             key_resolver: Arc::new(key_resolver),
+            ttl,
             _marker: PhantomData,
         }
+    }
+
+    /// Create a cache interceptor with a fixed TTL.
+    pub fn with_ttl(ttl: Duration) -> Self {
+        Self::with_key_resolver_and_ttl(default_cache_key, Some(ttl))
     }
 }
 
@@ -465,16 +486,31 @@ where
     ) -> InterceptorFuture<Self::Response> {
         let store = Arc::clone(&self.store);
         let key_resolver = Arc::clone(&self.key_resolver);
+        let ttl = self.ttl;
         let cache_key = key_resolver.as_ref()(context);
 
         Box::pin(async move {
-            if let Some(response) = store.lock().unwrap().get(&cache_key).cloned() {
-                return Ok(response);
+            let cached_entry = { store.lock().unwrap().get(&cache_key).cloned() };
+
+            if let Some(entry) = cached_entry {
+                let is_expired = ttl.is_some_and(|ttl| entry.inserted_at.elapsed() >= ttl);
+
+                if !is_expired {
+                    return Ok(entry.value);
+                }
+
+                store.lock().unwrap().remove(&cache_key);
             }
 
             let result = next.handle().await;
             if let Ok(response) = &result {
-                store.lock().unwrap().insert(cache_key, response.clone());
+                store.lock().unwrap().insert(
+                    cache_key,
+                    CacheEntry {
+                        value: response.clone(),
+                        inserted_at: Instant::now(),
+                    },
+                );
             }
 
             result
@@ -654,6 +690,48 @@ mod tests {
         assert!(entry.contains("class=UsersController"));
         assert!(entry.contains("status=200"));
         assert!(entry.contains("duration_ns="));
+    }
+
+    #[test]
+    fn cache_interceptor_expires_entries_after_the_ttl_window() {
+        let interceptor = CacheInterceptor::<String>::with_ttl(Duration::from_millis(5));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let context = ExecutionContext::new()
+            .with_request("GET", "/cache")
+            .with_handler_name("list_users")
+            .with_class_name("UsersController");
+
+        let first = {
+            let calls = Arc::clone(&calls);
+            let next = CallHandler::new(move || {
+                let calls = Arc::clone(&calls);
+                async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Ok::<_, HttpException>("cached".to_string())
+                }
+            });
+
+            block_on(interceptor.intercept(&context, next)).unwrap()
+        };
+
+        std::thread::sleep(Duration::from_millis(10));
+
+        let second = {
+            let calls = Arc::clone(&calls);
+            let next = CallHandler::new(move || {
+                let calls = Arc::clone(&calls);
+                async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Ok::<_, HttpException>("fresh".to_string())
+                }
+            });
+
+            block_on(interceptor.intercept(&context, next)).unwrap()
+        };
+
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(first, "cached");
+        assert_eq!(second, "fresh");
     }
 
     #[derive(Debug, Clone, Serialize, PartialEq)]

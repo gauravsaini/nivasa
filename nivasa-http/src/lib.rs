@@ -369,6 +369,16 @@ impl NivasaRequest {
         self.inner.headers_mut().insert(name, value);
         self
     }
+
+    /// Add or replace a header on the request.
+    pub fn set_header(&mut self, name: impl AsRef<str>, value: impl AsRef<str>) -> &mut Self {
+        let name = HeaderName::from_bytes(name.as_ref().as_bytes())
+            .expect("request header name must be valid");
+        let value =
+            HeaderValue::from_str(value.as_ref()).expect("request header value must be valid");
+        self.inner.headers_mut().insert(name, value);
+        self
+    }
     /// Look up and coerce a single header value by name.
     pub fn header_typed<T>(&self, name: impl AsRef<str>) -> Result<T, RequestExtractError>
     where
