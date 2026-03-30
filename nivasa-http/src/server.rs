@@ -49,6 +49,10 @@ type MiddlewareLayer = Arc<dyn NivasaMiddleware + Send + Sync + 'static>;
 type InterceptorLayer = Arc<dyn Interceptor<Response = NivasaResponse> + Send + Sync + 'static>;
 type GlobalFilterLayer =
     Arc<dyn ExceptionFilter<HttpException, NivasaResponse> + Send + Sync + 'static>;
+type MiddlewareTerminalFuture = Pin<Box<dyn Future<Output = NivasaResponse> + Send>>;
+type MiddlewareTerminal = Arc<dyn Fn(NivasaRequest) -> MiddlewareTerminalFuture + Send + Sync>;
+
+const REQUEST_ID_HEADER: &str = "x-request-id";
 
 #[derive(Clone)]
 pub struct GlobalFilterBinding {
@@ -77,6 +81,7 @@ impl GlobalFilterBinding {
 #[derive(Clone)]
 struct RouteHandlerBinding {
     handler: RouteHandler,
+    module_middlewares: Vec<MiddlewareLayer>,
     handler_filters: Vec<GlobalFilterBinding>,
     controller_filters: Vec<GlobalFilterBinding>,
 }
@@ -85,9 +90,15 @@ impl RouteHandlerBinding {
     fn new(handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static) -> Self {
         Self {
             handler: Arc::new(handler),
+            module_middlewares: Vec::new(),
             handler_filters: Vec::new(),
             controller_filters: Vec::new(),
         }
+    }
+
+    fn with_module_middlewares(mut self, middlewares: Vec<MiddlewareLayer>) -> Self {
+        self.module_middlewares = middlewares;
+        self
     }
 
     fn with_handler_filters(mut self, filters: Vec<GlobalFilterBinding>) -> Self {
@@ -270,6 +281,31 @@ impl NivasaServerBuilder {
             RouteHandlerBinding::new(handler)
                 .with_handler_filters(handler_filters)
                 .with_controller_filters(controller_filters),
+        )?;
+        Ok(self)
+    }
+
+    /// Register a request handler with module-scoped middleware attached to the route.
+    pub fn route_with_module_middlewares<M, I>(
+        mut self,
+        method: impl Into<RouteMethod>,
+        path: impl Into<String>,
+        module_middlewares: I,
+        handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static,
+    ) -> Result<Self, RouteDispatchError>
+    where
+        M: NivasaMiddleware + Send + Sync + 'static,
+        I: IntoIterator<Item = M>,
+    {
+        let module_middlewares = module_middlewares
+            .into_iter()
+            .map(|middleware| Arc::new(middleware) as MiddlewareLayer)
+            .collect::<Vec<_>>();
+
+        self.routes.register_pattern(
+            method,
+            path,
+            RouteHandlerBinding::new(handler).with_module_middlewares(module_middlewares),
         )?;
         Ok(self)
     }
@@ -466,6 +502,7 @@ async fn serve_connection<S>(
                             Body::text("request timed out"),
                         ),
                         cors,
+                        None,
                     )),
                 }
             } else {
@@ -514,12 +551,14 @@ async fn handle_request(
                     Body::text("request body too large"),
                 ),
                 cors,
+                None,
             ));
         }
         Err(BodyCollectionError::Invalid) => {
             return Ok(finalize_response(
                 NivasaResponse::new(StatusCode::BAD_REQUEST, Body::text("invalid request body")),
                 cors,
+                None,
             ));
         }
     };
@@ -535,6 +574,10 @@ async fn handle_request(
         Some(middleware) => match execute_middleware(middleware, request).await {
             MiddlewareExecution::Forwarded(request) => request,
             MiddlewareExecution::ShortCircuited { request, response } => {
+                let request_id = request
+                    .header(REQUEST_ID_HEADER)
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_owned);
                 let mut pipeline = RequestPipeline::new(request);
 
                 if pipeline.parse_request().is_err() || pipeline.fail_middleware().is_err() {
@@ -544,14 +587,19 @@ async fn handle_request(
                             Body::text("request pipeline middleware transition failed"),
                         ),
                         cors,
+                        None,
                     ));
                 }
 
-                return Ok(finalize_response(response, cors));
+                return Ok(finalize_response(response, cors, request_id.as_deref()));
             }
         },
         None => request,
     };
+    let request_id = request
+        .header(REQUEST_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     let mut pipeline = RequestPipeline::new(request);
 
     if pipeline.parse_request().is_err() {
@@ -561,6 +609,7 @@ async fn handle_request(
                 Body::text("request pipeline parse transition failed"),
             ),
             cors,
+            request_id.as_deref(),
         ));
     }
 
@@ -571,6 +620,7 @@ async fn handle_request(
                 Body::text("request pipeline middleware transition failed"),
             ),
             cors,
+            request_id.as_deref(),
         ));
     }
 
@@ -582,18 +632,26 @@ async fn handle_request(
             let handler = Arc::clone(&binding.handler);
             let request = pipeline.request().clone();
             let module_middlewares = module_middlewares.clone();
+            let route_module_middlewares = binding.module_middlewares.clone();
             let route_middlewares =
                 matching_route_middlewares(request.path(), route_middlewares.as_slice());
             let request = match execute_middleware_sequence(module_middlewares, request).await {
                 MiddlewareExecution::Forwarded(request) => request,
                 MiddlewareExecution::ShortCircuited { response, .. } => {
-                    return Ok(finalize_response(response, cors));
+                    return Ok(finalize_response(response, cors, request_id.as_deref()));
+                }
+            };
+            let request = match execute_middleware_sequence(route_module_middlewares, request).await
+            {
+                MiddlewareExecution::Forwarded(request) => request,
+                MiddlewareExecution::ShortCircuited { response, .. } => {
+                    return Ok(finalize_response(response, cors, request_id.as_deref()));
                 }
             };
             let request = match execute_middleware_sequence(route_middlewares, request).await {
                 MiddlewareExecution::Forwarded(request) => request,
                 MiddlewareExecution::ShortCircuited { response, .. } => {
-                    return Ok(finalize_response(response, cors));
+                    return Ok(finalize_response(response, cors, request_id.as_deref()));
                 }
             };
             match interceptors.is_empty() {
@@ -611,7 +669,10 @@ async fn handle_request(
                                 Body::text("request pipeline interceptor transition failed"),
                             )
                         } else {
-                            map_interceptor_response(response)
+                            with_request_id(
+                                map_interceptor_response(response),
+                                request_id.as_deref(),
+                            )
                         }
                     }
                     InterceptorExecution::ShortCircuited(response) => {
@@ -623,7 +684,10 @@ async fn handle_request(
                                 Body::text("request pipeline interceptor transition failed"),
                             )
                         } else {
-                            map_interceptor_response(response)
+                            with_request_id(
+                                map_interceptor_response(response),
+                                request_id.as_deref(),
+                            )
                         }
                     }
                     InterceptorExecution::Error {
@@ -683,11 +747,14 @@ async fn handle_request(
         ),
     };
 
-    Ok(finalize_response(response, cors))
+    Ok(finalize_response(response, cors, request_id.as_deref()))
 }
 
 enum MiddlewareExecution {
-    Forwarded(NivasaRequest),
+    Forwarded {
+        request: NivasaRequest,
+        response: NivasaResponse,
+    },
     ShortCircuited {
         request: NivasaRequest,
         response: NivasaResponse,
@@ -795,6 +862,36 @@ async fn execute_middleware(
 
     match forwarded_request {
         Some(request) => MiddlewareExecution::Forwarded(request),
+        None => MiddlewareExecution::ShortCircuited {
+            request: original_request,
+            response,
+        },
+    }
+}
+
+async fn execute_middleware_with_terminal(
+    middleware: MiddlewareLayer,
+    request: NivasaRequest,
+    terminal: MiddlewareTerminal,
+) -> MiddlewareExecution {
+    let forwarded_request = Arc::new(tokio::sync::Mutex::new(None));
+    let capture = Arc::clone(&forwarded_request);
+    let terminal = Arc::clone(&terminal);
+    let next = NextMiddleware::new(move |request: NivasaRequest| {
+        let capture = Arc::clone(&capture);
+        let terminal = Arc::clone(&terminal);
+        async move {
+            *capture.lock().await = Some(request.clone());
+            terminal(request).await
+        }
+    });
+
+    let original_request = request.clone();
+    let response = middleware.use_(request, next).await;
+    let forwarded_request = forwarded_request.lock().await.take();
+
+    match forwarded_request {
+        Some(request) => MiddlewareExecution::Forwarded { request, response },
         None => MiddlewareExecution::ShortCircuited {
             request: original_request,
             response,
@@ -1028,7 +1125,20 @@ fn build_response(status: StatusCode, response: NivasaResponse) -> Response<Full
     hyper_response
 }
 
-fn finalize_response(response: NivasaResponse, cors: bool) -> Response<Full<Bytes>> {
+fn with_request_id(response: NivasaResponse, request_id: Option<&str>) -> NivasaResponse {
+    match request_id {
+        Some(request_id) => response.with_header(REQUEST_ID_HEADER, request_id),
+        None => response,
+    }
+}
+
+fn finalize_response(
+    mut response: NivasaResponse,
+    cors: bool,
+    request_id: Option<&str>,
+) -> Response<Full<Bytes>> {
+    response = with_request_id(response, request_id);
+
     let mut response = build_response(response.status(), response);
     if cors {
         apply_cors_headers(response.headers_mut());
