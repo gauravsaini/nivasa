@@ -584,8 +584,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 4.1 — Pipe System (`nivasa-pipes` + `nivasa-macros`)
 
 #### 4.1.1 — Pipe Trait
-- [ ] Define `Pipe` trait: `fn transform(&self, value: Value, metadata: ArgumentMetadata) -> Result<Value, HttpException>`
-- [ ] Define `ArgumentMetadata` struct (param name, metatype, data type, index)
+- [x] Define `Pipe` trait: `fn transform(&self, value: Value, metadata: ArgumentMetadata) -> Result<Value, HttpException>`
+- [x] Define `ArgumentMetadata` struct (param name, metatype, data type, index)
 - [ ] Support DI in pipe structs
 
 #### 4.1.2 — `#[pipe]` Attribute Macro
@@ -1015,7 +1015,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Write guards documentation (including Reflector and metadata)
 - [ ] Write interceptors documentation (with caching, logging examples)
 - [ ] Write pipes documentation (built-in pipes, custom pipes)
-- [ ] Write exception filters documentation
+- [x] Write exception filters documentation
 - [ ] Write middleware documentation (including Tower compatibility)
 - [ ] Write configuration documentation (env loading, type-safe config)
 - [ ] Write testing documentation (TestingModule, TestClient, mocking)
