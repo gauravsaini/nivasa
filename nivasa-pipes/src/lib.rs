@@ -232,10 +232,38 @@ impl Pipe for TrimPipe {
     }
 }
 
+/// Compose two pipes and run them left to right.
+///
+/// This is a reusable sequencing primitive for future `#[pipe(...)]` support.
+pub struct PipeChain<A, B> {
+    first: A,
+    second: B,
+}
+
+impl<A, B> PipeChain<A, B> {
+    /// Create a pipe chain that runs `first` and then `second`.
+    pub const fn new(first: A, second: B) -> Self {
+        Self { first, second }
+    }
+}
+
+impl<A, B> Pipe for PipeChain<A, B>
+where
+    A: Pipe,
+    B: Pipe,
+{
+    fn transform(&self, value: Value, metadata: ArgumentMetadata) -> Result<Value, HttpException> {
+        let value = self.first.transform(value, metadata.clone())?;
+        self.second.transform(value, metadata)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
 
     struct EchoPipe;
 
@@ -250,6 +278,69 @@ mod tests {
             assert_eq!(metadata.index, 1);
             assert!(metadata.metatype.is_some());
             Ok(value)
+        }
+    }
+
+    struct RecordingPipe {
+        calls: Arc<Mutex<Vec<ArgumentMetadata>>>,
+    }
+
+    impl RecordingPipe {
+        fn new(calls: Arc<Mutex<Vec<ArgumentMetadata>>>) -> Self {
+            Self { calls }
+        }
+    }
+
+    impl Pipe for RecordingPipe {
+        fn transform(
+            &self,
+            value: Value,
+            metadata: ArgumentMetadata,
+        ) -> Result<Value, HttpException> {
+            self.calls.lock().unwrap().push(metadata);
+            Ok(value)
+        }
+    }
+
+    struct CountingPipe {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl CountingPipe {
+        fn new(calls: Arc<AtomicUsize>) -> Self {
+            Self { calls }
+        }
+    }
+
+    impl Pipe for CountingPipe {
+        fn transform(
+            &self,
+            value: Value,
+            _metadata: ArgumentMetadata,
+        ) -> Result<Value, HttpException> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(value)
+        }
+    }
+
+    struct FailingPipe {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl FailingPipe {
+        fn new(calls: Arc<AtomicUsize>) -> Self {
+            Self { calls }
+        }
+    }
+
+    impl Pipe for FailingPipe {
+        fn transform(
+            &self,
+            _value: Value,
+            _metadata: ArgumentMetadata,
+        ) -> Result<Value, HttpException> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Err(HttpException::bad_request("first pipe failed"))
         }
     }
 
@@ -398,5 +489,57 @@ mod tests {
 
         assert_eq!(error.status_code, 400);
         assert_eq!(error.message, "TrimPipe expects a string value");
+    }
+
+    #[test]
+    fn pipe_chain_runs_pipes_left_to_right() {
+        let chain = PipeChain::new(TrimPipe::new(), ParseBoolPipe::new());
+
+        assert_eq!(
+            chain.transform(json!("  true  "), ArgumentMetadata::new(8)).unwrap(),
+            json!(true)
+        );
+    }
+
+    #[test]
+    fn pipe_chain_short_circuits_when_the_first_pipe_fails() {
+        let first_calls = Arc::new(AtomicUsize::new(0));
+        let second_calls = Arc::new(AtomicUsize::new(0));
+
+        let chain = PipeChain::new(
+            FailingPipe::new(Arc::clone(&first_calls)),
+            CountingPipe::new(Arc::clone(&second_calls)),
+        );
+
+        let error = chain
+            .transform(json!("anything"), ArgumentMetadata::new(9))
+            .unwrap_err();
+
+        assert_eq!(error.status_code, 400);
+        assert_eq!(error.message, "first pipe failed");
+        assert_eq!(first_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(second_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn pipe_chain_preserves_metadata_for_both_stages() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let chain = PipeChain::new(
+            RecordingPipe::new(Arc::clone(&seen)),
+            RecordingPipe::new(Arc::clone(&seen)),
+        );
+        let metadata = ArgumentMetadata::new(10)
+            .with_param_name("user_id")
+            .with_metatype(TypeId::of::<u64>())
+            .with_data_type("param");
+
+        let output = chain.transform(json!("  spaced  "), metadata.clone()).unwrap();
+
+        assert_eq!(output, json!("  spaced  "));
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0], metadata);
+        assert_eq!(seen[1], metadata);
     }
 }
