@@ -312,6 +312,45 @@ async fn server_returns_bad_request_for_controller_body_runtime_extraction_failu
 }
 
 #[tokio::test]
+async fn server_returns_internal_server_error_for_panicking_handlers(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .route(RouteMethod::Get, "/panic", |_| {
+            panic!("non-http exception");
+        })
+        .expect("panic route must register")
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Empty<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let response = client
+        .get(format!("http://127.0.0.1:{port}/panic").parse()?)
+        .await?;
+    assert_eq!(response.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
+
+    let body = response.into_body().collect().await?.to_bytes();
+    assert_eq!(body, Bytes::from_static(b"request handler failed"));
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
 async fn server_dispatches_header_versioned_routes_through_request_pipeline(
 ) -> Result<(), Box<dyn Error>> {
     let port = free_port();

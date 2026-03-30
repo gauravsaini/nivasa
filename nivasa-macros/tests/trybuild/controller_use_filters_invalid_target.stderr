@@ -1,0 +1,7 @@
+error: `#[use_filters]` only supports controller structs and inherent controller methods
+ --> tests/trybuild/controller_use_filters_invalid_target.rs:5:1
+  |
+5 | #[use_filters(RequestScopedFilter)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `use_filters` (in Nightly builds, run with -Z macro-backtrace for more info)

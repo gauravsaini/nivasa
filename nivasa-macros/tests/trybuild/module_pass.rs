@@ -1,7 +1,12 @@
-use nivasa_macros::{controller, impl_controller, injectable, module};
+use nivasa_macros::{
+    controller, guard, impl_controller, injectable, interceptor, module, set_metadata,
+};
 
 struct ImportedModule;
+struct OwnerGuard;
+struct OwnerRole;
 struct LoggingMiddleware;
+struct AuditInterceptor;
 
 #[injectable]
 struct Service;
@@ -22,9 +27,15 @@ impl AppController {
     exports: [Service],
     middlewares: [LoggingMiddleware],
 })]
+#[guard(OwnerGuard)]
+#[interceptor(AuditInterceptor)]
+#[set_metadata(key = "tenant", value = "billing")]
 struct AppModule;
 
 fn main() {
     let _ = AppModule::__nivasa_module_middlewares();
+    let _ = AppModule::__nivasa_module_guards();
+    let _ = AppModule::__nivasa_module_interceptors();
+    let _ = AppModule::__nivasa_module_set_metadata();
     let _ = AppModule::__nivasa_module_controller_registrations();
 }

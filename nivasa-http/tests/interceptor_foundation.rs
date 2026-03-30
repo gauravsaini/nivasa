@@ -4,7 +4,9 @@ use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use nivasa_http::{Body, NivasaResponse, NivasaServer};
-use nivasa_interceptors::{CallHandler, ExecutionContext, Interceptor, InterceptorFuture};
+use nivasa_interceptors::{
+    CallHandler, ExecutionContext, Interceptor, InterceptorFuture, TimeoutInterceptor,
+};
 use nivasa_routing::RouteMethod;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::{
@@ -112,6 +114,11 @@ async fn wait_for_server(port: u16) {
     panic!("server did not become ready");
 }
 
+fn assert_json_data_body(body: &Bytes, expected: &str) {
+    let expected = format!(r#"{{"data":"{expected}"}}"#);
+    assert_eq!(body.as_ref(), expected.as_bytes());
+}
+
 #[tokio::test]
 async fn interceptor_delegates_to_the_handler() -> Result<(), Box<dyn std::error::Error>> {
     let port = free_port();
@@ -143,7 +150,7 @@ async fn interceptor_delegates_to_the_handler() -> Result<(), Box<dyn std::error
     server_task.await??;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body.as_ref(), b"handler");
+    assert_json_data_body(&body, "handler");
     Ok(())
 }
 
@@ -182,7 +189,7 @@ async fn interceptor_can_short_circuit_before_the_handler() -> Result<(), Box<dy
     server_task.await??;
 
     assert_eq!(status, StatusCode::ACCEPTED);
-    assert_eq!(body.as_ref(), b"short");
+    assert_json_data_body(&body, "short");
     assert!(!called.load(Ordering::SeqCst));
     Ok(())
 }
@@ -269,7 +276,7 @@ async fn interceptors_execute_in_onion_order() -> Result<(), Box<dyn std::error:
     server_task.await??;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body.as_ref(), b"handler");
+    assert_json_data_body(&body, "handler");
     assert_eq!(
         &*log.lock().unwrap(),
         &[
@@ -280,5 +287,42 @@ async fn interceptors_execute_in_onion_order() -> Result<(), Box<dyn std::error:
             "i1.post".to_string(),
         ]
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn timeout_interceptor_returns_request_timeout_for_slow_handlers(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .interceptor(TimeoutInterceptor::new(Duration::from_millis(10)))
+        .route(RouteMethod::Get, "/interceptor", |_| {
+            std::thread::sleep(Duration::from_millis(25));
+            NivasaResponse::text("handler")
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("http://127.0.0.1:{port}/interceptor"))
+        .body(Full::new(Bytes::new()))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let body = response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    assert_eq!(status, StatusCode::REQUEST_TIMEOUT);
+    assert!(std::str::from_utf8(&body)?.contains("request timed out"));
     Ok(())
 }

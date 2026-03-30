@@ -7,6 +7,7 @@ mod server;
 pub mod upload;
 
 pub use http::header::HeaderMap;
+pub use server::GlobalFilterBinding;
 
 use async_trait::async_trait;
 use http::{
@@ -14,9 +15,22 @@ use http::{
     Method, Request, Response, StatusCode, Uri,
 };
 use nivasa_common::HttpException;
+use nivasa_filters::{
+    ExceptionFilter, ExceptionFilterFuture, ExceptionFilterMetadata, HttpArgumentsHost,
+    HttpExceptionSummary,
+};
 use nivasa_routing::RoutePathCaptures;
 use serde::{de::DeserializeOwned, Serialize};
-use std::{fmt, future::Future, pin::Pin, sync::Arc};
+use std::{
+    convert::Infallible,
+    fmt,
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
+use tokio::sync::Mutex;
+use tower::{Layer, Service};
 
 /// Minimal response/request body abstraction for the HTTP wrapper layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -347,6 +361,16 @@ impl NivasaRequest {
         HeaderName::from_bytes(name.as_ref().as_bytes())
             .ok()
             .and_then(|name| self.inner.headers().get(name))
+    }
+
+    /// Add or replace a header on the request.
+    pub fn set_header(&mut self, name: impl AsRef<str>, value: impl AsRef<str>) -> &mut Self {
+        let name = HeaderName::from_bytes(name.as_ref().as_bytes())
+            .expect("request header name must be valid");
+        let value =
+            HeaderValue::from_str(value.as_ref()).expect("request header value must be valid");
+        self.inner.headers_mut().insert(name, value);
+        self
     }
 
     /// Look up and coerce a single header value by name.
@@ -966,6 +990,60 @@ where
     }
 }
 
+/// Normalized guard contract for one controller handler.
+///
+/// This keeps controller-level and handler-level metadata in one place so the
+/// server can resolve guard instances and drive them through
+/// `RequestPipeline::evaluate_guard(...)` without understanding macro output
+/// details.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControllerGuardExecutionContract<'a> {
+    handler: &'a str,
+    guards: Vec<&'a str>,
+}
+
+impl<'a> ControllerGuardExecutionContract<'a> {
+    fn new(handler: &'a str, guards: Vec<&'a str>) -> Self {
+        Self { handler, guards }
+    }
+
+    /// The controller handler this guard contract applies to.
+    pub fn handler(&self) -> &'a str {
+        self.handler
+    }
+
+    /// Ordered guard names to resolve and execute for this handler.
+    pub fn guards(&self) -> &[&'a str] {
+        &self.guards
+    }
+}
+
+/// Resolve the guard metadata for one controller handler into a single
+/// execution contract.
+///
+/// The resolved order is controller-level guards first, followed by any
+/// handler-specific guards declared for `handler`.
+pub fn resolve_controller_guard_execution<'a>(
+    handler: &'a str,
+    controller_guards: &[&'a str],
+    handler_guard_metadata: &[(&'a str, Vec<&'a str>)],
+) -> Option<ControllerGuardExecutionContract<'a>> {
+    let mut guards = controller_guards.to_vec();
+
+    if let Some((_, handler_guards)) = handler_guard_metadata
+        .iter()
+        .find(|(candidate, _)| *candidate == handler)
+    {
+        guards.extend(handler_guards.iter().copied());
+    }
+
+    if guards.is_empty() {
+        None
+    } else {
+        Some(ControllerGuardExecutionContract::new(handler, guards))
+    }
+}
+
 impl IntoResponse for NivasaResponse {
     fn into_response(self) -> NivasaResponse {
         self
@@ -1055,6 +1133,137 @@ impl NextMiddleware {
     /// Forward the request to the next middleware or terminal handler.
     pub async fn run(&self, request: NivasaRequest) -> NivasaResponse {
         (self.handler)(request).await
+    }
+}
+
+/// Adapter that turns a Tower service into a `NivasaMiddleware`.
+///
+/// This first slice keeps the service terminal and intentionally does not
+/// involve the `next` continuation yet. That lets us prove the Tower side of
+/// the bridge without widening the middleware pipeline surface.
+#[derive(Clone)]
+pub struct TowerServiceMiddleware<S> {
+    service: Arc<Mutex<S>>,
+}
+
+impl<S> TowerServiceMiddleware<S> {
+    /// Wrap a Tower service so it can be used where a `NivasaMiddleware` is expected.
+    pub fn new(service: S) -> Self {
+        Self {
+            service: Arc::new(Mutex::new(service)),
+        }
+    }
+}
+
+impl<S> fmt::Debug for TowerServiceMiddleware<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TowerServiceMiddleware")
+            .finish_non_exhaustive()
+    }
+}
+
+#[async_trait]
+impl<S> NivasaMiddleware for TowerServiceMiddleware<S>
+where
+    S: Service<NivasaRequest, Response = NivasaResponse, Error = Infallible> + Send + 'static,
+    S::Future: Send + 'static,
+{
+    async fn use_(&self, req: NivasaRequest, _next: NextMiddleware) -> NivasaResponse {
+        let mut service = self.service.lock().await;
+        match service.call(req).await {
+            Ok(response) => response,
+            Err(error) => match error {},
+        }
+    }
+}
+
+/// Adapter that turns a `NivasaMiddleware` into a Tower `Layer`.
+#[derive(Clone)]
+pub struct NivasaMiddlewareLayer<M> {
+    middleware: Arc<M>,
+}
+
+impl<M> NivasaMiddlewareLayer<M> {
+    /// Wrap middleware so it can be applied as a Tower layer.
+    pub fn new(middleware: M) -> Self {
+        Self {
+            middleware: Arc::new(middleware),
+        }
+    }
+}
+
+impl<M> fmt::Debug for NivasaMiddlewareLayer<M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NivasaMiddlewareLayer")
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone)]
+pub struct NivasaMiddlewareService<S, M> {
+    service: Arc<Mutex<S>>,
+    middleware: Arc<M>,
+}
+
+impl<S, M> fmt::Debug for NivasaMiddlewareService<S, M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NivasaMiddlewareService")
+            .finish_non_exhaustive()
+    }
+}
+
+impl<S, M> Layer<S> for NivasaMiddlewareLayer<M>
+where
+    M: NivasaMiddleware + Send + Sync + 'static,
+{
+    type Service = NivasaMiddlewareService<S, M>;
+
+    fn layer(&self, service: S) -> Self::Service {
+        NivasaMiddlewareService {
+            service: Arc::new(Mutex::new(service)),
+            middleware: Arc::clone(&self.middleware),
+        }
+    }
+}
+
+impl<S, M> Service<NivasaRequest> for NivasaMiddlewareService<S, M>
+where
+    S: Service<NivasaRequest, Response = NivasaResponse, Error = Infallible> + Send + 'static,
+    S::Future: Send + 'static,
+    M: NivasaMiddleware + Send + Sync + 'static,
+{
+    type Response = NivasaResponse;
+    type Error = Infallible;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: NivasaRequest) -> Self::Future {
+        let service = Arc::clone(&self.service);
+        let middleware = Arc::clone(&self.middleware);
+
+        Box::pin(async move {
+            let next = NextMiddleware::new(move |request| {
+                let service = Arc::clone(&service);
+
+                async move {
+                    let future = {
+                        let mut service = service.lock().await;
+                        service.call(request)
+                    };
+
+                    match future.await {
+                        Ok(response) => response,
+                        Err(error) => match error {},
+                    }
+                }
+            });
+
+            Ok(middleware.use_(req, next).await)
+        })
     }
 }
 
@@ -1369,6 +1578,47 @@ impl IntoResponse for HttpException {
     }
 }
 
+impl IntoResponse for HttpExceptionSummary {
+    fn into_response(self) -> NivasaResponse {
+        let status =
+            StatusCode::from_u16(self.status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        NivasaResponse::new(
+            status,
+            serde_json::json!({
+                "statusCode": self.status_code,
+                "message": self.message,
+                "error": self.error,
+            }),
+        )
+    }
+}
+
+/// Built-in adapter that maps any `HttpException` into the standard HTTP error body.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HttpExceptionFilter;
+
+impl HttpExceptionFilter {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl ExceptionFilter<HttpException, NivasaResponse> for HttpExceptionFilter {
+    fn catch<'a>(
+        &'a self,
+        exception: HttpException,
+        _host: HttpArgumentsHost,
+    ) -> ExceptionFilterFuture<'a, NivasaResponse> {
+        Box::pin(async move { HttpExceptionSummary::from(&exception).into_response() })
+    }
+}
+
+impl ExceptionFilterMetadata for HttpExceptionFilter {
+    fn is_catch_all(&self) -> bool {
+        true
+    }
+}
+
 /// Redirect response helper with common HTTP redirect statuses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Redirect {
@@ -1531,5 +1781,48 @@ pub mod debug {
             assert_eq!(response.content_type, "application/json");
             assert!(response.body.contains("\"event\": \"Start\""));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_controller_guard_execution, ControllerGuardExecutionContract};
+
+    #[test]
+    fn resolves_controller_and_handler_guards_into_one_contract() {
+        let contract = resolve_controller_guard_execution(
+            "list",
+            &["ControllerGuard"],
+            &[("list", vec!["AuthGuard", "AuditGuard"])],
+        );
+
+        assert_eq!(
+            contract,
+            Some(ControllerGuardExecutionContract {
+                handler: "list",
+                guards: vec!["ControllerGuard", "AuthGuard", "AuditGuard"],
+            })
+        );
+    }
+
+    #[test]
+    fn resolves_controller_only_guards_for_handlers_without_specific_metadata() {
+        let contract =
+            resolve_controller_guard_execution("show", &["ControllerGuard"], &[("list", vec![])]);
+
+        assert_eq!(
+            contract,
+            Some(ControllerGuardExecutionContract {
+                handler: "show",
+                guards: vec!["ControllerGuard"],
+            })
+        );
+    }
+
+    #[test]
+    fn returns_none_when_no_controller_or_handler_guards_exist() {
+        let contract = resolve_controller_guard_execution("show", &[], &[]);
+
+        assert_eq!(contract, None);
     }
 }

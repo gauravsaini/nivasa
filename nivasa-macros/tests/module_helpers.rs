@@ -1,10 +1,18 @@
 use std::any::TypeId;
 
 use nivasa_core::module::Module;
-use nivasa_macros::{controller, impl_controller, injectable, module};
+use nivasa_macros::{
+    controller, guard, impl_controller, injectable, interceptor, module, set_metadata,
+};
 
 struct ImportedModule;
+struct OwnerGuard;
+struct AuditGuard;
+struct OwnerRole;
+struct AuditorRole;
 struct LoggingMiddleware;
+struct AuditInterceptor;
+struct TraceInterceptor;
 
 #[injectable]
 struct Service;
@@ -25,6 +33,10 @@ impl AppController {
     exports: [Service],
     middlewares: [LoggingMiddleware],
 })]
+#[guard(OwnerGuard, AuditGuard)]
+#[interceptor(AuditInterceptor, TraceInterceptor)]
+#[set_metadata(key = "tenant", value = "billing")]
+#[set_metadata(key = "region", value = "ap-southeast-2")]
 struct AppModule;
 
 #[test]
@@ -50,8 +62,24 @@ fn module_macro_exposes_registration_metadata_helpers() {
         vec![TypeId::of::<Service>()]
     );
     assert_eq!(
+        AppModule::__nivasa_module_metadata().middlewares,
+        vec![TypeId::of::<LoggingMiddleware>()]
+    );
+    assert_eq!(
         AppModule::__nivasa_module_middlewares(),
         vec![TypeId::of::<LoggingMiddleware>()]
+    );
+    assert_eq!(
+        AppModule::__nivasa_module_guards(),
+        vec!["OwnerGuard", "AuditGuard"]
+    );
+    assert_eq!(
+        AppModule::__nivasa_module_interceptors(),
+        vec!["AuditInterceptor", "TraceInterceptor"]
+    );
+    assert_eq!(
+        AppModule::__nivasa_module_set_metadata(),
+        vec![("tenant", "billing"), ("region", "ap-southeast-2")]
     );
     assert_eq!(
         AppModule::__nivasa_module_controller_registrations(),
@@ -65,4 +93,8 @@ fn module_macro_exposes_registration_metadata_helpers() {
     assert_eq!(controller_registrations[0].routes[0].method, "GET");
     assert_eq!(controller_registrations[0].routes[0].path, "/app/health");
     assert_eq!(controller_registrations[0].routes[0].handler, "health");
+    assert_eq!(
+        controller_registrations[0].middlewares,
+        vec![TypeId::of::<LoggingMiddleware>()]
+    );
 }

@@ -4,10 +4,14 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-use nivasa_common::{HttpException, RequestContext};
+use nivasa_common::{HttpException, HttpStatus, RequestContext};
+use serde::Serialize;
+use serde_json::Value;
 
 /// Standard result type returned by interceptor handlers.
 pub type InterceptorResult<T> = Result<T, HttpException>;
@@ -55,11 +59,7 @@ impl ExecutionContext {
     }
 
     /// Attach request method + path information.
-    pub fn with_request(
-        mut self,
-        method: impl Into<String>,
-        path: impl Into<String>,
-    ) -> Self {
+    pub fn with_request(mut self, method: impl Into<String>, path: impl Into<String>) -> Self {
         self.request_method = Some(method.into());
         self.request_path = Some(path.into());
         self
@@ -194,11 +194,345 @@ pub trait Interceptor: Send + Sync {
     ) -> InterceptorFuture<Self::Response>;
 }
 
+/// Interceptor that turns slow handlers into a request timeout error.
+///
+/// This stays deliberately small and dependency-free. It measures the elapsed
+/// wall-clock time around the next handler in the existing interceptor chain
+/// and returns a `408 Request Timeout` response if the handler takes too long.
+#[derive(Clone, Debug)]
+pub struct TimeoutInterceptor<T = ()> {
+    timeout: Duration,
+    _marker: PhantomData<fn() -> T>,
+}
+
+impl<T> TimeoutInterceptor<T> {
+    pub fn new(timeout: Duration) -> Self {
+        Self {
+            timeout,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+}
+
+impl<T> Interceptor for TimeoutInterceptor<T>
+where
+    T: Send + 'static,
+{
+    type Response = T;
+
+    fn intercept(
+        &self,
+        _context: &ExecutionContext,
+        next: CallHandler<Self::Response>,
+    ) -> InterceptorFuture<Self::Response> {
+        let timeout = self.timeout;
+        Box::pin(async move {
+            let started = Instant::now();
+            let result = next.handle().await;
+
+            if started.elapsed() > timeout {
+                Err(HttpException::from_status(
+                    HttpStatus::RequestTimeout,
+                    "request timed out",
+                ))
+            } else {
+                result
+            }
+        })
+    }
+}
+
+type LogSink = Arc<dyn Fn(String) + Send + Sync + 'static>;
+type StatusFormatter<T> = Arc<dyn Fn(&T) -> String + Send + Sync + 'static>;
+type CacheKeyResolver = Arc<dyn Fn(&ExecutionContext) -> String + Send + Sync + 'static>;
+type CacheStore<T> = Arc<Mutex<BTreeMap<String, CacheEntry<T>>>>;
+
+#[derive(Clone)]
+struct CacheEntry<T> {
+    value: T,
+    inserted_at: Instant,
+}
+
+/// Serialize a class-like response object into JSON.
+///
+/// The interceptor itself remains transport-agnostic and only projects JSON
+/// objects, but this helper gives later `#[exclude]` / `#[expose]` wiring a
+/// stable serialization entry point.
+pub fn class_serialize<T>(value: &T) -> Value
+where
+    T: Serialize,
+{
+    serde_json::to_value(value).expect("class response must serialize")
+}
+
+/// Interceptor that projects class-like JSON responses by applying field-level
+/// exclusion and exposure rules.
+///
+/// This stays transport-agnostic by working on `serde_json::Value`. The
+/// corresponding `Serialize` step is exposed via [`class_serialize`], which
+/// keeps the slice small and still lets later `#[exclude]` / `#[expose]`
+/// attribute wiring plug into a real runtime projection point.
+#[derive(Clone)]
+pub struct ClassSerializerInterceptor {
+    excluded_fields: Arc<BTreeMap<String, ()>>,
+    exposed_fields: Option<Arc<BTreeMap<String, ()>>>,
+}
+
+impl ClassSerializerInterceptor {
+    /// Create a serializer interceptor with no field projection rules.
+    pub fn new() -> Self {
+        Self {
+            excluded_fields: Arc::new(BTreeMap::new()),
+            exposed_fields: None,
+        }
+    }
+
+    /// Exclude fields from the serialized JSON object.
+    pub fn with_excluded_fields<I, S>(mut self, fields: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let mut excluded_fields = BTreeMap::new();
+        for field in fields {
+            excluded_fields.insert(field.into(), ());
+        }
+        self.excluded_fields = Arc::new(excluded_fields);
+        self
+    }
+
+    /// Restrict serialization to the provided fields.
+    pub fn with_exposed_fields<I, S>(mut self, fields: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let mut exposed_fields = BTreeMap::new();
+        for field in fields {
+            exposed_fields.insert(field.into(), ());
+        }
+        self.exposed_fields = Some(Arc::new(exposed_fields));
+        self
+    }
+}
+
+impl Default for ClassSerializerInterceptor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Interceptor for ClassSerializerInterceptor {
+    type Response = Value;
+
+    fn intercept(
+        &self,
+        _context: &ExecutionContext,
+        next: CallHandler<Self::Response>,
+    ) -> InterceptorFuture<Self::Response> {
+        let excluded_fields = Arc::clone(&self.excluded_fields);
+        let exposed_fields = self.exposed_fields.clone();
+
+        Box::pin(async move {
+            let mut serialized = next.handle().await?;
+
+            if let Value::Object(ref mut object) = serialized {
+                if let Some(exposed_fields) = exposed_fields.as_ref() {
+                    object.retain(|key, _| exposed_fields.contains_key(key));
+                }
+
+                if !excluded_fields.is_empty() {
+                    object.retain(|key, _| !excluded_fields.contains_key(key));
+                }
+            }
+
+            Ok(serialized)
+        })
+    }
+}
+
+/// Interceptor that records request metadata, response status, and duration.
+///
+/// The slice stays deliberately small and testable by accepting a log sink and
+/// a response-status formatter. That keeps the helper independent from any
+/// concrete HTTP response type while still letting the HTTP test harness
+/// assert on the emitted log line.
+#[derive(Clone)]
+pub struct LoggingInterceptor<T = ()> {
+    sink: LogSink,
+    status_formatter: StatusFormatter<T>,
+    _marker: PhantomData<fn() -> T>,
+}
+
+impl<T> LoggingInterceptor<T> {
+    /// Create a logging interceptor with a caller-provided sink and response formatter.
+    pub fn new<S, F>(sink: S, status_formatter: F) -> Self
+    where
+        S: Fn(String) + Send + Sync + 'static,
+        F: Fn(&T) -> String + Send + Sync + 'static,
+    {
+        Self {
+            sink: Arc::new(sink),
+            status_formatter: Arc::new(status_formatter),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T> Interceptor for LoggingInterceptor<T>
+where
+    T: Send + 'static,
+{
+    type Response = T;
+
+    fn intercept(
+        &self,
+        context: &ExecutionContext,
+        next: CallHandler<Self::Response>,
+    ) -> InterceptorFuture<Self::Response> {
+        let sink = Arc::clone(&self.sink);
+        let status_formatter = Arc::clone(&self.status_formatter);
+        let method = context.request_method().unwrap_or("unknown").to_string();
+        let path = context.request_path().unwrap_or("unknown").to_string();
+        let handler_name = context.handler_name().unwrap_or("unknown").to_string();
+        let class_name = context.class_name().unwrap_or("unknown").to_string();
+
+        Box::pin(async move {
+            let started = Instant::now();
+            let result = next.handle().await;
+            let elapsed = started.elapsed();
+            let status = match result.as_ref() {
+                Ok(response) => status_formatter.as_ref()(response),
+                Err(error) => error.status_code.to_string(),
+            };
+
+            sink.as_ref()(format!(
+                "method={method} path={path} handler={handler_name} class={class_name} status={status} duration_ns={}",
+                elapsed.as_nanos()
+            ));
+
+            result
+        })
+    }
+}
+
+/// Interceptor that memoizes successful responses in a small in-memory store.
+///
+/// The helper is intentionally simple: it derives a cache key from the request
+/// shape already present on [`ExecutionContext`], stores cloned successful
+/// responses in a process-local map, and skips the next handler when a matching
+/// entry is present.
+#[derive(Clone)]
+pub struct CacheInterceptor<T = ()> {
+    store: CacheStore<T>,
+    key_resolver: CacheKeyResolver,
+    ttl: Option<Duration>,
+    _marker: PhantomData<fn() -> T>,
+}
+
+impl<T> CacheInterceptor<T> {
+    /// Create a cache interceptor using the default request-shape key.
+    pub fn new() -> Self {
+        Self::with_key_resolver(default_cache_key)
+    }
+
+    /// Create a cache interceptor with a caller-provided cache key resolver.
+    pub fn with_key_resolver<F>(key_resolver: F) -> Self
+    where
+        F: Fn(&ExecutionContext) -> String + Send + Sync + 'static,
+    {
+        Self::with_key_resolver_and_ttl(key_resolver, None)
+    }
+
+    /// Create a cache interceptor with a key resolver and TTL.
+    pub fn with_key_resolver_and_ttl<F>(key_resolver: F, ttl: Option<Duration>) -> Self
+    where
+        F: Fn(&ExecutionContext) -> String + Send + Sync + 'static,
+    {
+        Self {
+            store: Arc::new(Mutex::new(BTreeMap::new())),
+            key_resolver: Arc::new(key_resolver),
+            ttl,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Create a cache interceptor with a fixed TTL.
+    pub fn with_ttl(ttl: Duration) -> Self {
+        Self::with_key_resolver_and_ttl(default_cache_key, Some(ttl))
+    }
+}
+
+impl<T> Default for CacheInterceptor<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> Interceptor for CacheInterceptor<T>
+where
+    T: Clone + Send + 'static,
+{
+    type Response = T;
+
+    fn intercept(
+        &self,
+        context: &ExecutionContext,
+        next: CallHandler<Self::Response>,
+    ) -> InterceptorFuture<Self::Response> {
+        let store = Arc::clone(&self.store);
+        let key_resolver = Arc::clone(&self.key_resolver);
+        let ttl = self.ttl;
+        let cache_key = key_resolver.as_ref()(context);
+
+        Box::pin(async move {
+            let cached_entry = { store.lock().unwrap().get(&cache_key).cloned() };
+
+            if let Some(entry) = cached_entry {
+                let is_expired = ttl.is_some_and(|ttl| entry.inserted_at.elapsed() >= ttl);
+
+                if !is_expired {
+                    return Ok(entry.value);
+                }
+
+                store.lock().unwrap().remove(&cache_key);
+            }
+
+            let result = next.handle().await;
+            if let Ok(response) = &result {
+                store.lock().unwrap().insert(
+                    cache_key,
+                    CacheEntry {
+                        value: response.clone(),
+                        inserted_at: Instant::now(),
+                    },
+                );
+            }
+
+            result
+        })
+    }
+}
+
+fn default_cache_key(context: &ExecutionContext) -> String {
+    format!(
+        "method={};path={};handler={};class={}",
+        context.request_method().unwrap_or("unknown"),
+        context.request_path().unwrap_or("unknown"),
+        context.handler_name().unwrap_or("unknown"),
+        context.class_name().unwrap_or("unknown")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
     fn block_on<F: Future>(future: F) -> F::Output {
@@ -315,6 +649,147 @@ mod tests {
 
         assert_eq!(error.status_code, 500);
         assert_eq!(error.message, "boom");
+    }
+
+    #[test]
+    fn timeout_interceptor_turns_slow_handlers_into_request_timeout_errors() {
+        let interceptor = TimeoutInterceptor::<String>::new(Duration::from_millis(1));
+        let context = ExecutionContext::new().with_handler_name("list_users");
+        let next = CallHandler::new(|| async {
+            std::thread::sleep(Duration::from_millis(5));
+            Ok::<_, HttpException>("done".to_string())
+        });
+
+        let error = block_on(interceptor.intercept(&context, next)).unwrap_err();
+
+        assert_eq!(error.status_code, 408);
+        assert_eq!(error.message, "request timed out");
+    }
+
+    #[test]
+    fn logging_interceptor_records_status_and_duration() {
+        let log = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = {
+            let log = Arc::clone(&log);
+            move |entry| log.lock().unwrap().push(entry)
+        };
+        let interceptor = LoggingInterceptor::new(sink, |response: &String| response.clone());
+        let context = ExecutionContext::new()
+            .with_request("GET", "/logging")
+            .with_handler_name("list_users")
+            .with_class_name("UsersController");
+        let next = CallHandler::new(|| async { Ok::<_, HttpException>("200".to_string()) });
+
+        let result = block_on(interceptor.intercept(&context, next)).unwrap();
+
+        assert_eq!(result, "200");
+        let entry = log.lock().unwrap().pop().expect("log entry must exist");
+        assert!(entry.contains("method=GET"));
+        assert!(entry.contains("path=/logging"));
+        assert!(entry.contains("handler=list_users"));
+        assert!(entry.contains("class=UsersController"));
+        assert!(entry.contains("status=200"));
+        assert!(entry.contains("duration_ns="));
+    }
+
+    #[test]
+    fn cache_interceptor_expires_entries_after_the_ttl_window() {
+        let interceptor = CacheInterceptor::<String>::with_ttl(Duration::from_millis(5));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let context = ExecutionContext::new()
+            .with_request("GET", "/cache")
+            .with_handler_name("list_users")
+            .with_class_name("UsersController");
+
+        let first = {
+            let calls = Arc::clone(&calls);
+            let next = CallHandler::new(move || {
+                let calls = Arc::clone(&calls);
+                async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Ok::<_, HttpException>("cached".to_string())
+                }
+            });
+
+            block_on(interceptor.intercept(&context, next)).unwrap()
+        };
+
+        std::thread::sleep(Duration::from_millis(10));
+
+        let second = {
+            let calls = Arc::clone(&calls);
+            let next = CallHandler::new(move || {
+                let calls = Arc::clone(&calls);
+                async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Ok::<_, HttpException>("fresh".to_string())
+                }
+            });
+
+            block_on(interceptor.intercept(&context, next)).unwrap()
+        };
+
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(first, "cached");
+        assert_eq!(second, "fresh");
+    }
+
+    #[derive(Debug, Clone, Serialize, PartialEq)]
+    struct SerializableProfile {
+        id: u32,
+        email: String,
+        password: String,
+        display_name: String,
+    }
+
+    #[test]
+    fn class_serializer_interceptor_excludes_fields_from_json_objects() {
+        let interceptor = ClassSerializerInterceptor::new().with_excluded_fields(["password"]);
+        let context = ExecutionContext::new().with_class_name("ProfileView");
+        let next = CallHandler::new(|| async {
+            Ok::<_, HttpException>(class_serialize(&SerializableProfile {
+                id: 7,
+                email: "dev@example.com".to_string(),
+                password: "secret".to_string(),
+                display_name: "Dev".to_string(),
+            }))
+        });
+
+        let result = block_on(interceptor.intercept(&context, next)).unwrap();
+
+        assert_eq!(
+            result,
+            serde_json::json!({
+                "id": 7,
+                "email": "dev@example.com",
+                "display_name": "Dev"
+            })
+        );
+    }
+
+    #[test]
+    fn class_serializer_interceptor_can_expose_only_selected_fields() {
+        let interceptor =
+            ClassSerializerInterceptor::new().with_exposed_fields(["id", "display_name"]);
+        let context = ExecutionContext::new().with_class_name("ProfileView");
+        let next = CallHandler::new(|| async {
+            Ok::<_, HttpException>(class_serialize(&SerializableProfile {
+                id: 11,
+                email: "ignored@example.com".to_string(),
+                password: "secret".to_string(),
+                display_name: "Reader".to_string(),
+            }))
+        });
+
+        let result = block_on(interceptor.intercept(&context, next)).unwrap();
+
+        assert_eq!(
+            result,
+            serde_json::json!({
+                "id": 11,
+                "display_name": "Reader"
+            })
+        );
     }
 
     #[derive(Debug, PartialEq)]

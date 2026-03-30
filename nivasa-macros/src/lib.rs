@@ -1,5 +1,7 @@
 mod controller;
+mod filter;
 mod injectable;
+mod middleware;
 mod module_macro;
 mod scxml_handler;
 
@@ -76,8 +78,38 @@ pub fn guard(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn roles(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::roles(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn set_metadata(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::set_metadata(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn catch(attr: TokenStream, item: TokenStream) -> TokenStream {
+    filter::catch(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn catch_all(attr: TokenStream, item: TokenStream) -> TokenStream {
+    filter::catch_all(attr, item)
+}
+
+#[proc_macro_attribute]
 pub fn interceptor(_attr: TokenStream, item: TokenStream) -> TokenStream {
     controller::interceptor(_attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn use_filters(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::use_filters(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn middleware(attr: TokenStream, item: TokenStream) -> TokenStream {
+    middleware::middleware(attr, item)
 }
 
 #[proc_macro_attribute]

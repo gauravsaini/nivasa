@@ -9,9 +9,13 @@ license.workspace = true
 [dependencies]
 nivasa-core = { path = "../nivasa-core" }
 nivasa-common = { path = "../nivasa-common" }
+nivasa-guards = { path = "../nivasa-guards" }
+nivasa-filters = { path = "../nivasa-filters" }
+nivasa-pipes = { path = "../nivasa-pipes" }
 nivasa-statechart = { path = "../nivasa-statechart" }
 nivasa-macros = { path = "../nivasa-macros" }
 nivasa-http = { path = "../nivasa-http" }
+nivasa-interceptors = { path = "../nivasa-interceptors" }
 nivasa-routing = { path = "../nivasa-routing" }
 nivasa-config = { path = "../nivasa-config", optional = true }
 nivasa-validation = { path = "../nivasa-validation", optional = true }

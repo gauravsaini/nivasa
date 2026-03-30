@@ -4,7 +4,7 @@
 //! error response shape: `{ statusCode, message, error }`.
 
 use serde::Serialize;
-use std::fmt;
+use std::{error::Error as StdError, fmt, sync::Arc};
 
 use crate::HttpStatus;
 
@@ -20,6 +20,8 @@ pub struct HttpException {
     pub error: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<serde_json::Value>,
+    #[serde(skip)]
+    cause: Option<Arc<dyn StdError + Send + Sync + 'static>>,
 }
 
 impl HttpException {
@@ -31,6 +33,7 @@ impl HttpException {
             message: message.into(),
             error,
             details: None,
+            cause: None,
         }
     }
 
@@ -45,6 +48,12 @@ impl HttpException {
         self
     }
 
+    /// Attach an underlying cause without changing the serialized payload.
+    pub fn with_cause(mut self, cause: impl StdError + Send + Sync + 'static) -> Self {
+        self.cause = Some(Arc::new(cause));
+        self
+    }
+
     // --- Factory methods for common HTTP exceptions ---
 
     pub fn bad_request(message: impl Into<String>) -> Self {
@@ -53,6 +62,10 @@ impl HttpException {
 
     pub fn unauthorized(message: impl Into<String>) -> Self {
         Self::new(401u16, message)
+    }
+
+    pub fn payment_required(message: impl Into<String>) -> Self {
+        Self::new(402u16, message)
     }
 
     pub fn forbidden(message: impl Into<String>) -> Self {
@@ -67,8 +80,24 @@ impl HttpException {
         Self::new(405u16, message)
     }
 
+    pub fn not_acceptable(message: impl Into<String>) -> Self {
+        Self::new(406u16, message)
+    }
+
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::new(409u16, message)
+    }
+
+    pub fn gone(message: impl Into<String>) -> Self {
+        Self::new(410u16, message)
+    }
+
+    pub fn payload_too_large(message: impl Into<String>) -> Self {
+        Self::new(413u16, message)
+    }
+
+    pub fn unsupported_media_type(message: impl Into<String>) -> Self {
+        Self::new(415u16, message)
     }
 
     pub fn unprocessable_entity(message: impl Into<String>) -> Self {
@@ -79,12 +108,28 @@ impl HttpException {
         Self::new(429u16, message)
     }
 
+    pub fn request_timeout(message: impl Into<String>) -> Self {
+        Self::new(408u16, message)
+    }
+
     pub fn internal_server_error(message: impl Into<String>) -> Self {
         Self::new(500u16, message)
     }
 
+    pub fn not_implemented(message: impl Into<String>) -> Self {
+        Self::new(501u16, message)
+    }
+
+    pub fn bad_gateway(message: impl Into<String>) -> Self {
+        Self::new(502u16, message)
+    }
+
     pub fn service_unavailable(message: impl Into<String>) -> Self {
         Self::new(503u16, message)
+    }
+
+    pub fn gateway_timeout(message: impl Into<String>) -> Self {
+        Self::new(504u16, message)
     }
 }
 
@@ -94,7 +139,13 @@ impl fmt::Display for HttpException {
     }
 }
 
-impl std::error::Error for HttpException {}
+impl StdError for HttpException {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        self.cause
+            .as_deref()
+            .map(|cause| cause as &(dyn StdError + 'static))
+    }
+}
 
 fn default_error_name(status_code: u16) -> String {
     HttpStatus::try_from(status_code)
@@ -116,13 +167,61 @@ mod tests {
     }
 
     #[test]
+    fn test_exception_status_code_matrix() {
+        macro_rules! assert_exception_case {
+            ($ctor:expr, $status:expr, $error:expr) => {{
+                let ex = ($ctor)("example");
+                assert_eq!(ex.status_code, $status);
+                assert_eq!(ex.message, "example");
+                assert_eq!(ex.error, $error);
+            }};
+        }
+
+        assert_exception_case!(HttpException::bad_request, 400, "Bad Request");
+        assert_exception_case!(HttpException::unauthorized, 401, "Unauthorized");
+        assert_exception_case!(HttpException::payment_required, 402, "Payment Required");
+        assert_exception_case!(HttpException::forbidden, 403, "Forbidden");
+        assert_exception_case!(HttpException::not_found, 404, "Not Found");
+        assert_exception_case!(HttpException::method_not_allowed, 405, "Method Not Allowed");
+        assert_exception_case!(HttpException::not_acceptable, 406, "Not Acceptable");
+        assert_exception_case!(HttpException::request_timeout, 408, "Request Timeout");
+        assert_exception_case!(HttpException::conflict, 409, "Conflict");
+        assert_exception_case!(HttpException::gone, 410, "Gone");
+        assert_exception_case!(HttpException::payload_too_large, 413, "Payload Too Large");
+        assert_exception_case!(
+            HttpException::unsupported_media_type,
+            415,
+            "Unsupported Media Type"
+        );
+        assert_exception_case!(
+            HttpException::unprocessable_entity,
+            422,
+            "Unprocessable Entity"
+        );
+        assert_exception_case!(HttpException::too_many_requests, 429, "Too Many Requests");
+        assert_exception_case!(
+            HttpException::internal_server_error,
+            500,
+            "Internal Server Error"
+        );
+        assert_exception_case!(HttpException::not_implemented, 501, "Not Implemented");
+        assert_exception_case!(HttpException::bad_gateway, 502, "Bad Gateway");
+        assert_exception_case!(HttpException::service_unavailable, 503, "Service Unavailable");
+        assert_exception_case!(HttpException::gateway_timeout, 504, "Gateway Timeout");
+    }
+
+    #[test]
     fn test_exception_serialization() {
         let ex = HttpException::bad_request("Invalid email");
         let json = serde_json::to_value(&ex).unwrap();
-        assert_eq!(json["statusCode"], 400);
-        assert_eq!(json["message"], "Invalid email");
-        assert_eq!(json["error"], "Bad Request");
-        assert!(json.get("details").is_none());
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "statusCode": 400,
+                "message": "Invalid email",
+                "error": "Bad Request"
+            })
+        );
     }
 
     #[test]
@@ -135,7 +234,50 @@ mod tests {
             }),
         );
         let json = serde_json::to_value(&ex).unwrap();
-        assert_eq!(json["statusCode"], 422);
-        assert!(json["details"]["fields"]["email"].is_string());
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "statusCode": 422,
+                "message": "Validation failed",
+                "error": "Unprocessable Entity",
+                "details": {
+                    "fields": {
+                        "email": "must be a valid email"
+                    }
+                }
+            })
+        );
     }
+
+    #[test]
+    fn test_exception_display_and_error_traits() {
+        let ex = HttpException::internal_server_error("Something broke");
+
+        assert_eq!(ex.to_string(), "500 Internal Server Error: Something broke");
+
+        let err: &dyn std::error::Error = &ex;
+        assert!(err.source().is_none());
+    }
+
+    #[test]
+    fn test_exception_cause_chaining_keeps_serialization_shape() {
+        let inner = std::io::Error::new(std::io::ErrorKind::Other, "disk failed");
+        let ex = HttpException::internal_server_error("Something broke").with_cause(inner);
+
+        assert_eq!(ex.to_string(), "500 Internal Server Error: Something broke");
+
+        let err: &dyn std::error::Error = &ex;
+        assert_eq!(err.source().map(ToString::to_string), Some("disk failed".into()));
+
+        let json = serde_json::to_value(&ex).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "statusCode": 500,
+                "message": "Something broke",
+                "error": "Internal Server Error"
+            })
+        );
+    }
+
 }

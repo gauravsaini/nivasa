@@ -4,6 +4,9 @@
 //! gives the Phase 2 bootstrap work a stable place for server and versioning
 //! configuration without pulling transport details into the main crate yet.
 
+use nivasa_http::{NivasaMiddleware, NivasaServer, NivasaServerBuilder};
+use nivasa_interceptors::Interceptor;
+
 /// Supported API versioning strategies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VersioningStrategy {
@@ -179,6 +182,44 @@ impl AppBootstrapConfig {
         self.server.versioning.as_ref()
     }
 
+    /// Adapt app bootstrap config into the existing transport builder.
+    ///
+    /// This stays limited to bootstrap-owned transport flags. Route prefixing,
+    /// version-aware dispatch, and the SCXML request lifecycle remain owned by
+    /// the downstream routing and HTTP layers.
+    pub fn server_builder(&self) -> NivasaServerBuilder {
+        let mut builder = NivasaServer::builder();
+
+        if self.server.cors {
+            builder = builder.enable_cors();
+        }
+
+        builder
+    }
+
+    /// Register a single global middleware at bootstrap time.
+    ///
+    /// This is intentionally a thin facade over the existing transport
+    /// middleware hook. It does not imply module-level registration, ordering,
+    /// exclusions, or decorator parsing.
+    pub fn use_middleware<M>(&self, middleware: M) -> NivasaServerBuilder
+    where
+        M: NivasaMiddleware + Send + Sync + 'static,
+    {
+        self.server_builder().middleware(middleware)
+    }
+
+    /// Register a single global interceptor at bootstrap time.
+    ///
+    /// This remains a thin facade over the existing transport interceptor
+    /// hook. It does not imply module wiring, ordering, or response mapping.
+    pub fn use_interceptor<I>(&self, interceptor: I) -> NivasaServerBuilder
+    where
+        I: Interceptor<Response = nivasa_http::NivasaResponse> + Send + Sync + 'static,
+    {
+        self.server_builder().interceptor(interceptor)
+    }
+
     /// Compose a bootstrap-time route path from the configured global prefix.
     ///
     /// This stays as pure string handling so route registration can consume it
@@ -331,6 +372,8 @@ fn normalize_version_token(version: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nivasa_http::{NextMiddleware, NivasaRequest, NivasaResponse};
+    use nivasa_routing::RouteMethod;
 
     #[test]
     fn default_server_options_are_sane() {
@@ -396,17 +439,17 @@ mod tests {
             bootstrap.versioning().map(|options| options.strategy),
             Some(VersioningStrategy::Header)
         );
-        assert_eq!(AppBootstrapConfig::default().server, ServerOptions::default());
+        assert_eq!(
+            AppBootstrapConfig::default().server,
+            ServerOptions::default()
+        );
         assert_eq!(AppBootstrapConfig::default().versioning(), None);
     }
 
     #[test]
     fn bootstrap_config_prefixes_route_paths_purely_for_future_bootstrap_use() {
-        let bootstrap = AppBootstrapConfig::from(
-            ServerOptions::builder()
-                .global_prefix(" api/ ")
-                .build(),
-        );
+        let bootstrap =
+            AppBootstrapConfig::from(ServerOptions::builder().global_prefix(" api/ ").build());
 
         assert_eq!(bootstrap.prefixed_route_path("users"), "/api/users");
         assert_eq!(bootstrap.prefixed_route_path("/users/"), "/api/users");
@@ -415,5 +458,29 @@ mod tests {
             AppBootstrapConfig::default().prefixed_route_path(" users/ "),
             "/users"
         );
+    }
+
+    #[test]
+    fn bootstrap_config_adapts_into_the_existing_server_builder() {
+        let bootstrap = AppBootstrapConfig::from(ServerOptions::builder().enable_cors().build());
+        let builder = bootstrap
+            .server_builder()
+            .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
+            .expect("route registration should succeed");
+
+        let _server = builder.build();
+    }
+
+    #[test]
+    fn bootstrap_config_can_forward_global_middleware_into_transport_builder() {
+        let bootstrap = AppBootstrapConfig::default();
+        let builder = bootstrap
+            .use_middleware(|request: NivasaRequest, next: NextMiddleware| async move {
+                next.run(request).await
+            })
+            .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
+            .expect("route registration should succeed");
+
+        let _server = builder.build();
     }
 }

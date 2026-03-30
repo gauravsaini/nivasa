@@ -57,7 +57,7 @@
 
 ### 0.4 — Umbrella Crate Re-export Strategy
 - [x] Design `nivasa::prelude::*` — users should only need one import
-- [ ] Re-export key traits and runtime types: `Controller`, `Module`, `Injectable`, plus the landed DI/module/runtime surface; `Guard`, `Interceptor`, `Pipe`, `ExceptionFilter`, and `Middleware` still need upstream exports
+- [x] Re-export key traits and runtime types: `Controller`, `Module`, `Injectable`, plus the landed DI/module/runtime surface; `GuardExecutionContext`, `GuardExecutionOutcome`, `Interceptor`, `Reflector`, `ExceptionFilter`, and `Middleware` (the `NivasaMiddleware` alias) are now re-exported from the umbrella crate, and the `filters`/`pipes` umbrella namespaces are also re-exported; `Pipe` still needs upstream exports
 - [x] Re-export key macros: `#[module]`, `#[injectable]`, `#[controller]`, `#[get]`, `#[post]`, `#[put]`, `#[delete]`, `#[patch]`, `#[head]`, `#[options]`, `#[all]`, `#[impl_controller]`, `#[scxml_handler]`
 - [x] Re-export `ServerOptions`, `HttpException`, and the existing HTTP/server surface
 - [x] Re-export `StatechartEngine`, generated state/event enums from `nivasa-statechart`
@@ -459,35 +459,36 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.1.2 — `#[guard]` Attribute Macro
 - [x] Parse `#[guard(GuardType)]` on handler methods
 - [x] Parse `#[guard(GuardType)]` on controller struct (metadata capture only; runtime apply-to-all-routes still open)
-- [ ] Parse `#[guard(GuardType)]` on module (apply to all module routes)
-- [ ] Support multiple guards: `#[guard(Guard1, Guard2)]`
+- [x] Parse `#[guard(GuardType)]` on module (metadata capture only; runtime apply to all module routes still open)
+- [x] Support multiple guards: `#[guard(Guard1, Guard2)]` (metadata capture)
 
 #### 3.1.3 — Guard Execution Pipeline
-- [ ] Implement guard chain execution (AND logic: all must pass)
+- [x] Implement guard chain execution (AND logic: all must pass)
 - [x] Implement short-circuit on first failure
 - [ ] Return `ForbiddenException` on guard failure (configurable)
 - [x] Support guard returning custom exception on failure
 - [x] Support async guard execution
 
 #### 3.1.4 — Reflector / Metadata (NestJS `SetMetadata`)
-- [ ] Implement `#[set_metadata(key, value)]` decorator
-- [ ] Implement `Reflector` service — read metadata in guards/interceptors
-- [ ] Implement `#[roles("admin", "editor")]` as sugar over `set_metadata`
-- [ ] Test reflector reads metadata set on handler
+- [x] Implement `#[set_metadata(key, value)]` decorator (metadata capture only; handler/controller/module capture landed; runtime Reflector/guard enforcement still open)
+- [x] Implement `Reflector` service — read metadata in guards/interceptors
+- [x] Implement `#[roles("admin", "editor")]` as sugar over `set_metadata` (metadata capture only; handler/controller/module capture landed; runtime authorization and module-wide enforcement still open)
+- [x] Test reflector reads metadata set on handler
 
 #### 3.1.5 — Built-in Guards
 - [ ] Implement `AuthGuard` skeleton (JWT validation pattern)
-- [ ] Implement `RolesGuard` (check roles via Reflector + `#[roles(...)]`)
+- [x] Implement `RolesGuard` (check roles via Reflector + `#[roles(...)]`)
 - [ ] Implement `ThrottlerGuard` (rate limiting — see Phase 3.4)
 
 #### 3.1.6 — Guard Tests
-- [ ] Test guard that always allows → handler executes
-- [ ] Test guard that always denies → 403 response
-- [ ] Test multiple guards — all pass
-- [ ] Test multiple guards — one fails → short-circuit
-- [ ] Test guard with injected service dependency
-- [ ] Test controller-level guard applies to all its routes
-- [ ] Test reflector reads `#[roles]` metadata correctly
+- [x] Test guard that always allows → handler executes
+- [x] Test guard that always denies → 403 response
+- [x] Test multiple guards — all pass
+- [x] Test multiple guards — one fails → short-circuit
+- [x] Test guard with injected service dependency
+- [x] Test controller-level guard applies to all its routes
+- [x] Test controller guard metadata applies to every route
+- [x] Test reflector reads `#[roles]` metadata correctly
 
 ### 3.2 — Interceptor System (`nivasa-interceptors` + `nivasa-macros`)
 
@@ -496,58 +497,59 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.2.1 — Interceptor Trait
 - [x] Define `Interceptor` trait: `async fn intercept(&self, context: &ExecutionContext, next: CallHandler) -> Result<Response>`
 - [x] Define `CallHandler` struct: `async fn handle(self) -> Result<Response>`
-- [ ] Support DI in interceptor structs
+- [x] Support DI in interceptor structs
 
 #### 3.2.2 — `#[interceptor]` Attribute Macro
 - [x] Parse `#[interceptor(InterceptorType)]` on handler methods
 - [x] Parse `#[interceptor(InterceptorType)]` on controller struct
-- [ ] Parse `#[interceptor(InterceptorType)]` on module
+- [x] Parse `#[interceptor(InterceptorType)]` on module (metadata capture only; runtime wiring still open)
 - [x] Support multiple interceptors: `#[interceptor(I1, I2)]` (execute in order)
 
 #### 3.2.3 — Interceptor Chain Execution
-- Landed execution slices: `NivasaServerBuilder::interceptor(...)` now supports a thin server-side interceptor hook around matched route handlers, and repeated `.interceptor(...)` calls execute as an ordered onion chain while `RequestPipeline` remains the owner of `InterceptorPre` / `InterceptorPost` transitions. Decorator-driven registration, module wiring, and response-mapping helpers remain open.
+- Landed execution slices: `NivasaServerBuilder::interceptor(...)` now supports a thin server-side interceptor hook around matched route handlers, repeated `.interceptor(...)` calls execute as an ordered onion chain while `RequestPipeline` remains the owner of `InterceptorPre` / `InterceptorPost` transitions, `AppBootstrapConfig::use_interceptor(...)` now forwards into that hook, and the response-mapping hook now wraps mapped bodies before final send. Decorator-driven registration and module wiring remain open.
 - [ ] Implement interceptor chain (onion/RxJS-style: pre → next.handle() → post)
-- [ ] Implement response transformation in post-processing
-- [ ] Implement response mapping (map the body before sending)
+- [x] Implement response transformation in post-processing
+- [x] Implement response mapping (map the body before sending)
 - [x] Support async interceptor execution
 
 #### 3.2.4 — Built-in Interceptors
-- [ ] Implement `LoggingInterceptor` (log method, path, status, duration)
-- [ ] Implement `TimeoutInterceptor` (fail with 408 after N ms via `tokio::time::timeout`)
+- [x] Implement `LoggingInterceptor` (log method, path, status, duration)
+- [x] Implement `TimeoutInterceptor` (fail with 408 after N ms via `tokio::time::timeout`)
 - [ ] Implement `CacheInterceptor` (in-memory TTL cache, skip handler on cache hit)
-- [ ] Implement `ClassSerializerInterceptor` (transform response using `#[exclude]` / `#[expose]` on fields)
+- [x] Implement `ClassSerializerInterceptor` (transform response using `#[exclude]` / `#[expose]` on fields)
 
 #### 3.2.5 — Interceptor Tests
-- [ ] Test pre-processing interceptor adds header to request
-- [ ] Test post-processing interceptor wraps response in `{ data: ... }`
+- [x] Test pre-processing interceptor adds header to request
+- [x] Test post-processing interceptor wraps response in `{ data: ... }`
 - [x] Test interceptor chain execution order (I1.pre → I2.pre → handler → I2.post → I1.post)
-- [ ] Test timeout interceptor returns 408 on slow handler
-- [ ] Test cache interceptor returns cached response on second call
+- [x] Test timeout interceptor returns 408 on slow handler
+- [x] Test logging interceptor records request metadata and status codes
+- [x] Test cache interceptor returns cached response on second call
 
 ### 3.3 — Middleware System (`nivasa-http` + `nivasa-macros`)
 
 #### 3.3.1 — Middleware Trait
 - [x] Define `NivasaMiddleware` trait: `async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse`
-- [ ] Support DI in middleware structs (`#[inject]` on fields)
+- [x] Support DI in middleware structs (`#[inject]` on fields)
 - [x] Support functional middleware (closure-based, no struct needed)
 
 #### 3.3.2 — `#[middleware]` Attribute Macro
-- [ ] Parse `#[middleware]` on struct
-- [ ] Generate middleware registration
+- [x] Parse `#[middleware]` on struct
+- [x] Generate middleware registration
 
 #### 3.3.3 — Middleware Pipeline
-- Landed execution slice: `NivasaServerBuilder::middleware(...)` runs one `NivasaMiddleware` around a `NextMiddleware` capture point before `complete_middleware()`. Global registration, module-level wiring, route ordering, and decorator parsing remain open.
-- [ ] Implement global middleware registration via `NestApplication::use_()`
-- [ ] Implement module-level middleware registration via `#[module({ middlewares: [...] })]`
-- [ ] Implement route-specific middleware (`.apply(Mw).forRoutes("/users")`)
-- [ ] Implement middleware exclusion (`.apply(Mw).exclude("/health")`)
-- [ ] Implement middleware execution order: global → module → route-specific
+- Landed execution slice: `NivasaServerBuilder::middleware(...)` runs one `NivasaMiddleware` around a `NextMiddleware` capture point before `complete_middleware()`, and the runtime now sequences module middleware before route-specific middleware. `AppBootstrapConfig::use_middleware(...)` still forwards straight into that hook, while module-to-route wiring and exclusion remain open.
+- [x] Implement global middleware registration via `NestApplication::use_()` (bootstrap-only facade via `AppBootstrapConfig::use_middleware(...)`)
+- [x] Implement module-level middleware registration via `#[module({ middlewares: [...] })]` (module middleware metadata now travels with controller registrations)
+- [x] Implement route-specific middleware (`.apply(Mw).forRoutes("/users")` exact/pattern route hook on `NivasaServerBuilder`)
+- [x] Implement middleware exclusion (`.apply(Mw).exclude("/health")`)
+- [x] Implement middleware execution order: global → module → route-specific
 
 #### 3.3.4 — Tower Compatibility Layer
-- [ ] Implement adapter: `Tower Service<Request> → NivasaMiddleware`
-- [ ] Implement adapter: `NivasaMiddleware → Tower Layer`
-- [ ] Test wrapping a Tower middleware (e.g., `tower-http::cors`) for future Nivasa middleware support
-- [ ] Document how to use existing Tower ecosystem middleware
+- [x] Implement adapter: `Tower Service<Request> → NivasaMiddleware`
+- [x] Implement adapter: `NivasaMiddleware → Tower Layer`
+- [x] Test wrapping a Tower middleware (e.g., `tower-http::cors`) for future Nivasa middleware support
+- [x] Document how to use existing Tower ecosystem middleware
 
 #### 3.3.5 — Built-in Middleware
 - [ ] Implement `CorsMiddleware` (configurable origins, methods, headers, credentials)
@@ -557,12 +559,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `LoggerMiddleware` (structured request logging via `tracing`)
 
 #### 3.3.6 — Middleware Tests
-- [ ] Test global middleware runs on every request
+- [x] Test global middleware runs on every request
 - [ ] Test module-level middleware runs only for that module's routes
-- [ ] Test middleware ordering (global before module before route)
+- [x] Test middleware ordering (global before module before route)
 - [ ] Test richer CORS middleware/CorsOptions integration adds correct headers
-- [ ] Test middleware exclusion (`.exclude()`)
-- [ ] Test Tower middleware adapter works
+- [x] Test middleware exclusion (`.exclude()`)
+- [x] Test Tower middleware adapter works
 
 ### 3.4 — Rate Limiting / Throttling
 
@@ -582,8 +584,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 4.1 — Pipe System (`nivasa-pipes` + `nivasa-macros`)
 
 #### 4.1.1 — Pipe Trait
-- [ ] Define `Pipe` trait: `fn transform(&self, value: Value, metadata: ArgumentMetadata) -> Result<Value, HttpException>`
-- [ ] Define `ArgumentMetadata` struct (param name, metatype, data type, index)
+- [x] Define `Pipe` trait: `fn transform(&self, value: Value, metadata: ArgumentMetadata) -> Result<Value, HttpException>`
+- [x] Define `ArgumentMetadata` struct (param name, metatype, data type, index)
 - [ ] Support DI in pipe structs
 
 #### 4.1.2 — `#[pipe]` Attribute Macro
@@ -664,70 +666,70 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 5.1.1 — ExceptionFilter Trait
 - [ ] Define `ExceptionFilter<E>` trait: `async fn catch(&self, exception: E, host: ArgumentsHost) -> NivasaResponse`
-- [ ] Define `ArgumentsHost` struct (access to request, response, next, underlying context)
-- [ ] Define `HttpArgumentsHost` for HTTP-specific context
+- [x] Define `ArgumentsHost` struct (access to request, response, next, underlying context)
+- [x] Define `HttpArgumentsHost` for HTTP-specific context
 - [ ] Define `WsArgumentsHost` for WebSocket-specific context (future)
 
 #### 5.1.2 — `#[catch]` Attribute Macro
-- [ ] Parse `#[catch(ExceptionType)]` on filter struct
-- [ ] Parse `#[catch_all]` to catch any exception
-- [ ] Support handler-level: `#[use_filters(MyFilter)]`
-- [ ] Support controller-level: `#[use_filters(MyFilter)]`
-- [ ] Support global filters via `NestApplication::use_global_filter()`
+- [x] Parse `#[catch(ExceptionType)]` on filter struct
+- [x] Parse `#[catch_all]` to catch any exception
+- [x] Support handler-level: `#[use_filters(MyFilter)]`
+- [x] Support controller-level: `#[use_filters(MyFilter)]`
+- [x] Support global filters via `NivasaServer::builder().use_global_filter()` for HTTP exception paths
 
 #### 5.1.3 — Filter Execution
-- [ ] Implement filter matching by exception type (most specific first)
-- [ ] Implement filter precedence: handler → controller → global
-- [ ] Implement fallback filter for completely unhandled exceptions (500 + log)
-- [ ] Ensure filters can themselves throw (caught by next-level filter)
+- [x] Implement filter matching by exception type (most specific first)
+- [x] Implement filter precedence: handler → controller → global
+- [x] Implement fallback filter for completely unhandled exceptions (500 + log)
+- [x] Ensure filters can themselves throw (caught by next-level filter)
 
 #### 5.1.4 — Built-in Filters
-- [ ] Implement `HttpExceptionFilter` (catch all `HttpException` variants)
-- [ ] Implement default global filter (standard error response shape)
+- [x] Implement `HttpExceptionFilter` (catch all `HttpException` variants)
+- [x] Implement default global filter (standard error response shape)
 
 #### 5.1.5 — Filter Tests
-- [ ] Test global filter catches unhandled HttpException
-- [ ] Test handler-level filter overrides global for specific exception
-- [ ] Test filter formats response correctly (`{ statusCode, message, error }`)
-- [ ] Test unhandled non-HttpException returns 500 Internal Server Error
-- [ ] Test filter has access to request via ArgumentsHost
+- [x] Test global filter catches unhandled HttpException
+- [x] Test handler-level filter overrides global for specific exception
+- [x] Test filter formats response correctly (`{ statusCode, message, error }`)
+- [x] Test unhandled non-HttpException returns 500 Internal Server Error
+- [x] Test filter has access to request via ArgumentsHost
 
 ### 5.2 — Custom Exceptions (`nivasa-common`)
 
 #### 5.2.1 — Base Exception Types
 - [ ] Implement `HttpException` base struct (status: u16, message: String, description: Option<String>)
 - [ ] Derive `thiserror::Error` for all exception types
-- [ ] Implement `BadRequestException` (400)
-- [ ] Implement `UnauthorizedException` (401)
-- [ ] Implement `PaymentRequiredException` (402)
-- [ ] Implement `ForbiddenException` (403)
-- [ ] Implement `NotFoundException` (404)
-- [ ] Implement `MethodNotAllowedException` (405)
-- [ ] Implement `NotAcceptableException` (406)
-- [ ] Implement `RequestTimeoutException` (408)
-- [ ] Implement `ConflictException` (409)
-- [ ] Implement `GoneException` (410)
-- [ ] Implement `PayloadTooLargeException` (413)
-- [ ] Implement `UnsupportedMediaTypeException` (415)
-- [ ] Implement `UnprocessableEntityException` (422)
-- [ ] Implement `TooManyRequestsException` (429)
-- [ ] Implement `InternalServerErrorException` (500)
-- [ ] Implement `NotImplementedException` (501)
-- [ ] Implement `BadGatewayException` (502)
-- [ ] Implement `ServiceUnavailableException` (503)
-- [ ] Implement `GatewayTimeoutException` (504)
+- [x] Implement `BadRequestException` (400)
+- [x] Implement `UnauthorizedException` (401)
+- [x] Implement `PaymentRequiredException` (402)
+- [x] Implement `ForbiddenException` (403)
+- [x] Implement `NotFoundException` (404)
+- [x] Implement `MethodNotAllowedException` (405)
+- [x] Implement `NotAcceptableException` (406)
+- [x] Implement `RequestTimeoutException` (408)
+- [x] Implement `ConflictException` (409)
+- [x] Implement `GoneException` (410)
+- [x] Implement `PayloadTooLargeException` (413)
+- [x] Implement `UnsupportedMediaTypeException` (415)
+- [x] Implement `UnprocessableEntityException` (422)
+- [x] Implement `TooManyRequestsException` (429)
+- [x] Implement `InternalServerErrorException` (500)
+- [x] Implement `NotImplementedException` (501)
+- [x] Implement `BadGatewayException` (502)
+- [x] Implement `ServiceUnavailableException` (503)
+- [x] Implement `GatewayTimeoutException` (504)
 
 #### 5.2.2 — Exception Serialization
-- [ ] Implement `Serialize` for `HttpException`
-- [ ] Implement standard error response shape: `{ statusCode, message, error }`
-- [ ] Support custom error details/payload via `.with_details(json!(...))`
-- [ ] Support error cause chaining (`.with_cause(inner_error)`)
+- [x] Implement `Serialize` for `HttpException`
+- [x] Implement standard error response shape: `{ statusCode, message, error }`
+- [x] Support custom error details/payload via `.with_details(json!(...))`
+- [x] Support error cause chaining (`.with_cause(inner_error)`)
 
 #### 5.2.3 — Exception Tests
-- [ ] Test each exception type returns correct status code
-- [ ] Test exception serialization to JSON matches expected shape
-- [ ] Test custom exception with additional details
-- [ ] Test `Display` / `Error` trait implementations
+- [x] Test each exception type returns correct status code
+- [x] Test exception serialization to JSON matches expected shape
+- [x] Test custom exception with additional details
+- [x] Test `Display` / `Error` trait implementations
 
 ---
 
@@ -982,10 +984,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `.use_global_guard(Guard)` — apply guard to all routes
 - [ ] Implement `.use_global_interceptor(Interceptor)` — apply interceptor globally
 - [ ] Implement `.use_global_pipe(Pipe)` — apply pipe globally (e.g., ValidationPipe)
-- [ ] Implement `.use_global_filter(Filter)` — apply exception filter globally
+- [x] Implement `.use_global_filter(Filter)` — apply exception filter globally
 - [x] Implement `.enable_cors()` — minimal transport-side CORS bridge on `ServerOptions`; richer middleware/CorsOptions work remains future
 - [ ] Implement `.enable_versioning(VersioningOptions)` — API versioning config
-- [ ] Implement `.use_(Middleware)` — apply global middleware
+- [x] Implement `.use_(Middleware)` — apply global middleware (bootstrap-only facade via `AppBootstrapConfig::use_middleware(...)`)
 - [ ] Implement startup banner with ASCII art + version
 - [ ] Implement startup logging: routes registered, modules loaded, listen address
 - [ ] Implement `.close()` — graceful shutdown API (for testing)
@@ -1013,7 +1015,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Write guards documentation (including Reflector and metadata)
 - [ ] Write interceptors documentation (with caching, logging examples)
 - [ ] Write pipes documentation (built-in pipes, custom pipes)
-- [ ] Write exception filters documentation
+- [x] Write exception filters documentation
 - [ ] Write middleware documentation (including Tower compatibility)
 - [ ] Write configuration documentation (env loading, type-safe config)
 - [ ] Write testing documentation (TestingModule, TestClient, mocking)
@@ -1032,9 +1034,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 10.1 — Testing
 - [ ] Achieve >90% code coverage across all crates
+- [x] Add in-process request lifecycle integration coverage (middleware → guard → interceptor → handler → Done)
 - [ ] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
 - [ ] Write integration tests: module composition (nested modules, imports/exports)
-- [ ] Write integration tests: error handling pipeline (exception → filter → response)
+- [x] Write integration tests: error handling pipeline (exception → filter → response)
 - [ ] Write integration tests: authentication flow (login → JWT → protected route)
 - [ ] Write integration tests: validation flow (invalid DTO → ValidationPipe → 400 response)
 - [ ] Write integration tests: WebSocket lifecycle

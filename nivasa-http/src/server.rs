@@ -3,11 +3,12 @@ use crate::{
     RequestPipeline,
 };
 use bytes::{Bytes, BytesMut};
+use futures_util::FutureExt;
 use http::{
     header::{
         HeaderMap, HeaderValue, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
         ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_REQUEST_HEADERS, ACCESS_CONTROL_REQUEST_METHOD,
-        ALLOW, ORIGIN,
+        ALLOW, CONTENT_TYPE, ORIGIN,
     },
     Method, Request, Response, StatusCode,
 };
@@ -16,17 +17,22 @@ use hyper::{body::Incoming, service::service_fn};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder as AutoBuilder;
 use nivasa_common::HttpException;
+use nivasa_common::RequestContext;
+use nivasa_filters::HttpExceptionSummary;
+use nivasa_filters::{ArgumentsHost, ExceptionFilter, ExceptionFilterMetadata};
 use nivasa_interceptors::{
     CallHandler, ExecutionContext as InterceptorExecutionContext, Interceptor,
 };
 use nivasa_routing::{
     parse_api_version_accept, parse_api_version_header, RouteDispatchError, RouteDispatchOutcome,
-    RouteDispatchRegistry, RouteMethod,
+    RouteDispatchRegistry, RouteMethod, RoutePattern, RouteRegistryError,
 };
+use serde_json::json;
 use std::{
     future::Future,
     io,
     net::SocketAddr,
+    panic::{catch_unwind, AssertUnwindSafe},
     pin::Pin,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -41,12 +47,75 @@ use tokio_rustls::TlsAcceptor;
 type RouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
 type MiddlewareLayer = Arc<dyn NivasaMiddleware + Send + Sync + 'static>;
 type InterceptorLayer = Arc<dyn Interceptor<Response = NivasaResponse> + Send + Sync + 'static>;
+type GlobalFilterLayer =
+    Arc<dyn ExceptionFilter<HttpException, NivasaResponse> + Send + Sync + 'static>;
+
+#[derive(Clone)]
+pub struct GlobalFilterBinding {
+    filter: GlobalFilterLayer,
+    exception_type: Option<&'static str>,
+    catch_all: bool,
+}
+
+impl GlobalFilterBinding {
+    pub fn new<F>(filter: F) -> Self
+    where
+        F: ExceptionFilter<HttpException, NivasaResponse>
+            + ExceptionFilterMetadata
+            + Send
+            + Sync
+            + 'static,
+    {
+        Self {
+            exception_type: filter.exception_type(),
+            catch_all: filter.is_catch_all(),
+            filter: Arc::new(filter),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct RouteHandlerBinding {
+    handler: RouteHandler,
+    handler_filters: Vec<GlobalFilterBinding>,
+    controller_filters: Vec<GlobalFilterBinding>,
+}
+
+impl RouteHandlerBinding {
+    fn new(handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static) -> Self {
+        Self {
+            handler: Arc::new(handler),
+            handler_filters: Vec::new(),
+            controller_filters: Vec::new(),
+        }
+    }
+
+    fn with_handler_filters(mut self, filters: Vec<GlobalFilterBinding>) -> Self {
+        self.handler_filters = filters;
+        self
+    }
+
+    fn with_controller_filters(mut self, filters: Vec<GlobalFilterBinding>) -> Self {
+        self.controller_filters = filters;
+        self
+    }
+}
+
+#[derive(Clone)]
+struct RouteMiddlewareBinding {
+    pattern: RoutePattern,
+    excluded_paths: Vec<RoutePattern>,
+    middleware: MiddlewareLayer,
+}
 
 /// Minimal HTTP transport shell for Nivasa.
 pub struct NivasaServer {
-    routes: RouteDispatchRegistry<RouteHandler>,
+    routes: RouteDispatchRegistry<RouteHandlerBinding>,
     middleware: Option<MiddlewareLayer>,
+    module_middlewares: Vec<MiddlewareLayer>,
+    route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
+    global_filters: Vec<GlobalFilterBinding>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -57,9 +126,12 @@ pub struct NivasaServer {
 
 /// Builder for [`NivasaServer`].
 pub struct NivasaServerBuilder {
-    routes: RouteDispatchRegistry<RouteHandler>,
+    routes: RouteDispatchRegistry<RouteHandlerBinding>,
     middleware: Option<MiddlewareLayer>,
+    module_middlewares: Vec<MiddlewareLayer>,
+    route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
+    global_filters: Vec<GlobalFilterBinding>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -81,7 +153,10 @@ impl NivasaServer {
         let mut shutdown = shutdown_future(self.shutdown.take());
         let routes = self.routes;
         let middleware = self.middleware;
+        let module_middlewares = self.module_middlewares;
+        let route_middlewares = self.route_middlewares;
         let interceptors = self.interceptors;
+        let global_filters = self.global_filters;
         let cors = self.cors;
         let request_timeout = self.request_timeout;
         let request_body_size_limit = self.request_body_size_limit;
@@ -98,7 +173,10 @@ impl NivasaServer {
                     let (stream, _) = accept?;
                     let routes = routes.clone();
                     let middleware = middleware.clone();
+                    let module_middlewares = module_middlewares.clone();
+                    let route_middlewares = route_middlewares.clone();
                     let interceptors = interceptors.clone();
+                    let global_filters_for_connection = global_filters.clone();
                     #[cfg(feature = "tls")]
                     let tls_config = tls_config.clone();
 
@@ -111,7 +189,10 @@ impl NivasaServer {
                                     stream,
                                     routes,
                                     middleware,
+                                    module_middlewares,
+                                    route_middlewares,
                                     interceptors,
+                                    global_filters_for_connection,
                                     cors,
                                     request_timeout,
                                     request_body_size_limit,
@@ -125,7 +206,10 @@ impl NivasaServer {
                             stream,
                             routes,
                             middleware,
+                            module_middlewares,
+                            route_middlewares,
                             interceptors,
+                            global_filters_for_connection,
                             cors,
                             request_timeout,
                             request_body_size_limit,
@@ -146,7 +230,10 @@ impl NivasaServerBuilder {
         Self {
             routes: RouteDispatchRegistry::new(),
             middleware: None,
+            module_middlewares: Vec::new(),
+            route_middlewares: Vec::new(),
             interceptors: Vec::new(),
+            global_filters: Vec::new(),
             cors: false,
             request_timeout: None,
             request_body_size_limit: None,
@@ -163,8 +250,27 @@ impl NivasaServerBuilder {
         path: impl Into<String>,
         handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static,
     ) -> Result<Self, RouteDispatchError> {
-        let handler: RouteHandler = Arc::new(handler);
-        self.routes.register_pattern(method, path, handler)?;
+        self.routes
+            .register_pattern(method, path, RouteHandlerBinding::new(handler))?;
+        Ok(self)
+    }
+
+    /// Register a request handler with local handler/controller exception filters.
+    pub fn route_with_filters(
+        mut self,
+        method: impl Into<RouteMethod>,
+        path: impl Into<String>,
+        handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static,
+        handler_filters: Vec<GlobalFilterBinding>,
+        controller_filters: Vec<GlobalFilterBinding>,
+    ) -> Result<Self, RouteDispatchError> {
+        self.routes.register_pattern(
+            method,
+            path,
+            RouteHandlerBinding::new(handler)
+                .with_handler_filters(handler_filters)
+                .with_controller_filters(controller_filters),
+        )?;
         Ok(self)
     }
 
@@ -176,9 +282,12 @@ impl NivasaServerBuilder {
         path: impl Into<String>,
         handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static,
     ) -> Result<Self, RouteDispatchError> {
-        let handler: RouteHandler = Arc::new(handler);
-        self.routes
-            .register_header_versioned_route(method, version, path, handler)?;
+        self.routes.register_header_versioned_route(
+            method,
+            version,
+            path,
+            RouteHandlerBinding::new(handler),
+        )?;
         Ok(self)
     }
 
@@ -190,9 +299,12 @@ impl NivasaServerBuilder {
         path: impl Into<String>,
         handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static,
     ) -> Result<Self, RouteDispatchError> {
-        let handler: RouteHandler = Arc::new(handler);
-        self.routes
-            .register_media_type_versioned_route(method, version, path, handler)?;
+        self.routes.register_media_type_versioned_route(
+            method,
+            version,
+            path,
+            RouteHandlerBinding::new(handler),
+        )?;
         Ok(self)
     }
 
@@ -211,12 +323,46 @@ impl NivasaServerBuilder {
         self
     }
 
+    /// Register a middleware stage between the global hook and route-specific middleware.
+    pub fn module_middleware<M>(mut self, middleware: M) -> Self
+    where
+        M: NivasaMiddleware + Send + Sync + 'static,
+    {
+        self.module_middlewares.push(Arc::new(middleware));
+        self
+    }
+
+    /// Start configuring middleware for one or more matched routes.
+    pub fn apply<M>(self, middleware: M) -> RouteMiddlewareBuilder
+    where
+        M: NivasaMiddleware + Send + Sync + 'static,
+    {
+        RouteMiddlewareBuilder {
+            builder: self,
+            middleware: Arc::new(middleware),
+            excluded_paths: Vec::new(),
+        }
+    }
+
     /// Register a single interceptor hook around a matched route handler.
     pub fn interceptor<I>(mut self, interceptor: I) -> Self
     where
         I: Interceptor<Response = NivasaResponse> + Send + Sync + 'static,
     {
         self.interceptors.push(Arc::new(interceptor));
+        self
+    }
+
+    /// Register a global HTTP exception filter.
+    pub fn use_global_filter<F>(mut self, filter: F) -> Self
+    where
+        F: ExceptionFilter<HttpException, NivasaResponse>
+            + ExceptionFilterMetadata
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.global_filters.push(GlobalFilterBinding::new(filter));
         self
     }
 
@@ -256,7 +402,10 @@ impl NivasaServerBuilder {
         NivasaServer {
             routes: self.routes,
             middleware: self.middleware,
+            module_middlewares: self.module_middlewares,
+            route_middlewares: self.route_middlewares,
             interceptors: self.interceptors,
+            global_filters: self.global_filters,
             cors: self.cors,
             request_timeout: self.request_timeout,
             request_body_size_limit: self.request_body_size_limit,
@@ -269,9 +418,12 @@ impl NivasaServerBuilder {
 
 async fn serve_connection<S>(
     stream: S,
-    routes: RouteDispatchRegistry<RouteHandler>,
+    routes: RouteDispatchRegistry<RouteHandlerBinding>,
     middleware: Option<MiddlewareLayer>,
+    module_middlewares: Vec<MiddlewareLayer>,
+    route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
+    global_filters: Vec<GlobalFilterBinding>,
     cors: bool,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
@@ -282,7 +434,10 @@ async fn serve_connection<S>(
     let service = service_fn(move |request| {
         let routes = routes.clone();
         let middleware = middleware.clone();
+        let module_middlewares = module_middlewares.clone();
+        let route_middlewares = route_middlewares.clone();
         let interceptors = interceptors.clone();
+        let global_filters = global_filters.clone();
         let cors = cors;
         let request_timeout = request_timeout;
         let request_body_size_limit = request_body_size_limit;
@@ -294,7 +449,10 @@ async fn serve_connection<S>(
                         request,
                         routes,
                         middleware,
+                        module_middlewares,
+                        route_middlewares,
                         interceptors,
+                        global_filters,
                         cors,
                         request_body_size_limit,
                     ),
@@ -315,7 +473,10 @@ async fn serve_connection<S>(
                     request,
                     routes,
                     middleware,
+                    module_middlewares,
+                    route_middlewares,
                     interceptors,
+                    global_filters,
                     cors,
                     request_body_size_limit,
                 )
@@ -330,9 +491,12 @@ async fn serve_connection<S>(
 
 async fn handle_request(
     request: hyper::Request<Incoming>,
-    routes: RouteDispatchRegistry<RouteHandler>,
+    routes: RouteDispatchRegistry<RouteHandlerBinding>,
     middleware: Option<MiddlewareLayer>,
+    module_middlewares: Vec<MiddlewareLayer>,
+    route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
+    global_filters: Vec<GlobalFilterBinding>,
     cors: bool,
     request_body_size_limit: Option<usize>,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
@@ -414,8 +578,24 @@ async fn handle_request(
 
     let response = match pipeline.match_route(&versioned_routes) {
         Ok(RouteDispatchOutcome::Matched(entry)) => {
-            let handler = Arc::clone(&entry.value);
+            let binding = entry.value.clone();
+            let handler = Arc::clone(&binding.handler);
             let request = pipeline.request().clone();
+            let module_middlewares = module_middlewares.clone();
+            let route_middlewares =
+                matching_route_middlewares(request.path(), route_middlewares.as_slice());
+            let request = match execute_middleware_sequence(module_middlewares, request).await {
+                MiddlewareExecution::Forwarded(request) => request,
+                MiddlewareExecution::ShortCircuited { response, .. } => {
+                    return Ok(finalize_response(response, cors));
+                }
+            };
+            let request = match execute_middleware_sequence(route_middlewares, request).await {
+                MiddlewareExecution::Forwarded(request) => request,
+                MiddlewareExecution::ShortCircuited { response, .. } => {
+                    return Ok(finalize_response(response, cors));
+                }
+            };
             match interceptors.is_empty() {
                 false => match execute_interceptors(interceptors, request, handler).await {
                     InterceptorExecution::Completed(response) => {
@@ -431,7 +611,7 @@ async fn handle_request(
                                 Body::text("request pipeline interceptor transition failed"),
                             )
                         } else {
-                            response
+                            map_interceptor_response(response)
                         }
                     }
                     InterceptorExecution::ShortCircuited(response) => {
@@ -443,7 +623,7 @@ async fn handle_request(
                                 Body::text("request pipeline interceptor transition failed"),
                             )
                         } else {
-                            response
+                            map_interceptor_response(response)
                         }
                     }
                     InterceptorExecution::Error {
@@ -467,7 +647,14 @@ async fn handle_request(
                                 Body::text("request pipeline interceptor transition failed"),
                             )
                         } else {
-                            error.into_response()
+                            handle_http_exception(
+                                error,
+                                &binding.handler_filters,
+                                &binding.controller_filters,
+                                &global_filters,
+                                pipeline.request(),
+                            )
+                            .await
                         }
                     }
                 },
@@ -516,6 +703,78 @@ enum InterceptorExecution {
     },
 }
 
+async fn handle_http_exception(
+    error: HttpException,
+    handler_filters: &[GlobalFilterBinding],
+    controller_filters: &[GlobalFilterBinding],
+    global_filters: &[GlobalFilterBinding],
+    request: &NivasaRequest,
+) -> NivasaResponse {
+    match select_exception_filter(handler_filters)
+        .or_else(|| select_exception_filter(controller_filters))
+        .or_else(|| select_exception_filter(global_filters))
+    {
+        Some(filter) => {
+            let mut request_context = RequestContext::new();
+            request_context.insert_request_data(request.clone());
+            let host = ArgumentsHost::new().with_request_context(request_context);
+            let fallback_error = error.clone();
+
+            let filter_future =
+                match catch_unwind(AssertUnwindSafe(|| filter.filter.catch(error, host))) {
+                    Ok(future) => future,
+                    Err(_) => return fallback_unhandled_exception_response(&fallback_error),
+                };
+
+            match AssertUnwindSafe(filter_future).catch_unwind().await {
+                Ok(response) => response,
+                Err(_) => fallback_unhandled_exception_response(&fallback_error),
+            }
+        }
+        None => fallback_unhandled_exception_response(&error),
+    }
+}
+
+fn fallback_unhandled_exception_response(error: &HttpException) -> NivasaResponse {
+    eprintln!("nivasa-http fallback filter handling unhandled exception: {error}");
+    HttpExceptionSummary::from(&HttpException::internal_server_error(
+        "request handler failed",
+    ))
+    .into_response()
+}
+
+fn select_exception_filter(filters: &[GlobalFilterBinding]) -> Option<&GlobalFilterBinding> {
+    let exception_type = std::any::type_name::<HttpException>();
+
+    filters
+        .iter()
+        .enumerate()
+        .fold(None, |best, (index, binding)| {
+            let score = match (binding.exception_type, binding.catch_all) {
+                (Some(target), _) if target == exception_type => 2,
+                (None, true) => 1,
+                (None, false) => 0,
+                _ => 0,
+            };
+
+            if score == 0 {
+                return best;
+            }
+
+            match best {
+                None => Some((index, score, binding)),
+                Some((best_index, best_score, best_binding)) => {
+                    if score > best_score || (score == best_score && index > best_index) {
+                        Some((index, score, binding))
+                    } else {
+                        Some((best_index, best_score, best_binding))
+                    }
+                }
+            }
+        })
+        .map(|(_, _, binding)| binding)
+}
+
 async fn execute_middleware(
     middleware: MiddlewareLayer,
     request: NivasaRequest,
@@ -541,6 +800,44 @@ async fn execute_middleware(
             response,
         },
     }
+}
+
+fn matching_route_middlewares(
+    request_path: &str,
+    route_middlewares: &[RouteMiddlewareBinding],
+) -> Vec<MiddlewareLayer> {
+    route_middlewares
+        .iter()
+        .filter(|binding| {
+            binding.pattern.matches(request_path)
+                && !binding
+                    .excluded_paths
+                    .iter()
+                    .any(|pattern| pattern.matches(request_path))
+        })
+        .map(|binding| Arc::clone(&binding.middleware))
+        .collect()
+}
+
+async fn execute_middleware_sequence(
+    middlewares: Vec<MiddlewareLayer>,
+    request: NivasaRequest,
+) -> MiddlewareExecution {
+    let mut request = request;
+
+    for middleware in middlewares {
+        let current_request = request.clone();
+        match execute_middleware(middleware, current_request).await {
+            MiddlewareExecution::Forwarded(next_request) => {
+                request = next_request;
+            }
+            MiddlewareExecution::ShortCircuited { response, .. } => {
+                return MiddlewareExecution::ShortCircuited { request, response };
+            }
+        }
+    }
+
+    MiddlewareExecution::Forwarded(request)
 }
 
 async fn execute_interceptors(
@@ -573,6 +870,35 @@ async fn execute_interceptors(
             handler_called: handler_called.load(Ordering::SeqCst),
         },
     }
+}
+
+fn map_interceptor_response(response: NivasaResponse) -> NivasaResponse {
+    let status = response.status();
+    let headers = response.headers().clone();
+    let mapped_body = json!({
+        "data": match response.body() {
+            Body::Empty => serde_json::Value::Null,
+            Body::Text(value) | Body::Html(value) => serde_json::Value::String(value.clone()),
+            Body::Json(value) => value.clone(),
+            Body::Bytes(bytes) => serde_json::Value::Array(
+                bytes.iter().copied().map(serde_json::Value::from).collect(),
+            ),
+        }
+    });
+
+    let mut mapped_response = NivasaResponse::new(status, Body::json(mapped_body));
+    for (name, value) in headers.iter() {
+        if name.as_str() != CONTENT_TYPE.as_str() {
+            mapped_response = mapped_response.with_header(
+                name.as_str(),
+                value
+                    .to_str()
+                    .expect("response header value must be valid utf-8"),
+            );
+        }
+    }
+
+    mapped_response
 }
 
 fn interceptor_chain_handler(
@@ -645,8 +971,8 @@ enum BodyCollectionError {
 
 fn versioned_routes_for_request(
     request: &NivasaRequest,
-    routes: &RouteDispatchRegistry<RouteHandler>,
-) -> RouteDispatchRegistry<RouteHandler> {
+    routes: &RouteDispatchRegistry<RouteHandlerBinding>,
+) -> RouteDispatchRegistry<RouteHandlerBinding> {
     let version = request
         .headers()
         .get("X-API-Version")
@@ -708,6 +1034,35 @@ fn finalize_response(response: NivasaResponse, cors: bool) -> Response<Full<Byte
         apply_cors_headers(response.headers_mut());
     }
     response
+}
+
+pub struct RouteMiddlewareBuilder {
+    builder: NivasaServerBuilder,
+    middleware: MiddlewareLayer,
+    excluded_paths: Vec<RoutePattern>,
+}
+
+impl RouteMiddlewareBuilder {
+    /// Exclude an exact request path from the middleware binding.
+    pub fn exclude(mut self, path: impl Into<String>) -> Result<Self, RouteRegistryError> {
+        let pattern = RoutePattern::static_path(path)?;
+        self.excluded_paths.push(pattern);
+        Ok(self)
+    }
+
+    /// Apply the middleware to one or more matched routes.
+    pub fn for_routes(
+        mut self,
+        path: impl Into<String>,
+    ) -> Result<NivasaServerBuilder, RouteRegistryError> {
+        let pattern = RoutePattern::parse(path)?;
+        self.builder.route_middlewares.push(RouteMiddlewareBinding {
+            pattern,
+            excluded_paths: self.excluded_paths,
+            middleware: self.middleware,
+        });
+        Ok(self.builder)
+    }
 }
 
 fn is_cors_preflight(headers: &HeaderMap, method: &Method) -> bool {
