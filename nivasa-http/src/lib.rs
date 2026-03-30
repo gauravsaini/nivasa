@@ -10,8 +10,12 @@ pub use http::header::HeaderMap;
 pub use server::{CorsOptions, GlobalFilterBinding};
 
 use async_trait::async_trait;
+#[cfg(feature = "compression-deflate")]
+use flate2::write::DeflateEncoder;
 #[cfg(feature = "compression-gzip")]
-use flate2::{write::GzEncoder, Compression};
+use flate2::write::GzEncoder;
+#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
+use flate2::Compression;
 use http::{
     header::{HeaderName, HeaderValue, CONTENT_TYPE},
     Method, Request, Response, StatusCode, Uri,
@@ -23,7 +27,6 @@ use nivasa_filters::{
 };
 use nivasa_routing::RoutePathCaptures;
 use serde::{de::DeserializeOwned, Serialize};
-use std::io::Write;
 use std::{
     convert::Infallible,
     fmt,
@@ -1304,43 +1307,89 @@ impl NivasaMiddleware for LoggerMiddleware {
     }
 }
 
-/// Middleware surface for gzip compression.
+/// Middleware surface for gzip and deflate compression.
 ///
-/// This stays intentionally tiny: if the request advertises gzip support and
-/// the response has a non-empty body, the body is compressed after
+/// This stays intentionally tiny: if the request advertises gzip or deflate
+/// support and the response has a non-empty body, the body is compressed after
 /// `next.run(...)` and the standard compression headers are updated.
-#[cfg(feature = "compression-gzip")]
+#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CompressionMiddleware;
 
-#[cfg(feature = "compression-gzip")]
+#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
 impl CompressionMiddleware {
-    /// Create a new gzip compression middleware.
+    /// Create a new compression middleware.
     pub fn new() -> Self {
         Self
     }
 }
 
-#[cfg(feature = "compression-gzip")]
+#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
 const COMPRESSION_ACCEPT_ENCODING_HEADER: &str = "accept-encoding";
-#[cfg(feature = "compression-gzip")]
-const COMPRESSION_CONTENT_ENCODING: &str = "gzip";
+#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompressionFormat {
+    #[cfg(feature = "compression-gzip")]
+    Gzip,
+    #[cfg(feature = "compression-deflate")]
+    Deflate,
+}
 
-#[cfg(feature = "compression-gzip")]
-fn accepts_gzip(request: &NivasaRequest) -> bool {
+#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
+fn accepts_compression(request: &NivasaRequest) -> Option<CompressionFormat> {
     request
         .header(COMPRESSION_ACCEPT_ENCODING_HEADER)
         .and_then(|value| value.to_str().ok())
-        .map(|value| {
-            value.split(',').any(|encoding| {
+        .and_then(|value| {
+            value.split(',').find_map(|encoding| {
                 let encoding = encoding.trim();
-                encoding == "*" || encoding.split(';').next().map(str::trim) == Some("gzip")
+                let encoding = encoding.split(';').next().map(str::trim).unwrap_or(encoding);
+
+                match encoding {
+                    "gzip" => {
+                        #[cfg(feature = "compression-gzip")]
+                        {
+                            Some(CompressionFormat::Gzip)
+                        }
+                        #[cfg(not(feature = "compression-gzip"))]
+                        {
+                            None
+                        }
+                    }
+                    "deflate" => {
+                        #[cfg(feature = "compression-deflate")]
+                        {
+                            Some(CompressionFormat::Deflate)
+                        }
+                        #[cfg(not(feature = "compression-deflate"))]
+                        {
+                            None
+                        }
+                    }
+                    "*" => {
+                        #[cfg(feature = "compression-gzip")]
+                        {
+                            Some(CompressionFormat::Gzip)
+                        }
+                        #[cfg(all(not(feature = "compression-gzip"), feature = "compression-deflate"))]
+                        {
+                            Some(CompressionFormat::Deflate)
+                        }
+                        #[cfg(all(
+                            not(feature = "compression-gzip"),
+                            not(feature = "compression-deflate")
+                        ))]
+                        {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
             })
         })
-        .unwrap_or(false)
 }
 
-#[cfg(feature = "compression-gzip")]
+#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
 fn append_vary_accept_encoding(headers: &mut HeaderMap) {
     use http::header::VARY;
 
@@ -1364,25 +1413,47 @@ fn append_vary_accept_encoding(headers: &mut HeaderMap) {
     }
 }
 
-#[cfg(feature = "compression-gzip")]
-fn compress_gzip_response(response: NivasaResponse) -> NivasaResponse {
+#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
+fn compress_response(response: NivasaResponse, format: CompressionFormat) -> NivasaResponse {
     if response.body().is_empty() {
         return response;
     }
 
     let inner = response.into_inner();
     let body = inner.body().clone().into_bytes();
-    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-    encoder
-        .write_all(&body)
-        .expect("gzip compression must succeed");
-    let compressed = encoder.finish().expect("gzip compression must finish");
+    let compressed = match format {
+        #[cfg(feature = "compression-gzip")]
+        CompressionFormat::Gzip => {
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            encoder
+                .write_all(&body)
+                .expect("gzip compression must succeed");
+            encoder.finish().expect("gzip compression must finish")
+        }
+        #[cfg(feature = "compression-deflate")]
+        CompressionFormat::Deflate => {
+            let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+            encoder
+                .write_all(&body)
+                .expect("deflate compression must succeed");
+            encoder
+                .finish()
+                .expect("deflate compression must finish")
+        }
+    };
+
+    let content_encoding = match format {
+        #[cfg(feature = "compression-gzip")]
+        CompressionFormat::Gzip => "gzip",
+        #[cfg(feature = "compression-deflate")]
+        CompressionFormat::Deflate => "deflate",
+    };
 
     let (mut parts, _) = inner.into_parts();
     parts.headers.remove(http::header::CONTENT_LENGTH);
     parts.headers.insert(
         http::header::CONTENT_ENCODING,
-        HeaderValue::from_static(COMPRESSION_CONTENT_ENCODING),
+        HeaderValue::from_static(content_encoding),
     );
     append_vary_accept_encoding(&mut parts.headers);
     parts.headers.insert(
@@ -1396,15 +1467,15 @@ fn compress_gzip_response(response: NivasaResponse) -> NivasaResponse {
     }
 }
 
-#[cfg(feature = "compression-gzip")]
+#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
 #[async_trait]
 impl NivasaMiddleware for CompressionMiddleware {
     async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
-        let accepts_gzip = accepts_gzip(&req);
+        let compression = accepts_compression(&req);
         let response = next.run(req).await;
 
-        if accepts_gzip {
-            compress_gzip_response(response)
+        if let Some(format) = compression {
+            compress_response(response, format)
         } else {
             response
         }

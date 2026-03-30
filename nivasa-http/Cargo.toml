@@ -9,6 +9,7 @@ license.workspace = true
 [features]
 default = []
 compression-gzip = ["dep:flate2"]
+compression-deflate = ["dep:flate2"]
 tls = ["dep:rustls", "dep:tokio-rustls"]
 
 [dependencies]
