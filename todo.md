@@ -554,7 +554,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.3.5 — Built-in Middleware
 - [ ] Implement `CorsMiddleware` (configurable origins, methods, headers, credentials)
 - [x] Implement `HelmetMiddleware` (security headers: CSP, HSTS, X-Frame-Options, etc.)
-- [ ] Implement `CompressionMiddleware` (gzip and deflate shipped; brotli remaining — feature-gated)
+- [x] Implement `CompressionMiddleware` (gzip, deflate, and brotli feature-gated)
 - [x] Implement `RequestIdMiddleware` (generate/propagate `X-Request-Id` header)
 - [x] Implement `LoggerMiddleware` (structured request logging via `tracing`)
 
@@ -600,7 +600,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `ParseFloatPipe` (parse string to `f32`/`f64`)
 - [x] Implement `ParseBoolPipe` (parse string to `bool`)
 - [x] Implement `ParseUuidPipe` (parse string to `Uuid`)
-- [ ] Implement `ParseEnumPipe` (parse string to enum variant)
+- [x] Implement `ParseEnumPipe` (parse string to enum variant)
 - [ ] Implement `DefaultValuePipe` (provide default if value is missing/null)
 - [x] Implement `TrimPipe` (trim whitespace from string values)
 
@@ -984,7 +984,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `ServerOptions` struct: `port`, `host`, `cors`, `global_prefix`, `versioning`
 - [x] Introduce `AppBootstrapConfig` boundary for server-only bootstrap config
 - [ ] Use `AppBootstrapConfig::global_prefix()` to prefix all routes during bootstrap
-- [ ] Implement `.use_global_guard(Guard)` — apply guard to all routes
+- [x] Implement `.use_global_guard(Guard)` — apply guard to all routes
 - [ ] Implement `.use_global_interceptor(Interceptor)` — apply interceptor globally
 - [ ] Implement `.use_global_pipe(Pipe)` — apply pipe globally (e.g., ValidationPipe)
 - [x] Implement `.use_global_filter(Filter)` — apply exception filter globally

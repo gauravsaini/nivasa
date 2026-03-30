@@ -369,6 +369,32 @@ fn bootstrap_config_can_forward_global_interceptors_via_alias_into_the_server_bu
 }
 
 #[test]
+fn bootstrap_config_can_forward_global_guards_into_the_server_builder() {
+    struct DemoGuard;
+
+    impl Guard for DemoGuard {
+        fn can_activate<'a>(&'a self, context: &'a GuardExecutionContext) -> GuardFuture<'a> {
+            let _request = context
+                .request::<NivasaRequest>()
+                .expect("guard context must include the request");
+
+            Box::pin(async move { Ok(true) })
+        }
+    }
+
+    fn assert_builder(_: NivasaServerBuilder) {}
+
+    let builder = nivasa::AppBootstrapConfig::default()
+        .use_global_guard(DemoGuard)
+        .route(nivasa_routing::RouteMethod::Get, "/health", |_| {
+            NivasaResponse::text("ok")
+        })
+        .expect("route registration should succeed");
+
+    assert_builder(builder);
+}
+
+#[test]
 fn bootstrap_config_can_forward_global_filters_into_the_server_builder() {
     struct DemoFilter;
 

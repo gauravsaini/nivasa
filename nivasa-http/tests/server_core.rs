@@ -15,13 +15,14 @@ use nivasa_http::{
     Json, NivasaRequest, NivasaResponse, NivasaServer,
 };
 use nivasa_macros::{controller, impl_controller};
+use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 use nivasa_routing::RouteMethod;
 use serde::Deserialize;
 use std::{
     error::Error,
     net::TcpListener as StdTcpListener,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     time::Duration,
@@ -72,6 +73,28 @@ impl RuntimeBodyController {
             Body::json(serde_json::json!({ "name": payload.name })),
         )
         .with_header("x-controller-runtime", "body")
+    }
+}
+
+#[derive(Clone)]
+struct DenyAllGuard {
+    calls: Arc<AtomicUsize>,
+}
+
+impl Guard for DenyAllGuard {
+    fn can_activate<'a>(&'a self, context: &'a GuardExecutionContext) -> GuardFuture<'a> {
+        let calls = Arc::clone(&self.calls);
+
+        Box::pin(async move {
+            calls.fetch_add(1, Ordering::SeqCst);
+
+            let request = context
+                .request::<NivasaRequest>()
+                .expect("guard context must expose the request");
+            assert!(request.path().starts_with("/guarded"));
+
+            Ok(false)
+        })
     }
 }
 
@@ -136,6 +159,68 @@ async fn server_dispatches_through_request_pipeline() -> Result<(), Box<dyn Erro
     drop(client);
     let _ = shutdown_tx.send(());
     timeout(std::time::Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_applies_global_guards_to_multiple_routes(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let guard_calls = Arc::new(AtomicUsize::new(0));
+    let handler_calls = Arc::new(AtomicUsize::new(0));
+
+    let first_handler_calls = Arc::clone(&handler_calls);
+    let second_handler_calls = Arc::clone(&handler_calls);
+
+    let server = NivasaServer::builder()
+        .use_global_guard(DenyAllGuard {
+            calls: Arc::clone(&guard_calls),
+        })
+        .route(RouteMethod::Get, "/guarded/one", move |_| {
+            first_handler_calls.fetch_add(1, Ordering::SeqCst);
+            NivasaResponse::text("one")
+        })
+        .expect("first guarded route must register")
+        .route(RouteMethod::Get, "/guarded/two", move |_| {
+            second_handler_calls.fetch_add(1, Ordering::SeqCst);
+            NivasaResponse::text("two")
+        })
+        .expect("second guarded route must register")
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Empty<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+
+    for path in ["/guarded/one", "/guarded/two"] {
+        let response = client
+            .get(format!("http://127.0.0.1:{port}{path}").parse()?)
+            .await?;
+        assert_eq!(response.status(), http::StatusCode::FORBIDDEN);
+
+        let body = response.into_body().collect().await?.to_bytes();
+        let body: serde_json::Value = serde_json::from_slice(&body)?;
+        assert_eq!(body["statusCode"], 403);
+        assert_eq!(body["error"], "Forbidden");
+        assert_eq!(body["message"], "request denied by guard");
+    }
+
+    assert_eq!(guard_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(handler_calls.load(Ordering::SeqCst), 0);
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
     Ok(())
 }
 

@@ -7,6 +7,7 @@
 use nivasa_common::HttpException;
 use nivasa_filters::{ExceptionFilter, ExceptionFilterMetadata};
 use nivasa_http::{NivasaMiddleware, NivasaResponse, NivasaServer, NivasaServerBuilder};
+use nivasa_guards::Guard;
 use nivasa_interceptors::Interceptor;
 
 /// Supported API versioning strategies.
@@ -240,6 +241,18 @@ impl AppBootstrapConfig {
         I: Interceptor<Response = nivasa_http::NivasaResponse> + Send + Sync + 'static,
     {
         self.use_interceptor(interceptor)
+    }
+
+    /// Register a single global guard at bootstrap time.
+    ///
+    /// This is a thin facade over the existing transport guard hook. It keeps
+    /// the bootstrap layer focused on configuration and leaves runtime guard
+    /// semantics to the HTTP layer.
+    pub fn use_global_guard<G>(&self, guard: G) -> NivasaServerBuilder
+    where
+        G: Guard + Send + Sync + 'static,
+    {
+        self.server_builder().use_global_guard(guard)
     }
 
     /// Register a single global exception filter at bootstrap time.

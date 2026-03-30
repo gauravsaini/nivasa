@@ -1,6 +1,6 @@
 use crate::{
-    Body, IntoResponse, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse,
-    RequestPipeline,
+    Body, GuardExecutionOutcome, IntoResponse, NextMiddleware, NivasaMiddleware, NivasaRequest,
+    NivasaResponse, RequestPipeline,
 };
 use bytes::{Bytes, BytesMut};
 use futures_util::FutureExt;
@@ -20,6 +20,7 @@ use nivasa_common::HttpException;
 use nivasa_common::RequestContext;
 use nivasa_filters::HttpExceptionSummary;
 use nivasa_filters::{ArgumentsHost, ExceptionFilter, ExceptionFilterMetadata};
+use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard};
 use nivasa_interceptors::{
     CallHandler, ExecutionContext as InterceptorExecutionContext, Interceptor,
 };
@@ -46,6 +47,7 @@ use tokio_rustls::TlsAcceptor;
 
 type RouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
 type MiddlewareLayer = Arc<dyn NivasaMiddleware + Send + Sync + 'static>;
+type GuardLayer = Arc<dyn Guard + Send + Sync + 'static>;
 type InterceptorLayer = Arc<dyn Interceptor<Response = NivasaResponse> + Send + Sync + 'static>;
 type GlobalFilterLayer =
     Arc<dyn ExceptionFilter<HttpException, NivasaResponse> + Send + Sync + 'static>;
@@ -255,6 +257,7 @@ pub struct NivasaServer {
     middleware: Option<MiddlewareLayer>,
     module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
+    global_guards: Vec<GuardLayer>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
     cors: Option<CorsOptions>,
@@ -271,6 +274,7 @@ pub struct NivasaServerBuilder {
     middleware: Option<MiddlewareLayer>,
     module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
+    global_guards: Vec<GuardLayer>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
     cors: Option<CorsOptions>,
@@ -296,6 +300,7 @@ impl NivasaServer {
         let middleware = self.middleware;
         let module_middlewares = self.module_middlewares;
         let route_middlewares = self.route_middlewares;
+        let global_guards = self.global_guards;
         let interceptors = self.interceptors;
         let global_filters = self.global_filters;
         let cors = self.cors;
@@ -316,6 +321,7 @@ impl NivasaServer {
                     let middleware = middleware.clone();
                     let module_middlewares = module_middlewares.clone();
                     let route_middlewares = route_middlewares.clone();
+                    let global_guards = global_guards.clone();
                     let interceptors = interceptors.clone();
                     let global_filters_for_connection = global_filters.clone();
                     let cors = cors.clone();
@@ -333,6 +339,7 @@ impl NivasaServer {
                                     middleware,
                                     module_middlewares,
                                     route_middlewares,
+                                    global_guards,
                                     interceptors,
                                     global_filters_for_connection,
                                     cors,
@@ -350,6 +357,7 @@ impl NivasaServer {
                             middleware,
                             module_middlewares,
                             route_middlewares,
+                            global_guards,
                             interceptors,
                             global_filters_for_connection,
                             cors,
@@ -374,6 +382,7 @@ impl NivasaServerBuilder {
             middleware: None,
             module_middlewares: Vec::new(),
             route_middlewares: Vec::new(),
+            global_guards: Vec::new(),
             interceptors: Vec::new(),
             global_filters: Vec::new(),
             cors: None,
@@ -499,6 +508,15 @@ impl NivasaServerBuilder {
         self
     }
 
+    /// Register a single guard hook around matched route handling.
+    pub fn use_global_guard<G>(mut self, guard: G) -> Self
+    where
+        G: Guard + Send + Sync + 'static,
+    {
+        self.global_guards.push(Arc::new(guard));
+        self
+    }
+
     /// Start configuring middleware for one or more matched routes.
     pub fn apply<M>(self, middleware: M) -> RouteMiddlewareBuilder
     where
@@ -577,6 +595,7 @@ impl NivasaServerBuilder {
             middleware: self.middleware,
             module_middlewares: self.module_middlewares,
             route_middlewares: self.route_middlewares,
+            global_guards: self.global_guards,
             interceptors: self.interceptors,
             global_filters: self.global_filters,
             cors: self.cors,
@@ -595,6 +614,7 @@ async fn serve_connection<S>(
     middleware: Option<MiddlewareLayer>,
     module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
+    global_guards: Vec<GuardLayer>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
     cors: Option<CorsOptions>,
@@ -609,6 +629,7 @@ async fn serve_connection<S>(
         let middleware = middleware.clone();
         let module_middlewares = module_middlewares.clone();
         let route_middlewares = route_middlewares.clone();
+        let global_guards = global_guards.clone();
         let interceptors = interceptors.clone();
         let global_filters = global_filters.clone();
         let cors = cors.clone();
@@ -624,6 +645,7 @@ async fn serve_connection<S>(
                         middleware,
                         module_middlewares,
                         route_middlewares,
+                        global_guards,
                         interceptors,
                         global_filters,
                         cors.clone(),
@@ -650,6 +672,7 @@ async fn serve_connection<S>(
                     middleware,
                     module_middlewares,
                     route_middlewares,
+                    global_guards,
                     interceptors,
                     global_filters,
                     cors.clone(),
@@ -670,6 +693,7 @@ async fn handle_request(
     middleware: Option<MiddlewareLayer>,
     module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
+    global_guards: Vec<GuardLayer>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
     cors: Option<CorsOptions>,
@@ -827,11 +851,56 @@ async fn handle_request(
                     ));
                 }
             };
+            let guard_context = GuardExecutionContext::new(request.clone());
+            let guard_refs = global_guards
+                .iter()
+                .map(|guard| guard.as_ref() as &dyn Guard)
+                .collect::<Vec<_>>();
+
+            match pipeline.evaluate_guard_chain(&guard_refs, &guard_context).await {
+                Ok(GuardExecutionOutcome::Passed) => {}
+                Ok(GuardExecutionOutcome::Denied) => {
+                    return Ok(finalize_response(
+                        HttpExceptionSummary::from(&HttpException::forbidden(
+                            "request denied by guard",
+                        ))
+                        .into_response(),
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        request_id.as_deref(),
+                    ));
+                }
+                Ok(GuardExecutionOutcome::Error(error)) => {
+                    return Ok(finalize_response(
+                        handle_http_exception(
+                            error,
+                            &binding.handler_filters,
+                            &binding.controller_filters,
+                            &global_filters,
+                            pipeline.request(),
+                        )
+                        .await,
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        request_id.as_deref(),
+                    ));
+                }
+                Err(_) => {
+                    return Ok(finalize_response(
+                        NivasaResponse::new(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Body::text("request pipeline guard transition failed"),
+                        ),
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        request_id.as_deref(),
+                    ));
+                }
+            }
             match interceptors.is_empty() {
                 false => match execute_interceptors(interceptors, request, handler).await {
                     InterceptorExecution::Completed(response) => {
-                        if pipeline.pass_guards().is_err()
-                            || pipeline.complete_interceptors_pre().is_err()
+                        if pipeline.complete_interceptors_pre().is_err()
                             || pipeline.complete_pipes().is_err()
                             || pipeline.complete_handler().is_err()
                             || pipeline.complete_interceptors_post().is_err()
@@ -849,8 +918,7 @@ async fn handle_request(
                         }
                     }
                     InterceptorExecution::ShortCircuited(response) => {
-                        if pipeline.pass_guards().is_err()
-                            || pipeline.fail_interceptors_pre().is_err()
+                        if pipeline.fail_interceptors_pre().is_err()
                         {
                             NivasaResponse::new(
                                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -867,9 +935,7 @@ async fn handle_request(
                         error,
                         handler_called,
                     } => {
-                        let transition_failed = if pipeline.pass_guards().is_err() {
-                            true
-                        } else if handler_called {
+                        let transition_failed = if handler_called {
                             pipeline.complete_interceptors_pre().is_err()
                                 || pipeline.complete_pipes().is_err()
                                 || pipeline.complete_handler().is_err()
