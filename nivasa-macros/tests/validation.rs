@@ -55,6 +55,12 @@ struct BioForm {
     bio: String,
 }
 
+#[derive(Dto)]
+struct SessionForm {
+    #[is_uuid]
+    session_id: String,
+}
+
 #[test]
 fn dto_validation_accepts_valid_input() {
     let form = SignupForm {
@@ -172,5 +178,29 @@ fn dto_validation_applies_max_length_rules() {
     assert_eq!(
         errors.errors()[0].constraints.get("max_length"),
         Some(&"must be at most 12 characters".to_string())
+    );
+}
+
+#[test]
+fn dto_validation_accepts_uuid_fields() {
+    let form = SessionForm {
+        session_id: "550e8400-e29b-41d4-a716-446655440000".into(),
+    };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_rejects_invalid_uuid_fields() {
+    let form = SessionForm {
+        session_id: "not-a-uuid".into(),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "session_id");
+    assert_eq!(
+        errors.errors()[0].constraints.get("is_uuid"),
+        Some(&"must be a valid UUID".to_string())
     );
 }

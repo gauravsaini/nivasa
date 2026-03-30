@@ -86,6 +86,16 @@ fn build_field_checks(field: &Field) -> Result<Vec<proc_macro2::TokenStream>> {
             ensure_int_type(field, attr)?;
         } else if attr.path().is_ident("is_boolean") {
             ensure_boolean_type(field, attr)?;
+        } else if attr.path().is_ident("is_uuid") {
+            ensure_uuid_type(field, attr)?;
+            checks.push(quote! {
+                if ::uuid::Uuid::parse_str(&#field_access).is_err() {
+                    errors.push(
+                        nivasa_validation::ValidationError::new(#field_label)
+                            .with_constraint("is_uuid", "must be a valid UUID"),
+                    );
+                }
+            });
         } else if attr.path().is_ident("validate_nested") {
             checks.push(build_nested_validation_check(field, attr)?);
         } else if attr.path().is_ident("min_length") {
@@ -197,6 +207,17 @@ fn ensure_boolean_type(field: &Field, attr: &Attribute) -> Result<()> {
         Err(Error::new(
             attr.span(),
             "expected a bool field for `#[is_boolean]`",
+        ))
+    }
+}
+
+fn ensure_uuid_type(field: &Field, attr: &Attribute) -> Result<()> {
+    if is_string_like_type(&field.ty) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            attr.span(),
+            "expected a string field for `#[is_uuid]`",
         ))
     }
 }
