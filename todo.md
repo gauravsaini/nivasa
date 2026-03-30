@@ -623,7 +623,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `#[is_string]` — validate is string type
 - [ ] Implement `#[is_number]` — validate is numeric type
 - [ ] Implement `#[is_int]` — validate is integer
-- [ ] Implement `#[is_boolean]` — validate is boolean
+- [x] Implement `#[is_boolean]` — validate is boolean
 - [ ] Implement `#[min(n)]` — minimum value (for numbers)
 - [ ] Implement `#[max(n)]` — maximum value (for numbers)
 - [x] Implement `#[min_length(n)]` — minimum string/array length
@@ -655,6 +655,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 4.2.4 — Validation Tests
 - [x] Test `#[is_email]` with valid and invalid emails
 - [x] Test `#[is_string]` with valid string inputs and invalid non-string fields
+- [x] Test `#[is_boolean]` with valid bool inputs and invalid non-bool fields
 - [x] Test `#[min_length(6)]` on password field
 - [x] Test `#[max_length(12)]` on bio field
 - [x] Test multiple validation errors returned together

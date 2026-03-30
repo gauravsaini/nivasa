@@ -16,6 +16,26 @@ struct ProfileForm {
 }
 
 #[derive(Dto)]
+struct ContactDetails {
+    #[is_email]
+    email: String,
+    #[min_length(6)]
+    password: String,
+}
+
+#[derive(Dto)]
+struct AccountForm {
+    #[validate_nested]
+    contact: ContactDetails,
+}
+
+#[derive(Dto)]
+struct FeatureFlags {
+    #[is_boolean]
+    enabled: bool,
+}
+
+#[derive(Dto)]
 struct BioForm {
     #[max_length(12)]
     bio: String,
@@ -57,6 +77,48 @@ fn dto_validation_accepts_string_fields() {
     let form = ProfileForm {
         display_name: "Alice".into(),
     };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_collects_nested_field_errors_with_prefixes() {
+    let form = AccountForm {
+        contact: ContactDetails {
+            email: "not-an-email".into(),
+            password: "123".into(),
+        },
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 2);
+    assert_eq!(errors.errors()[0].field, "contact.email");
+    assert_eq!(
+        errors.errors()[0].constraints.get("is_email"),
+        Some(&"must be a valid email".to_string())
+    );
+    assert_eq!(errors.errors()[1].field, "contact.password");
+    assert_eq!(
+        errors.errors()[1].constraints.get("min_length"),
+        Some(&"must be at least 6 characters".to_string())
+    );
+}
+
+#[test]
+fn dto_validation_accepts_nested_valid_input() {
+    let form = AccountForm {
+        contact: ContactDetails {
+            email: "alice@example.com".into(),
+            password: "secret1".into(),
+        },
+    };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_accepts_boolean_fields() {
+    let form = FeatureFlags { enabled: true };
 
     assert!(form.validate().is_ok());
 }
