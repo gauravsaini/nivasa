@@ -29,6 +29,8 @@ tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tower = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
 rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std"] }
 tokio-rustls = { version = "0.26", optional = true }
 
@@ -37,3 +39,4 @@ nivasa-core = { path = "../nivasa-core" }
 nivasa-macros = { path = "../nivasa-macros" }
 rustls-pemfile = "2"
 tower-http = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt"] }

@@ -555,12 +555,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `CorsMiddleware` (configurable origins, methods, headers, credentials)
 - [ ] Implement `HelmetMiddleware` (security headers: CSP, HSTS, X-Frame-Options, etc.)
 - [ ] Implement `CompressionMiddleware` (gzip, brotli, deflate — feature-gated)
-- [ ] Implement `RequestIdMiddleware` (generate/propagate `X-Request-Id` header)
-- [ ] Implement `LoggerMiddleware` (structured request logging via `tracing`)
+- [x] Implement `RequestIdMiddleware` (generate/propagate `X-Request-Id` header)
+- [x] Implement `LoggerMiddleware` (structured request logging via `tracing`)
 
 #### 3.3.6 — Middleware Tests
 - [x] Test global middleware runs on every request
-- [ ] Test module-level middleware runs only for that module's routes
+- [x] Test module-level middleware runs only for that module's routes
 - [x] Test middleware ordering (global before module before route)
 - [ ] Test richer CORS middleware/CorsOptions integration adds correct headers
 - [x] Test middleware exclusion (`.exclude()`)
@@ -986,7 +986,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `.use_global_pipe(Pipe)` — apply pipe globally (e.g., ValidationPipe)
 - [x] Implement `.use_global_filter(Filter)` — apply exception filter globally
 - [x] Implement `.enable_cors()` — minimal transport-side CORS bridge on `ServerOptions`; richer middleware/CorsOptions work remains future
-- [ ] Implement `.enable_versioning(VersioningOptions)` — API versioning config
+- [x] Implement `.enable_versioning(VersioningOptions)` — API versioning config
 - [x] Implement `.use_(Middleware)` — apply global middleware (bootstrap-only facade via `AppBootstrapConfig::use_middleware(...)`)
 - [ ] Implement startup banner with ASCII art + version
 - [ ] Implement startup logging: routes registered, modules loaded, listen address

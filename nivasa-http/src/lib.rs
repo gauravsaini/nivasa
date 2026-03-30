@@ -31,6 +31,7 @@ use std::{
 };
 use tokio::sync::Mutex;
 use tower::{Layer, Service};
+use uuid::Uuid;
 
 /// Minimal response/request body abstraction for the HTTP wrapper layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1267,10 +1268,64 @@ where
     }
 }
 
+/// Middleware surface for structured request logging.
+///
+/// This stays intentionally tiny: one log event around `next.run(...)` and no
+/// change to the request/response flow.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LoggerMiddleware;
+
+impl LoggerMiddleware {
+    /// Create a new logging middleware.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[async_trait]
+impl NivasaMiddleware for LoggerMiddleware {
+    async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
+        let method = req.method().clone();
+        let path = req.path().to_owned();
+        let response = next.run(req).await;
+
+        tracing::info!(
+            method = %method,
+            path = %path,
+            status = response.status().as_u16(),
+            "request completed"
+        );
+
+        response
+    }
+}
+
 /// Middleware surface for request pre-processing and delegation.
 ///
 /// This is intentionally just the foundational trait and continuation handle.
 /// Full middleware registration and SCXML-driven execution wiring land later.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RequestIdMiddleware;
+
+impl RequestIdMiddleware {
+    /// Create a new request-id middleware.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+const REQUEST_ID_HEADER: &str = "x-request-id";
+
+fn resolve_request_id(request: &NivasaRequest) -> String {
+    request
+        .header(REQUEST_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| Uuid::new_v4().to_string())
+}
+
 #[async_trait]
 pub trait NivasaMiddleware: Send + Sync {
     async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse;
@@ -1284,6 +1339,18 @@ where
 {
     async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
         (self)(req, next).await
+    }
+}
+
+#[async_trait]
+impl NivasaMiddleware for RequestIdMiddleware {
+    async fn use_(&self, mut req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
+        let request_id = resolve_request_id(&req);
+        req.set_header(REQUEST_ID_HEADER, &request_id);
+
+        next.run(req)
+            .await
+            .with_header(REQUEST_ID_HEADER, request_id)
     }
 }
 
