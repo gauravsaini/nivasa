@@ -49,8 +49,6 @@ type MiddlewareLayer = Arc<dyn NivasaMiddleware + Send + Sync + 'static>;
 type InterceptorLayer = Arc<dyn Interceptor<Response = NivasaResponse> + Send + Sync + 'static>;
 type GlobalFilterLayer =
     Arc<dyn ExceptionFilter<HttpException, NivasaResponse> + Send + Sync + 'static>;
-type MiddlewareTerminalFuture = Pin<Box<dyn Future<Output = NivasaResponse> + Send>>;
-type MiddlewareTerminal = Arc<dyn Fn(NivasaRequest) -> MiddlewareTerminalFuture + Send + Sync>;
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
@@ -751,10 +749,7 @@ async fn handle_request(
 }
 
 enum MiddlewareExecution {
-    Forwarded {
-        request: NivasaRequest,
-        response: NivasaResponse,
-    },
+    Forwarded(NivasaRequest),
     ShortCircuited {
         request: NivasaRequest,
         response: NivasaResponse,
@@ -862,36 +857,6 @@ async fn execute_middleware(
 
     match forwarded_request {
         Some(request) => MiddlewareExecution::Forwarded(request),
-        None => MiddlewareExecution::ShortCircuited {
-            request: original_request,
-            response,
-        },
-    }
-}
-
-async fn execute_middleware_with_terminal(
-    middleware: MiddlewareLayer,
-    request: NivasaRequest,
-    terminal: MiddlewareTerminal,
-) -> MiddlewareExecution {
-    let forwarded_request = Arc::new(tokio::sync::Mutex::new(None));
-    let capture = Arc::clone(&forwarded_request);
-    let terminal = Arc::clone(&terminal);
-    let next = NextMiddleware::new(move |request: NivasaRequest| {
-        let capture = Arc::clone(&capture);
-        let terminal = Arc::clone(&terminal);
-        async move {
-            *capture.lock().await = Some(request.clone());
-            terminal(request).await
-        }
-    });
-
-    let original_request = request.clone();
-    let response = middleware.use_(request, next).await;
-    let forwarded_request = forwarded_request.lock().await.take();
-
-    match forwarded_request {
-        Some(request) => MiddlewareExecution::Forwarded { request, response },
         None => MiddlewareExecution::ShortCircuited {
             request: original_request,
             response,
