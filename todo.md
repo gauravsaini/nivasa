@@ -598,7 +598,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `ValidationPipe` (validate DTO fields, return 400 with error details)
 - [x] Implement `ParseIntPipe` (parse string to `i32`/`i64`, 400 on failure)
 - [x] Implement `ParseFloatPipe` (parse string to `f32`/`f64`)
-- [ ] Implement `ParseBoolPipe` (parse string to `bool`)
+- [x] Implement `ParseBoolPipe` (parse string to `bool`)
 - [ ] Implement `ParseUuidPipe` (parse string to `Uuid`)
 - [ ] Implement `ParseEnumPipe` (parse string to enum variant)
 - [ ] Implement `DefaultValuePipe` (provide default if value is missing/null)
@@ -609,6 +609,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test ParseIntPipe with "abc" → 400 with message
 - [x] Test ParseFloatPipe with valid input → returns f32/f64
 - [x] Test ParseFloatPipe with "not-a-float" → 400 with message
+- [x] Test ParseBoolPipe with valid/invalid input
 - [ ] Test ValidationPipe with valid DTO → passes through
 - [ ] Test ValidationPipe with invalid DTO → 400 with field-level errors
 - [ ] Test pipe chaining (TrimPipe → ValidationPipe)

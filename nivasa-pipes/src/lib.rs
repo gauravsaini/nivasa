@@ -8,6 +8,7 @@ use std::any::TypeId;
 use std::marker::PhantomData;
 use std::num::ParseFloatError;
 use std::num::ParseIntError;
+use std::str::ParseBoolError;
 
 /// Metadata passed into a pipe for the current argument.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,6 +116,33 @@ impl ParseFloatTarget for f64 {
     }
 }
 
+/// Parse a JSON string into a boolean value.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ParseBoolPipe;
+
+impl ParseBoolPipe {
+    /// Create a new boolean parser.
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Pipe for ParseBoolPipe {
+    fn transform(&self, value: Value, _metadata: ArgumentMetadata) -> Result<Value, HttpException> {
+        let input = value
+            .as_str()
+            .ok_or_else(|| HttpException::bad_request("ParseBoolPipe expects a string value"))?;
+
+        let parsed = input.parse::<bool>().map_err(|_error: ParseBoolError| {
+            HttpException::bad_request(format!(
+                "ParseBoolPipe could not parse `{input}` as a boolean"
+            ))
+        })?;
+
+        Ok(Value::from(parsed))
+    }
+}
+
 /// Parse a JSON string into an integer value.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ParseIntPipe<T = i64> {
@@ -135,12 +163,14 @@ where
     T: ParseIntTarget,
 {
     fn transform(&self, value: Value, _metadata: ArgumentMetadata) -> Result<Value, HttpException> {
-        let input = value.as_str().ok_or_else(|| {
-            HttpException::bad_request("ParseIntPipe expects a string value")
-        })?;
+        let input = value
+            .as_str()
+            .ok_or_else(|| HttpException::bad_request("ParseIntPipe expects a string value"))?;
 
         let parsed = T::parse(input).map_err(|_| {
-            HttpException::bad_request(format!("ParseIntPipe could not parse `{input}` as an integer"))
+            HttpException::bad_request(format!(
+                "ParseIntPipe could not parse `{input}` as an integer"
+            ))
         })?;
 
         Ok(T::into_value(parsed))
@@ -167,9 +197,9 @@ where
     T: ParseFloatTarget,
 {
     fn transform(&self, value: Value, _metadata: ArgumentMetadata) -> Result<Value, HttpException> {
-        let input = value.as_str().ok_or_else(|| {
-            HttpException::bad_request("ParseFloatPipe expects a string value")
-        })?;
+        let input = value
+            .as_str()
+            .ok_or_else(|| HttpException::bad_request("ParseFloatPipe expects a string value"))?;
 
         let parsed = T::parse(input).map_err(|_| {
             HttpException::bad_request(format!(
@@ -253,7 +283,9 @@ mod tests {
     fn parse_int_pipe_rejects_non_integer_input() {
         let pipe = ParseIntPipe::<i64>::new();
 
-        let error = pipe.transform(json!("abc"), ArgumentMetadata::new(2)).unwrap_err();
+        let error = pipe
+            .transform(json!("abc"), ArgumentMetadata::new(2))
+            .unwrap_err();
 
         assert_eq!(error.status_code, 400);
         assert_eq!(
@@ -283,12 +315,44 @@ mod tests {
     fn parse_float_pipe_rejects_non_float_input() {
         let pipe = ParseFloatPipe::<f64>::new();
 
-        let error = pipe.transform(json!("not-a-float"), ArgumentMetadata::new(4)).unwrap_err();
+        let error = pipe
+            .transform(json!("not-a-float"), ArgumentMetadata::new(4))
+            .unwrap_err();
 
         assert_eq!(error.status_code, 400);
         assert_eq!(
             error.message,
             "ParseFloatPipe could not parse `not-a-float` as a float"
+        );
+    }
+
+    #[test]
+    fn parse_bool_pipe_transforms_boolean_strings() {
+        let pipe = ParseBoolPipe::new();
+        let metadata = ArgumentMetadata::new(0);
+
+        assert_eq!(
+            pipe.transform(json!("true"), metadata.clone()).unwrap(),
+            json!(true)
+        );
+        assert_eq!(
+            pipe.transform(json!("false"), metadata).unwrap(),
+            json!(false)
+        );
+    }
+
+    #[test]
+    fn parse_bool_pipe_rejects_non_boolean_input() {
+        let pipe = ParseBoolPipe::new();
+
+        let error = pipe
+            .transform(json!("definitely-not-bool"), ArgumentMetadata::new(5))
+            .unwrap_err();
+
+        assert_eq!(error.status_code, 400);
+        assert_eq!(
+            error.message,
+            "ParseBoolPipe could not parse `definitely-not-bool` as a boolean"
         );
     }
 }
