@@ -260,6 +260,51 @@ impl Pipe for ParseUuidPipe {
     }
 }
 
+/// Supported enum targets for [`ParseEnumPipe`].
+pub trait ParseEnumTarget: Send + Sync + 'static {
+    fn parse(input: &str) -> Result<Self, String>
+    where
+        Self: Sized;
+
+    fn into_value(value: Self) -> Value
+    where
+        Self: Sized;
+}
+
+/// Parse a JSON string into an enum-like value.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ParseEnumPipe<T> {
+    _marker: PhantomData<T>,
+}
+
+impl<T> ParseEnumPipe<T> {
+    /// Create a new enum parser.
+    pub const fn new() -> Self {
+        Self {
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T> Pipe for ParseEnumPipe<T>
+where
+    T: ParseEnumTarget,
+{
+    fn transform(&self, value: Value, _metadata: ArgumentMetadata) -> Result<Value, HttpException> {
+        let input = value
+            .as_str()
+            .ok_or_else(|| HttpException::bad_request("ParseEnumPipe expects a string value"))?;
+
+        let parsed = T::parse(input).map_err(|reason| {
+            HttpException::bad_request(format!(
+                "ParseEnumPipe could not parse `{input}` as an enum variant: {reason}"
+            ))
+        })?;
+
+        Ok(T::into_value(parsed))
+    }
+}
+
 /// Compose two pipes and run them left to right.
 ///
 /// This is a reusable sequencing primitive for future `#[pipe(...)]` support.
@@ -553,6 +598,63 @@ mod tests {
         assert_eq!(
             non_string_error.message,
             "ParseUuidPipe expects a string value"
+        );
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum AccessLevel {
+        Admin,
+        Reader,
+    }
+
+    impl ParseEnumTarget for AccessLevel {
+        fn parse(input: &str) -> Result<Self, String> {
+            match input.to_ascii_lowercase().as_str() {
+                "admin" | "administrator" => Ok(Self::Admin),
+                "reader" | "read" => Ok(Self::Reader),
+                other => Err(format!("unknown access level `{other}`")),
+            }
+        }
+
+        fn into_value(value: Self) -> Value {
+            match value {
+                Self::Admin => Value::from("admin"),
+                Self::Reader => Value::from("reader"),
+            }
+        }
+    }
+
+    #[test]
+    fn parse_enum_pipe_transforms_string_values_into_enum_variants() {
+        let pipe = ParseEnumPipe::<AccessLevel>::new();
+
+        assert_eq!(
+            pipe.transform(json!("ADMINISTRATOR"), ArgumentMetadata::new(11))
+                .unwrap(),
+            json!("admin")
+        );
+    }
+
+    #[test]
+    fn parse_enum_pipe_rejects_invalid_and_non_string_input() {
+        let pipe = ParseEnumPipe::<AccessLevel>::new();
+
+        let invalid_enum_error = pipe
+            .transform(json!("guest"), ArgumentMetadata::new(12))
+            .unwrap_err();
+        assert_eq!(invalid_enum_error.status_code, 400);
+        assert_eq!(
+            invalid_enum_error.message,
+            "ParseEnumPipe could not parse `guest` as an enum variant: unknown access level `guest`"
+        );
+
+        let non_string_error = pipe
+            .transform(json!(false), ArgumentMetadata::new(13))
+            .unwrap_err();
+        assert_eq!(non_string_error.status_code, 400);
+        assert_eq!(
+            non_string_error.message,
+            "ParseEnumPipe expects a string value"
         );
     }
 
