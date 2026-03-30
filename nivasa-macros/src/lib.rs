@@ -73,7 +73,7 @@ pub fn scxml_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
     scxml_handler::scxml_handler_impl(_attr, item)
 }
 
-#[proc_macro_derive(Dto, attributes(is_email, min_length))]
+#[proc_macro_derive(Dto, attributes(is_email, is_string, min_length))]
 pub fn dto(input: TokenStream) -> TokenStream {
     validation::dto_impl(input)
 }

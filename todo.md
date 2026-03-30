@@ -620,7 +620,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 4.2.1 — Validation Decorators (Attribute Macros)
 - [x] Implement `#[is_email]` — validate email format
-- [ ] Implement `#[is_string]` — validate is string type
+- [x] Implement `#[is_string]` — validate is string type
 - [ ] Implement `#[is_number]` — validate is numeric type
 - [ ] Implement `#[is_int]` — validate is integer
 - [ ] Implement `#[is_boolean]` — validate is boolean
@@ -654,6 +654,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 4.2.4 — Validation Tests
 - [x] Test `#[is_email]` with valid and invalid emails
+- [x] Test `#[is_string]` with valid string inputs and invalid non-string fields
 - [x] Test `#[min_length(6)]` on password field
 - [x] Test multiple validation errors returned together
 - [ ] Test nested DTO validation

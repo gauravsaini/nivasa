@@ -3,7 +3,7 @@ use quote::quote;
 use syn::{
     parse_macro_input,
     spanned::Spanned,
-    Attribute, Data, DeriveInput, Error, Field, Fields, LitInt, LitStr, Result,
+    Attribute, Data, DeriveInput, Error, Field, Fields, LitInt, LitStr, Result, Type,
 };
 
 pub fn dto_impl(input: TokenStream) -> TokenStream {
@@ -78,6 +78,8 @@ fn build_field_checks(field: &Field) -> Result<Vec<proc_macro2::TokenStream>> {
                     );
                 }
             });
+        } else if attr.path().is_ident("is_string") {
+            ensure_string_type(field, attr)?;
         } else if attr.path().is_ident("min_length") {
             let min_length = parse_min_length(attr)?;
             let min_length_lit = LitInt::new(&min_length.to_string(), attr.span());
@@ -98,6 +100,32 @@ fn build_field_checks(field: &Field) -> Result<Vec<proc_macro2::TokenStream>> {
     }
 
     Ok(checks)
+}
+
+fn ensure_string_type(field: &Field, attr: &Attribute) -> Result<()> {
+    if is_string_like_type(&field.ty) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            attr.span(),
+            "expected a string field for `#[is_string]`",
+        ))
+    }
+}
+
+fn is_string_like_type(ty: &Type) -> bool {
+    match ty {
+        Type::Path(path) => path
+            .path
+            .segments
+            .last()
+            .map(|segment| segment.ident == "String" || segment.ident == "str")
+            .unwrap_or(false),
+        Type::Reference(reference) => is_string_like_type(reference.elem.as_ref()),
+        Type::Group(group) => is_string_like_type(group.elem.as_ref()),
+        Type::Paren(paren) => is_string_like_type(paren.elem.as_ref()),
+        _ => false,
+    }
 }
 
 fn parse_min_length(attr: &Attribute) -> Result<usize> {

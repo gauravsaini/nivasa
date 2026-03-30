@@ -9,6 +9,12 @@ struct SignupForm {
     password: String,
 }
 
+#[derive(Dto)]
+struct ProfileForm {
+    #[is_string]
+    display_name: String,
+}
+
 #[test]
 fn dto_validation_accepts_valid_input() {
     let form = SignupForm {
@@ -38,4 +44,13 @@ fn dto_validation_collects_multiple_field_errors() {
         errors.errors()[1].constraints.get("min_length"),
         Some(&"must be at least 6 characters".to_string())
     );
+}
+
+#[test]
+fn dto_validation_accepts_string_fields() {
+    let form = ProfileForm {
+        display_name: "Alice".into(),
+    };
+
+    assert!(form.validate().is_ok());
 }
