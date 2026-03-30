@@ -549,7 +549,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement adapter: `Tower Service<Request> → NivasaMiddleware`
 - [x] Implement adapter: `NivasaMiddleware → Tower Layer`
 - [x] Test wrapping a Tower middleware (e.g., `tower-http::cors`) for future Nivasa middleware support
-- [ ] Document how to use existing Tower ecosystem middleware
+- [x] Document how to use existing Tower ecosystem middleware
 
 #### 3.3.5 — Built-in Middleware
 - [ ] Implement `CorsMiddleware` (configurable origins, methods, headers, credentials)
