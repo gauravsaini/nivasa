@@ -361,6 +361,22 @@ fn bootstrap_config_can_forward_global_filters_into_the_server_builder() {
     assert_builder(builder);
 }
 
+#[test]
+fn bootstrap_config_can_enable_versioning_without_runtime_wiring() {
+    let versioning = VersioningOptions::builder(VersioningStrategy::MediaType)
+        .default_version(" /v2/ ")
+        .build();
+
+    let bootstrap = nivasa::AppBootstrapConfig::default().enable_versioning(versioning.clone());
+
+    assert_eq!(bootstrap.versioning(), Some(&versioning));
+    assert_eq!(
+        bootstrap.versioning().and_then(|options| options.default_version.as_deref()),
+        Some("v2")
+    );
+    assert_eq!(bootstrap.server.versioning, Some(versioning));
+}
+
 #[cfg(feature = "config")]
 #[test]
 #[allow(unused_imports)]

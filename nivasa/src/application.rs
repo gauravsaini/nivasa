@@ -184,6 +184,15 @@ impl AppBootstrapConfig {
         self.server.versioning.as_ref()
     }
 
+    /// Attach versioning configuration at bootstrap time.
+    ///
+    /// This keeps versioning as pure configuration on the bootstrap boundary
+    /// and does not add any new transport/runtime dispatch behavior.
+    pub fn enable_versioning(mut self, versioning: VersioningOptions) -> Self {
+        self.server = self.server.with_versioning(versioning);
+        self
+    }
+
     /// Adapt app bootstrap config into the existing transport builder.
     ///
     /// This stays limited to bootstrap-owned transport flags. Route prefixing,
