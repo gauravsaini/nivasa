@@ -553,7 +553,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 3.3.5 — Built-in Middleware
 - [ ] Implement `CorsMiddleware` (configurable origins, methods, headers, credentials)
-- [ ] Implement `HelmetMiddleware` (security headers: CSP, HSTS, X-Frame-Options, etc.)
+- [x] Implement `HelmetMiddleware` (security headers: CSP, HSTS, X-Frame-Options, etc.)
 - [ ] Implement `CompressionMiddleware` (gzip, brotli, deflate — feature-gated)
 - [x] Implement `RequestIdMiddleware` (generate/propagate `X-Request-Id` header)
 - [x] Implement `LoggerMiddleware` (structured request logging via `tracing`)

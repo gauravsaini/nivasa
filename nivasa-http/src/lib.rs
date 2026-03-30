@@ -1300,6 +1300,40 @@ impl NivasaMiddleware for LoggerMiddleware {
     }
 }
 
+/// Middleware surface for conservative security response headers.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HelmetMiddleware;
+
+impl HelmetMiddleware {
+    /// Create a new security-header middleware.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+const HELMET_CONTENT_SECURITY_POLICY: &str =
+    "default-src 'self'; base-uri 'self'; frame-ancestors 'none'";
+const HELMET_REFERRER_POLICY: &str = "no-referrer";
+const HELMET_STRICT_TRANSPORT_SECURITY: &str = "max-age=31536000; includeSubDomains";
+const HELMET_X_CONTENT_TYPE_OPTIONS: &str = "nosniff";
+const HELMET_X_FRAME_OPTIONS: &str = "DENY";
+
+#[async_trait]
+impl NivasaMiddleware for HelmetMiddleware {
+    async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
+        next.run(req)
+            .await
+            .with_header("content-security-policy", HELMET_CONTENT_SECURITY_POLICY)
+            .with_header("referrer-policy", HELMET_REFERRER_POLICY)
+            .with_header(
+                "strict-transport-security",
+                HELMET_STRICT_TRANSPORT_SECURITY,
+            )
+            .with_header("x-content-type-options", HELMET_X_CONTENT_TYPE_OPTIONS)
+            .with_header("x-frame-options", HELMET_X_FRAME_OPTIONS)
+    }
+}
+
 /// Middleware surface for request pre-processing and delegation.
 ///
 /// This is intentionally just the foundational trait and continuation handle.

@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 use bytes::Bytes;
-use http::{Method, StatusCode};
+use http::{HeaderValue, Method, StatusCode};
 use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use nivasa_http::{
-    Body, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse, NivasaServer,
-    RequestIdMiddleware,
+    Body, HelmetMiddleware, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse,
+    NivasaServer, RequestIdMiddleware,
 };
 use nivasa_routing::RouteMethod;
 use std::net::TcpListener as StdTcpListener;
@@ -174,6 +174,49 @@ async fn request_id_middleware_propagates_an_existing_request_id() {
 }
 
 #[tokio::test]
+async fn helmet_middleware_adds_security_headers_without_altering_response() {
+    let middleware = HelmetMiddleware::new();
+    let next = NextMiddleware::new(|request: NivasaRequest| async move {
+        assert_eq!(request.path(), "/helmet");
+        NivasaResponse::new(StatusCode::OK, Body::text("safe"))
+    });
+
+    let response = middleware
+        .use_(
+            NivasaRequest::new(Method::GET, "/helmet", Body::empty()),
+            next,
+        )
+        .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.body(), &Body::text("safe"));
+    assert_eq!(
+        response.headers().get("content-security-policy"),
+        Some(&HeaderValue::from_static(
+            "default-src 'self'; base-uri 'self'; frame-ancestors 'none'"
+        ))
+    );
+    assert_eq!(
+        response.headers().get("referrer-policy"),
+        Some(&HeaderValue::from_static("no-referrer"))
+    );
+    assert_eq!(
+        response.headers().get("strict-transport-security"),
+        Some(&HeaderValue::from_static(
+            "max-age=31536000; includeSubDomains"
+        ))
+    );
+    assert_eq!(
+        response.headers().get("x-content-type-options"),
+        Some(&HeaderValue::from_static("nosniff"))
+    );
+    assert_eq!(
+        response.headers().get("x-frame-options"),
+        Some(&HeaderValue::from_static("DENY"))
+    );
+}
+
+#[tokio::test]
 async fn request_id_middleware_generates_and_echoes_a_request_id(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let port = free_port();
@@ -250,8 +293,8 @@ async fn server_executes_middleware_before_route_dispatch() -> Result<(), Box<dy
 }
 
 #[tokio::test]
-async fn server_runs_global_middleware_on_every_request(
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn server_runs_global_middleware_on_every_request() -> Result<(), Box<dyn std::error::Error>>
+{
     let port = free_port();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let request_count = Arc::new(AtomicUsize::new(0));
@@ -265,7 +308,9 @@ async fn server_runs_global_middleware_on_every_request(
                 next.run(request).await
             }
         })
-        .route(RouteMethod::Get, "/middleware", |_| NivasaResponse::text("ok"))?
+        .route(RouteMethod::Get, "/middleware", |_| {
+            NivasaResponse::text("ok")
+        })?
         .shutdown_signal(shutdown_rx)
         .build();
 
@@ -332,10 +377,7 @@ async fn server_orders_global_module_and_route_specific_middleware(
         })
         .for_routes("/middleware")?
         .route(RouteMethod::Post, "/middleware", move |_| {
-            handler_events
-                .lock()
-                .expect("events lock")
-                .push("handler");
+            handler_events.lock().expect("events lock").push("handler");
             NivasaResponse::text("ok")
         })?
         .shutdown_signal(shutdown_rx)
