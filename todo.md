@@ -720,9 +720,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `GatewayTimeoutException` (504)
 
 #### 5.2.2 — Exception Serialization
-- [ ] Implement `Serialize` for `HttpException`
-- [ ] Implement standard error response shape: `{ statusCode, message, error }`
-- [ ] Support custom error details/payload via `.with_details(json!(...))`
+- [x] Implement `Serialize` for `HttpException`
+- [x] Implement standard error response shape: `{ statusCode, message, error }`
+- [x] Support custom error details/payload via `.with_details(json!(...))`
 - [x] Support error cause chaining (`.with_cause(inner_error)`)
 
 #### 5.2.3 — Exception Tests
