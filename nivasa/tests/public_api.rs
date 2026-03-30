@@ -7,8 +7,8 @@ use nivasa::prelude::*;
 use nivasa::prelude::{
     all, body, controller, custom_param, delete, file, files, get, head, header, headers,
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
-    req, res, scxml_handler, session, ArgumentsHost, ExceptionFilter, ExceptionFilterFuture,
-    HttpArgumentsHost, Middleware, NivasaMiddlewareLayer, Reflector,
+    req, res, scxml_handler, session, ArgumentMetadata, ArgumentsHost, ExceptionFilter,
+    ExceptionFilterFuture, HttpArgumentsHost, Middleware, NivasaMiddlewareLayer, Pipe, Reflector,
 };
 use std::future::Future;
 use std::pin::Pin;
@@ -167,7 +167,14 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
 #[test]
 #[allow(unused_imports)]
 fn crate_root_reexports_pipe_surface_as_placeholder_crate() {
-    use nivasa::pipes as pipes_crate;
+    use nivasa::{pipes as pipes_crate, ArgumentMetadata as RootArgumentMetadata, Pipe as RootPipe};
+
+    fn _assert_pipes_namespace_is_in_scope(_: Option<pipes_crate::ArgumentMetadata>) {}
+    fn _assert_pipes_namespace_pipe_is_in_scope<T: pipes_crate::Pipe>() {}
+    fn _assert_root_pipe_trait_is_in_scope<T: RootPipe>() {}
+    fn _assert_root_argument_metadata_is_in_scope(_: Option<RootArgumentMetadata>) {}
+    fn _assert_prelude_pipe_trait_is_in_scope<T: Pipe>() {}
+    fn _assert_prelude_argument_metadata_is_in_scope(_: Option<ArgumentMetadata>) {}
 }
 
 #[test]
