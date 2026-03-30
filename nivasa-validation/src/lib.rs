@@ -6,12 +6,145 @@
 //! integrations. It stays crate-local for now: no macros, no HTTP wiring.
 
 use serde::Serialize;
-use std::{collections::BTreeMap, error::Error as StdError, fmt};
+use serde::Deserialize;
+use std::{
+    borrow::Borrow,
+    collections::{BTreeMap, BTreeSet},
+    error::Error as StdError,
+    fmt,
+};
 
 /// Trait for types that can validate their own invariants.
 pub trait Validate {
     /// Validate the current value.
     fn validate(&self) -> Result<(), ValidationErrors>;
+
+    /// Validate the current value with validation context.
+    ///
+    /// The context currently carries active validation groups such as
+    /// `create` or `update`. Implementations can override this to branch on
+    /// group-specific rules while keeping `validate()` as the no-context
+    /// convenience entry point.
+    fn validate_with(&self, context: &ValidationContext) -> Result<(), ValidationErrors> {
+        let _ = context;
+        self.validate()
+    }
+}
+
+/// Return whether the supplied string looks like a valid absolute URL.
+///
+/// The helper intentionally stays small and reusable so later macro wiring can
+/// attach the appropriate field-level validation error without changing the
+/// core contract.
+pub fn is_url(value: &str) -> bool {
+    value
+        .parse::<http::Uri>()
+        .map(|uri| uri.scheme_str().is_some() && uri.authority().is_some())
+        .unwrap_or(false)
+}
+
+/// Named validation group active for a validation pass.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ValidationGroup(String);
+
+impl ValidationGroup {
+    /// Create a new validation group name.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self(name.into())
+    }
+
+    /// Borrow the group name as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for ValidationGroup {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<String> for ValidationGroup {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl AsRef<str> for ValidationGroup {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl Borrow<str> for ValidationGroup {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+/// Context passed into group-aware validation.
+///
+/// This core-only slice currently tracks the set of active validation groups.
+/// Later macro and HTTP integrations can thread this context through derived
+/// validators without changing the core contract.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ValidationContext {
+    active_groups: BTreeSet<ValidationGroup>,
+}
+
+impl ValidationContext {
+    /// Create an empty validation context.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a validation context with a single active group.
+    pub fn with_group(mut self, group: impl Into<ValidationGroup>) -> Self {
+        self.insert_group(group);
+        self
+    }
+
+    /// Create a validation context from a collection of active groups.
+    pub fn with_groups<I, G>(mut self, groups: I) -> Self
+    where
+        I: IntoIterator<Item = G>,
+        G: Into<ValidationGroup>,
+    {
+        self.extend_groups(groups);
+        self
+    }
+
+    /// Add an active validation group to the context.
+    pub fn insert_group(&mut self, group: impl Into<ValidationGroup>) -> bool {
+        self.active_groups.insert(group.into())
+    }
+
+    /// Add many active validation groups to the context.
+    pub fn extend_groups<I, G>(&mut self, groups: I)
+    where
+        I: IntoIterator<Item = G>,
+        G: Into<ValidationGroup>,
+    {
+        self.active_groups
+            .extend(groups.into_iter().map(Into::into));
+    }
+
+    /// Return whether a validation group is active.
+    pub fn has_group(&self, group: impl AsRef<str>) -> bool {
+        self.active_groups.contains(group.as_ref())
+    }
+
+    /// Iterate over the active validation groups.
+    pub fn active_groups(&self) -> impl Iterator<Item = &ValidationGroup> {
+        self.active_groups.iter()
+    }
+
+    /// Consume the context and return the active validation groups.
+    pub fn into_active_groups(self) -> BTreeSet<ValidationGroup> {
+        self.active_groups
+    }
 }
 
 /// A single field-level validation error with structured constraint messages.
@@ -221,6 +354,119 @@ mod tests {
                     }
                 ]
             })
+        );
+    }
+
+    #[test]
+    fn validation_context_tracks_active_groups() {
+        let context = ValidationContext::new()
+            .with_group("create")
+            .with_group("update")
+            .with_group("create");
+
+        let active_groups: Vec<_> = context
+            .active_groups()
+            .map(ValidationGroup::as_str)
+            .collect();
+
+        assert_eq!(active_groups, vec!["create", "update"]);
+        assert!(context.has_group("create"));
+        assert!(context.has_group("update"));
+        assert!(!context.has_group("delete"));
+    }
+
+    #[test]
+    fn validation_context_serializes_active_groups() {
+        let context = ValidationContext::new()
+            .with_group("create")
+            .with_group("update");
+
+        let json = serde_json::to_value(&context).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "active_groups": ["create", "update"]
+            })
+        );
+    }
+
+    #[test]
+    fn is_url_accepts_absolute_urls_with_scheme_and_authority() {
+        assert!(is_url("https://example.com/path?query=1"));
+        assert!(is_url("http://localhost:8080"));
+    }
+
+    #[test]
+    fn is_url_rejects_relative_or_incomplete_values() {
+        assert!(!is_url("/relative/path"));
+        assert!(!is_url("https://"));
+        assert!(!is_url("not a url"));
+    }
+
+    #[test]
+    fn validation_trait_can_consume_group_context() {
+        #[derive(Debug)]
+        struct GroupAwareForm {
+            username: String,
+            email: Option<String>,
+        }
+
+        impl GroupAwareForm {
+            fn validate_inner(
+                &self,
+                context: &ValidationContext,
+            ) -> Result<(), ValidationErrors> {
+                let mut errors = ValidationErrors::new();
+
+                if self.username.trim().len() < 3 {
+                    errors.push(
+                        ValidationError::new("username")
+                            .with_constraint("min_length", "must be at least 3 characters"),
+                    );
+                }
+
+                if context.has_group("create")
+                    && self.email.as_deref().unwrap_or("").trim().is_empty()
+                {
+                    errors.push(
+                        ValidationError::new("email")
+                            .with_constraint("required", "must be provided for create"),
+                    );
+                }
+
+                if errors.is_empty() {
+                    Ok(())
+                } else {
+                    Err(errors)
+                }
+            }
+        }
+
+        impl Validate for GroupAwareForm {
+            fn validate(&self) -> Result<(), ValidationErrors> {
+                self.validate_inner(&ValidationContext::new())
+            }
+
+            fn validate_with(&self, context: &ValidationContext) -> Result<(), ValidationErrors> {
+                self.validate_inner(context)
+            }
+        }
+
+        let form = GroupAwareForm {
+            username: "alice".into(),
+            email: None,
+        };
+
+        assert!(form.validate().is_ok());
+
+        let create_errors = form
+            .validate_with(&ValidationContext::new().with_group("create"))
+            .unwrap_err();
+        assert_eq!(create_errors.len(), 1);
+        assert_eq!(create_errors.errors()[0].field, "email");
+        assert_eq!(
+            create_errors.errors()[0].constraints.get("required"),
+            Some(&"must be provided for create".to_string())
         );
     }
 }
