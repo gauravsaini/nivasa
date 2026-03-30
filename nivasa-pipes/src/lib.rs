@@ -211,6 +211,27 @@ where
     }
 }
 
+/// Trim leading and trailing whitespace from a JSON string value.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TrimPipe;
+
+impl TrimPipe {
+    /// Create a new string trimmer.
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Pipe for TrimPipe {
+    fn transform(&self, value: Value, _metadata: ArgumentMetadata) -> Result<Value, HttpException> {
+        let input = value
+            .as_str()
+            .ok_or_else(|| HttpException::bad_request("TrimPipe expects a string value"))?;
+
+        Ok(Value::from(input.trim().to_string()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,5 +375,28 @@ mod tests {
             error.message,
             "ParseBoolPipe could not parse `definitely-not-bool` as a boolean"
         );
+    }
+
+    #[test]
+    fn trim_pipe_trims_outer_whitespace_and_preserves_inner_spacing() {
+        let pipe = TrimPipe::new();
+        let metadata = ArgumentMetadata::new(6);
+
+        assert_eq!(
+            pipe.transform(json!("  hello   world  "), metadata).unwrap(),
+            json!("hello   world")
+        );
+    }
+
+    #[test]
+    fn trim_pipe_rejects_non_string_input() {
+        let pipe = TrimPipe::new();
+
+        let error = pipe
+            .transform(json!(true), ArgumentMetadata::new(7))
+            .unwrap_err();
+
+        assert_eq!(error.status_code, 400);
+        assert_eq!(error.message, "TrimPipe expects a string value");
     }
 }
