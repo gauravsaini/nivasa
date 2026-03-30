@@ -554,7 +554,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.3.5 — Built-in Middleware
 - [ ] Implement `CorsMiddleware` (configurable origins, methods, headers, credentials)
 - [x] Implement `HelmetMiddleware` (security headers: CSP, HSTS, X-Frame-Options, etc.)
-- [x] Implement `CompressionMiddleware` (gzip, deflate, and brotli feature-gated)
+- [x] Implement `CompressionMiddleware` (gzip, deflate, and brotli shipped behind feature flags)
 - [x] Implement `RequestIdMiddleware` (generate/propagate `X-Request-Id` header)
 - [x] Implement `LoggerMiddleware` (structured request logging via `tracing`)
 
@@ -601,7 +601,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `ParseBoolPipe` (parse string to `bool`)
 - [x] Implement `ParseUuidPipe` (parse string to `Uuid`)
 - [x] Implement `ParseEnumPipe` (parse string to enum variant)
-- [ ] Implement `DefaultValuePipe` (provide default if value is missing/null)
+- [x] Implement `DefaultValuePipe` (provide default for explicit null values)
 - [x] Implement `TrimPipe` (trim whitespace from string values)
 
 #### 4.1.4 — Pipe Tests
@@ -614,7 +614,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test ValidationPipe with invalid DTO → 400 with field-level errors
 - [ ] Test pipe chaining (TrimPipe → ValidationPipe)
 - [x] Test ParseUuidPipe with valid/invalid UUID
-- [ ] Test DefaultValuePipe provides fallback
+- [x] Test DefaultValuePipe provides fallback for null values
 
 ### 4.2 — Validation Integration (`nivasa-validation`)
 
