@@ -28,6 +28,7 @@ nivasa-common = { path = "../nivasa-common" }
 nivasa-filters = { path = "../nivasa-filters" }
 nivasa-guards = { path = "../nivasa-guards" }
 nivasa-interceptors = { path = "../nivasa-interceptors" }
+nivasa-pipes = { path = "../nivasa-pipes" }
 nivasa-routing = { path = "../nivasa-routing" }
 nivasa-statechart = { path = "../nivasa-statechart" }
 tokio = { workspace = true }

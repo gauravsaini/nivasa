@@ -24,11 +24,12 @@ use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard};
 use nivasa_interceptors::{
     CallHandler, ExecutionContext as InterceptorExecutionContext, Interceptor,
 };
+use nivasa_pipes::{ArgumentMetadata, Pipe};
 use nivasa_routing::{
     parse_api_version_accept, parse_api_version_header, RouteDispatchError, RouteDispatchOutcome,
     RouteDispatchRegistry, RouteMethod, RoutePattern, RouteRegistryError,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use std::{
     future::Future,
     io,
@@ -48,6 +49,7 @@ use tokio_rustls::TlsAcceptor;
 type RouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
 type MiddlewareLayer = Arc<dyn NivasaMiddleware + Send + Sync + 'static>;
 type GuardLayer = Arc<dyn Guard + Send + Sync + 'static>;
+type PipeLayer = Arc<dyn Pipe + Send + Sync + 'static>;
 type InterceptorLayer = Arc<dyn Interceptor<Response = NivasaResponse> + Send + Sync + 'static>;
 type GlobalFilterLayer =
     Arc<dyn ExceptionFilter<HttpException, NivasaResponse> + Send + Sync + 'static>;
@@ -258,6 +260,7 @@ pub struct NivasaServer {
     module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
     global_guards: Vec<GuardLayer>,
+    global_pipes: Vec<PipeLayer>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
     cors: Option<CorsOptions>,
@@ -275,6 +278,7 @@ pub struct NivasaServerBuilder {
     module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
     global_guards: Vec<GuardLayer>,
+    global_pipes: Vec<PipeLayer>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
     cors: Option<CorsOptions>,
@@ -301,6 +305,7 @@ impl NivasaServer {
         let module_middlewares = self.module_middlewares;
         let route_middlewares = self.route_middlewares;
         let global_guards = self.global_guards;
+        let global_pipes = self.global_pipes;
         let interceptors = self.interceptors;
         let global_filters = self.global_filters;
         let cors = self.cors;
@@ -322,6 +327,7 @@ impl NivasaServer {
                     let module_middlewares = module_middlewares.clone();
                     let route_middlewares = route_middlewares.clone();
                     let global_guards = global_guards.clone();
+                    let global_pipes = global_pipes.clone();
                     let interceptors = interceptors.clone();
                     let global_filters_for_connection = global_filters.clone();
                     let cors = cors.clone();
@@ -340,6 +346,7 @@ impl NivasaServer {
                                     module_middlewares,
                                     route_middlewares,
                                     global_guards,
+                                    global_pipes,
                                     interceptors,
                                     global_filters_for_connection,
                                     cors,
@@ -358,6 +365,7 @@ impl NivasaServer {
                             module_middlewares,
                             route_middlewares,
                             global_guards,
+                            global_pipes,
                             interceptors,
                             global_filters_for_connection,
                             cors,
@@ -383,6 +391,7 @@ impl NivasaServerBuilder {
             module_middlewares: Vec::new(),
             route_middlewares: Vec::new(),
             global_guards: Vec::new(),
+            global_pipes: Vec::new(),
             interceptors: Vec::new(),
             global_filters: Vec::new(),
             cors: None,
@@ -517,6 +526,15 @@ impl NivasaServerBuilder {
         self
     }
 
+    /// Register a single pipe hook around matched route handling.
+    pub fn use_global_pipe<P>(mut self, pipe: P) -> Self
+    where
+        P: Pipe + Send + Sync + 'static,
+    {
+        self.global_pipes.push(Arc::new(pipe));
+        self
+    }
+
     /// Start configuring middleware for one or more matched routes.
     pub fn apply<M>(self, middleware: M) -> RouteMiddlewareBuilder
     where
@@ -596,6 +614,7 @@ impl NivasaServerBuilder {
             module_middlewares: self.module_middlewares,
             route_middlewares: self.route_middlewares,
             global_guards: self.global_guards,
+            global_pipes: self.global_pipes,
             interceptors: self.interceptors,
             global_filters: self.global_filters,
             cors: self.cors,
@@ -615,6 +634,7 @@ async fn serve_connection<S>(
     module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
     global_guards: Vec<GuardLayer>,
+    global_pipes: Vec<PipeLayer>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
     cors: Option<CorsOptions>,
@@ -630,6 +650,7 @@ async fn serve_connection<S>(
         let module_middlewares = module_middlewares.clone();
         let route_middlewares = route_middlewares.clone();
         let global_guards = global_guards.clone();
+        let global_pipes = global_pipes.clone();
         let interceptors = interceptors.clone();
         let global_filters = global_filters.clone();
         let cors = cors.clone();
@@ -646,6 +667,7 @@ async fn serve_connection<S>(
                         module_middlewares,
                         route_middlewares,
                         global_guards,
+                        global_pipes,
                         interceptors,
                         global_filters,
                         cors.clone(),
@@ -670,12 +692,13 @@ async fn serve_connection<S>(
                     request,
                     routes,
                     middleware,
-                    module_middlewares,
-                    route_middlewares,
-                    global_guards,
-                    interceptors,
-                    global_filters,
-                    cors.clone(),
+                module_middlewares,
+                route_middlewares,
+                global_guards,
+                global_pipes,
+                interceptors,
+                global_filters,
+                cors.clone(),
                     request_body_size_limit,
                 )
                 .await
@@ -694,6 +717,7 @@ async fn handle_request(
     module_middlewares: Vec<MiddlewareLayer>,
     route_middlewares: Vec<RouteMiddlewareBinding>,
     global_guards: Vec<GuardLayer>,
+    global_pipes: Vec<PipeLayer>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
     cors: Option<CorsOptions>,
@@ -897,11 +921,56 @@ async fn handle_request(
                     ));
                 }
             }
+
+            let transformed_body = match apply_global_pipes(pipeline.request(), &global_pipes) {
+                Ok(body) => body,
+                Err(error) => {
+                    if pipeline.fail_pipes().is_err() {
+                        return Ok(finalize_response(
+                            NivasaResponse::new(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Body::text("request pipeline pipe transition failed"),
+                            ),
+                            cors.as_ref(),
+                            request_origin.as_deref(),
+                            request_id.as_deref(),
+                        ));
+                    }
+
+                    return Ok(finalize_response(
+                        handle_http_exception(
+                            error,
+                            &binding.handler_filters,
+                            &binding.controller_filters,
+                            &global_filters,
+                            pipeline.request(),
+                        )
+                        .await,
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        request_id.as_deref(),
+                    ));
+                }
+            };
+            *pipeline.request_mut().body_mut() = transformed_body;
+
+            if pipeline.complete_pipes().is_err() {
+                return Ok(finalize_response(
+                    NivasaResponse::new(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Body::text("request pipeline pipe transition failed"),
+                    ),
+                    cors.as_ref(),
+                    request_origin.as_deref(),
+                    request_id.as_deref(),
+                ));
+            }
+
+            let request = pipeline.request().clone();
             match interceptors.is_empty() {
                 false => match execute_interceptors(interceptors, request, handler).await {
                     InterceptorExecution::Completed(response) => {
                         if pipeline.complete_interceptors_pre().is_err()
-                            || pipeline.complete_pipes().is_err()
                             || pipeline.complete_handler().is_err()
                             || pipeline.complete_interceptors_post().is_err()
                             || pipeline.complete_response().is_err()
@@ -937,7 +1006,6 @@ async fn handle_request(
                     } => {
                         let transition_failed = if handler_called {
                             pipeline.complete_interceptors_pre().is_err()
-                                || pipeline.complete_pipes().is_err()
                                 || pipeline.complete_handler().is_err()
                                 || pipeline.fail_interceptors_post().is_err()
                         } else {
@@ -992,6 +1060,76 @@ async fn handle_request(
         request_origin.as_deref(),
         request_id.as_deref(),
     ))
+}
+
+fn request_body_looks_json(request: &NivasaRequest) -> bool {
+    request
+        .header(CONTENT_TYPE.as_str())
+        .and_then(|value| value.to_str().ok())
+        .map(|value| {
+            let value = value.trim().to_ascii_lowercase();
+            value.starts_with("application/json")
+                || value.ends_with("+json")
+                || value.contains("/json")
+        })
+        .unwrap_or(false)
+}
+
+fn request_body_to_pipe_value(request: &NivasaRequest) -> Result<Value, HttpException> {
+    match request.body() {
+        Body::Empty => Ok(Value::Null),
+        Body::Json(value) => Ok(value.clone()),
+        Body::Text(text) | Body::Html(text) => {
+            if request_body_looks_json(request) {
+                serde_json::from_str(text).map_err(|error| {
+                    HttpException::bad_request(format!(
+                        "global pipe could not parse request body as JSON: {error}"
+                    ))
+                })
+            } else {
+                Ok(Value::String(text.clone()))
+            }
+        }
+        Body::Bytes(bytes) => {
+            let text = String::from_utf8(bytes.clone()).map_err(|error| {
+                HttpException::bad_request(format!(
+                    "global pipe requires a UTF-8 request body: {error}"
+                ))
+            })?;
+
+            if request_body_looks_json(request) {
+                serde_json::from_str(&text).map_err(|error| {
+                    HttpException::bad_request(format!(
+                        "global pipe could not parse request body as JSON: {error}"
+                    ))
+                })
+            } else {
+                Ok(Value::String(text))
+            }
+        }
+    }
+}
+
+fn pipe_value_to_body(value: Value) -> Body {
+    match value {
+        Value::Null => Body::empty(),
+        Value::String(text) => Body::text(text),
+        other => Body::json(other),
+    }
+}
+
+fn apply_global_pipes(
+    request: &NivasaRequest,
+    pipes: &[PipeLayer],
+) -> Result<Body, HttpException> {
+    let mut value = request_body_to_pipe_value(request)?;
+    let metadata = ArgumentMetadata::new(0).with_data_type("body");
+
+    for pipe in pipes {
+        value = pipe.transform(value, metadata.clone())?;
+    }
+
+    Ok(pipe_value_to_body(value))
 }
 
 enum MiddlewareExecution {

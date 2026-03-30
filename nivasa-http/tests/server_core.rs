@@ -5,7 +5,7 @@ use http::{
         ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN,
         ACCESS_CONTROL_REQUEST_HEADERS, ACCESS_CONTROL_REQUEST_METHOD, ORIGIN,
     },
-    Method,
+    Method, Request,
 };
 use http_body_util::{BodyExt, Empty, Full};
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
@@ -16,6 +16,7 @@ use nivasa_http::{
 };
 use nivasa_macros::{controller, impl_controller};
 use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
+use nivasa_pipes::TrimPipe;
 use nivasa_routing::RouteMethod;
 use serde::Deserialize;
 use std::{
@@ -217,6 +218,51 @@ async fn server_applies_global_guards_to_multiple_routes(
 
     assert_eq!(guard_calls.load(Ordering::SeqCst), 2);
     assert_eq!(handler_calls.load(Ordering::SeqCst), 0);
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_applies_global_pipes_before_handler_execution(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .use_global_pipe(TrimPipe::new())
+        .route(RouteMethod::Post, "/pipes", |request| {
+            NivasaResponse::text(
+                request
+                    .extract::<String>()
+                    .expect("global pipe must normalize the body before handler execution"),
+            )
+        })
+        .expect("pipe-enabled route must register")
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Full<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let request = Request::post(format!("http://127.0.0.1:{port}/pipes"))
+        .header(http::header::CONTENT_TYPE, "text/plain")
+        .body(Full::new(Bytes::from_static(b"  pipe me  ")))?;
+    let response = client.request(request).await?;
+    assert_eq!(response.status(), http::StatusCode::OK);
+
+    let body = response.into_body().collect().await?.to_bytes();
+    assert_eq!(body, Bytes::from_static(b"pipe me"));
 
     drop(client);
     let _ = shutdown_tx.send(());

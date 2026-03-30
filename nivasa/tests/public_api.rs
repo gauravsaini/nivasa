@@ -112,6 +112,15 @@ fn crate_root_reexports_bootstrap_config_as_pure_data() {
 }
 
 #[test]
+fn crate_root_reexports_global_pipe_bootstrap_surface() {
+    let builder = nivasa::AppBootstrapConfig::default()
+        .use_global_pipe(pipes_crate::TrimPipe::new());
+
+    fn _assert_builder_is_in_scope(_: Option<NivasaServerBuilder>) {}
+    let _ = builder;
+}
+
+#[test]
 fn prelude_reexports_core_traits_macros_and_http_types() {
     fn _assert_request_type_is_in_scope(_: Option<NivasaRequest>) {}
     fn _assert_response_type_is_in_scope(_: Option<NivasaResponse>) {}

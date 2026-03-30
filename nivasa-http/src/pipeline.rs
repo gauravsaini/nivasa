@@ -203,6 +203,11 @@ impl RequestPipeline {
         &self.request
     }
 
+    /// Mutably borrow the underlying request.
+    pub fn request_mut(&mut self) -> &mut NivasaRequest {
+        &mut self.request
+    }
+
     /// Return the current SCXML state.
     pub fn current_state(&self) -> NivasaRequestState {
         self.engine.current_state()

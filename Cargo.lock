@@ -1014,6 +1014,7 @@ dependencies = [
  "nivasa-guards",
  "nivasa-interceptors",
  "nivasa-macros",
+ "nivasa-pipes",
  "nivasa-routing",
  "nivasa-statechart",
  "rustls",
@@ -1046,6 +1047,7 @@ dependencies = [
  "nivasa-core",
  "nivasa-filters",
  "nivasa-routing",
+ "nivasa-validation",
  "proc-macro2",
  "quick-xml",
  "quote",
@@ -1059,6 +1061,7 @@ version = "0.1.0"
 dependencies = [
  "nivasa-common",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -1087,7 +1090,10 @@ dependencies = [
 name = "nivasa-validation"
 version = "0.1.0"
 dependencies = [
+ "http",
  "nivasa-common",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

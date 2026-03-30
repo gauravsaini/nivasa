@@ -9,6 +9,7 @@ use nivasa_filters::{ExceptionFilter, ExceptionFilterMetadata};
 use nivasa_http::{NivasaMiddleware, NivasaResponse, NivasaServer, NivasaServerBuilder};
 use nivasa_guards::Guard;
 use nivasa_interceptors::Interceptor;
+use nivasa_pipes::Pipe;
 
 /// Supported API versioning strategies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -253,6 +254,18 @@ impl AppBootstrapConfig {
         G: Guard + Send + Sync + 'static,
     {
         self.server_builder().use_global_guard(guard)
+    }
+
+    /// Register a single global pipe at bootstrap time.
+    ///
+    /// This is a thin facade over the existing transport pipe hook. It keeps
+    /// the bootstrap layer focused on configuration and leaves runtime pipe
+    /// semantics to the HTTP layer.
+    pub fn use_global_pipe<P>(&self, pipe: P) -> NivasaServerBuilder
+    where
+        P: Pipe + Send + Sync + 'static,
+    {
+        self.server_builder().use_global_pipe(pipe)
     }
 
     /// Register a single global exception filter at bootstrap time.
