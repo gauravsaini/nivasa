@@ -10,11 +10,17 @@ pub use http::header::HeaderMap;
 pub use server::{CorsOptions, GlobalFilterBinding};
 
 use async_trait::async_trait;
+#[cfg(feature = "compression-brotli")]
+use brotli::CompressorWriter;
 #[cfg(feature = "compression-deflate")]
 use flate2::write::DeflateEncoder;
 #[cfg(feature = "compression-gzip")]
 use flate2::write::GzEncoder;
-#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
 use flate2::Compression;
 use http::{
     header::{HeaderName, HeaderValue, CONTENT_TYPE},
@@ -1307,16 +1313,24 @@ impl NivasaMiddleware for LoggerMiddleware {
     }
 }
 
-/// Middleware surface for gzip and deflate compression.
+/// Middleware surface for gzip, deflate, and brotli compression.
 ///
-/// This stays intentionally tiny: if the request advertises gzip or deflate
-/// support and the response has a non-empty body, the body is compressed after
-/// `next.run(...)` and the standard compression headers are updated.
-#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
+/// This stays intentionally tiny: if the request advertises a supported
+/// encoding and the response has a non-empty body, the body is compressed
+/// after `next.run(...)` and the standard compression headers are updated.
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CompressionMiddleware;
 
-#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
 impl CompressionMiddleware {
     /// Create a new compression middleware.
     pub fn new() -> Self {
@@ -1324,18 +1338,32 @@ impl CompressionMiddleware {
     }
 }
 
-#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
 const COMPRESSION_ACCEPT_ENCODING_HEADER: &str = "accept-encoding";
-#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CompressionFormat {
+    #[cfg(feature = "compression-brotli")]
+    Brotli,
     #[cfg(feature = "compression-gzip")]
     Gzip,
     #[cfg(feature = "compression-deflate")]
     Deflate,
 }
 
-#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
 fn accepts_compression(request: &NivasaRequest) -> Option<CompressionFormat> {
     request
         .header(COMPRESSION_ACCEPT_ENCODING_HEADER)
@@ -1346,6 +1374,16 @@ fn accepts_compression(request: &NivasaRequest) -> Option<CompressionFormat> {
                 let encoding = encoding.split(';').next().map(str::trim).unwrap_or(encoding);
 
                 match encoding {
+                    "br" => {
+                        #[cfg(feature = "compression-brotli")]
+                        {
+                            Some(CompressionFormat::Brotli)
+                        }
+                        #[cfg(not(feature = "compression-brotli"))]
+                        {
+                            None
+                        }
+                    }
                     "gzip" => {
                         #[cfg(feature = "compression-gzip")]
                         {
@@ -1367,15 +1405,24 @@ fn accepts_compression(request: &NivasaRequest) -> Option<CompressionFormat> {
                         }
                     }
                     "*" => {
-                        #[cfg(feature = "compression-gzip")]
+                        #[cfg(feature = "compression-brotli")]
+                        {
+                            Some(CompressionFormat::Brotli)
+                        }
+                        #[cfg(all(not(feature = "compression-brotli"), feature = "compression-gzip"))]
                         {
                             Some(CompressionFormat::Gzip)
                         }
-                        #[cfg(all(not(feature = "compression-gzip"), feature = "compression-deflate"))]
+                        #[cfg(all(
+                            not(feature = "compression-brotli"),
+                            not(feature = "compression-gzip"),
+                            feature = "compression-deflate"
+                        ))]
                         {
                             Some(CompressionFormat::Deflate)
                         }
                         #[cfg(all(
+                            not(feature = "compression-brotli"),
                             not(feature = "compression-gzip"),
                             not(feature = "compression-deflate")
                         ))]
@@ -1383,13 +1430,18 @@ fn accepts_compression(request: &NivasaRequest) -> Option<CompressionFormat> {
                             None
                         }
                     }
+                    "identity" => None,
                     _ => None,
                 }
             })
         })
 }
 
-#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
 fn append_vary_accept_encoding(headers: &mut HeaderMap) {
     use http::header::VARY;
 
@@ -1413,7 +1465,11 @@ fn append_vary_accept_encoding(headers: &mut HeaderMap) {
     }
 }
 
-#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
 fn compress_response(response: NivasaResponse, format: CompressionFormat) -> NivasaResponse {
     if response.body().is_empty() {
         return response;
@@ -1422,6 +1478,14 @@ fn compress_response(response: NivasaResponse, format: CompressionFormat) -> Niv
     let inner = response.into_inner();
     let body = inner.body().clone().into_bytes();
     let compressed = match format {
+        #[cfg(feature = "compression-brotli")]
+        CompressionFormat::Brotli => {
+            let mut encoder = CompressorWriter::new(Vec::new(), 4096, 5, 22);
+            encoder
+                .write_all(&body)
+                .expect("brotli compression must succeed");
+            encoder.into_inner()
+        }
         #[cfg(feature = "compression-gzip")]
         CompressionFormat::Gzip => {
             let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
@@ -1443,6 +1507,8 @@ fn compress_response(response: NivasaResponse, format: CompressionFormat) -> Niv
     };
 
     let content_encoding = match format {
+        #[cfg(feature = "compression-brotli")]
+        CompressionFormat::Brotli => "br",
         #[cfg(feature = "compression-gzip")]
         CompressionFormat::Gzip => "gzip",
         #[cfg(feature = "compression-deflate")]
@@ -1467,7 +1533,11 @@ fn compress_response(response: NivasaResponse, format: CompressionFormat) -> Niv
     }
 }
 
-#[cfg(any(feature = "compression-gzip", feature = "compression-deflate"))]
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
 #[async_trait]
 impl NivasaMiddleware for CompressionMiddleware {
     async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
