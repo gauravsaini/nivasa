@@ -231,6 +231,17 @@ impl AppBootstrapConfig {
         self.server_builder().interceptor(interceptor)
     }
 
+    /// Register a single global interceptor at bootstrap time.
+    ///
+    /// This is a thin alias over [`AppBootstrapConfig::use_interceptor`]
+    /// so callers can use the more explicit global naming convention.
+    pub fn use_global_interceptor<I>(&self, interceptor: I) -> NivasaServerBuilder
+    where
+        I: Interceptor<Response = nivasa_http::NivasaResponse> + Send + Sync + 'static,
+    {
+        self.use_interceptor(interceptor)
+    }
+
     /// Register a single global exception filter at bootstrap time.
     ///
     /// This is a thin facade over the existing transport filter hook. It keeps

@@ -341,6 +341,34 @@ fn bootstrap_config_can_forward_global_interceptors_into_the_server_builder() {
 }
 
 #[test]
+fn bootstrap_config_can_forward_global_interceptors_via_alias_into_the_server_builder() {
+    struct DemoInterceptor;
+
+    impl Interceptor for DemoInterceptor {
+        type Response = NivasaResponse;
+
+        fn intercept(
+            &self,
+            _context: &ExecutionContext,
+            next: CallHandler<Self::Response>,
+        ) -> InterceptorFuture<Self::Response> {
+            Box::pin(async move { next.handle().await })
+        }
+    }
+
+    fn assert_builder(_: NivasaServerBuilder) {}
+
+    let builder = nivasa::AppBootstrapConfig::default()
+        .use_global_interceptor(DemoInterceptor)
+        .route(nivasa_routing::RouteMethod::Get, "/health", |_| {
+            NivasaResponse::text("ok")
+        })
+        .expect("route registration should succeed");
+
+    assert_builder(builder);
+}
+
+#[test]
 fn bootstrap_config_can_forward_global_filters_into_the_server_builder() {
     struct DemoFilter;
 
