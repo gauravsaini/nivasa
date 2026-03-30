@@ -23,6 +23,7 @@ The crate currently exposes these pieces:
 1. `ControllerResponse` plus `NivasaResponseBuilder` for the first `#[res]` runtime slice.
 1. `RequestPipeline` for the SCXML request coordinator.
 1. `NivasaServer` as the transport shell entry point.
+1. Exception-filter runtime support via `use_global_filter(...)`, `#[use_filters(...)]`, `#[catch]`, `#[catch_all]`, and the built-in `HttpExceptionFilter`; see [`docs/exception-filters.md`](./exception-filters.md) for the shipped matching and fallback behavior.
 1. Tower compatibility adapters via `TowerServiceMiddleware` and `NivasaMiddlewareLayer`, with a real `tower_http::cors::CorsLayer` proof in [`nivasa-http/tests/tower_middleware.rs`](../nivasa-http/tests/tower_middleware.rs).
 1. Request dispatch for URI, header, and media-type versioned routes through the server and routing layers.
 1. Focused integration tests for wrappers, controller extraction, request pipeline, and server core.
