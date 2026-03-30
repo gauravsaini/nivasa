@@ -7,9 +7,11 @@ mod server;
 pub mod upload;
 
 pub use http::header::HeaderMap;
-pub use server::GlobalFilterBinding;
+pub use server::{CorsOptions, GlobalFilterBinding};
 
 use async_trait::async_trait;
+#[cfg(feature = "compression-gzip")]
+use flate2::{write::GzEncoder, Compression};
 use http::{
     header::{HeaderName, HeaderValue, CONTENT_TYPE},
     Method, Request, Response, StatusCode, Uri,
@@ -21,11 +23,13 @@ use nivasa_filters::{
 };
 use nivasa_routing::RoutePathCaptures;
 use serde::{de::DeserializeOwned, Serialize};
+use std::io::Write;
 use std::{
     convert::Infallible,
     fmt,
     future::Future,
     pin::Pin,
+    io::Write,
     sync::Arc,
     task::{Context, Poll},
 };
@@ -1297,6 +1301,113 @@ impl NivasaMiddleware for LoggerMiddleware {
         );
 
         response
+    }
+}
+
+/// Middleware surface for gzip compression.
+///
+/// This stays intentionally tiny: if the request advertises gzip support and
+/// the response has a non-empty body, the body is compressed after
+/// `next.run(...)` and the standard compression headers are updated.
+#[cfg(feature = "compression-gzip")]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CompressionMiddleware;
+
+#[cfg(feature = "compression-gzip")]
+impl CompressionMiddleware {
+    /// Create a new gzip compression middleware.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[cfg(feature = "compression-gzip")]
+const COMPRESSION_ACCEPT_ENCODING_HEADER: &str = "accept-encoding";
+#[cfg(feature = "compression-gzip")]
+const COMPRESSION_CONTENT_ENCODING: &str = "gzip";
+
+#[cfg(feature = "compression-gzip")]
+fn accepts_gzip(request: &NivasaRequest) -> bool {
+    request
+        .header(COMPRESSION_ACCEPT_ENCODING_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| {
+            value.split(',').any(|encoding| {
+                let encoding = encoding.trim();
+                encoding == "*" || encoding.split(';').next().map(str::trim) == Some("gzip")
+            })
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(feature = "compression-gzip")]
+fn append_vary_accept_encoding(headers: &mut HeaderMap) {
+    use http::header::VARY;
+
+    let updated = match headers.get(VARY).and_then(|value| value.to_str().ok()) {
+        Some(existing)
+            if existing
+                .split(',')
+                .any(|part| part.trim().eq_ignore_ascii_case("accept-encoding")) =>
+        {
+            None
+        }
+        Some(existing) => Some(format!("{existing}, Accept-Encoding")),
+        None => Some(String::from("Accept-Encoding")),
+    };
+
+    if let Some(value) = updated {
+        headers.insert(
+            VARY,
+            HeaderValue::from_str(&value).expect("vary header must be valid"),
+        );
+    }
+}
+
+#[cfg(feature = "compression-gzip")]
+fn compress_gzip_response(response: NivasaResponse) -> NivasaResponse {
+    if response.body().is_empty() {
+        return response;
+    }
+
+    let inner = response.into_inner();
+    let body = inner.body().clone().into_bytes();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder
+        .write_all(&body)
+        .expect("gzip compression must succeed");
+    let compressed = encoder.finish().expect("gzip compression must finish");
+
+    let (mut parts, _) = inner.into_parts();
+    parts.headers.remove(http::header::CONTENT_LENGTH);
+    parts.headers.insert(
+        http::header::CONTENT_ENCODING,
+        HeaderValue::from_static(COMPRESSION_CONTENT_ENCODING),
+    );
+    append_vary_accept_encoding(&mut parts.headers);
+    parts.headers.insert(
+        http::header::CONTENT_LENGTH,
+        HeaderValue::from_str(&compressed.len().to_string())
+            .expect("compressed body length must be valid"),
+    );
+
+    NivasaResponse {
+        inner: Response::from_parts(parts, Body::bytes(compressed)),
+    }
+}
+
+#[cfg(feature = "compression-gzip")]
+#[async_trait]
+impl NivasaMiddleware for CompressionMiddleware {
+    async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
+        let accepts_gzip = accepts_gzip(&req);
+        let response = next.run(req).await;
+
+        if accepts_gzip {
+            compress_gzip_response(response)
+        } else {
+            response
+        }
     }
 }
 

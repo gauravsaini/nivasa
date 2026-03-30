@@ -8,12 +8,14 @@ license.workspace = true
 
 [features]
 default = []
+compression-gzip = ["dep:flate2"]
 tls = ["dep:rustls", "dep:tokio-rustls"]
 
 [dependencies]
 async-trait = { workspace = true }
 bytes = { workspace = true }
 futures-util = "0.3"
+flate2 = { version = "1", optional = true }
 http-body-util = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
