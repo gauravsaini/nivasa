@@ -333,6 +333,34 @@ fn bootstrap_config_can_forward_global_interceptors_into_the_server_builder() {
     assert_builder(builder);
 }
 
+#[test]
+fn bootstrap_config_can_forward_global_filters_into_the_server_builder() {
+    struct DemoFilter;
+
+    impl ExceptionFilter<HttpException, NivasaResponse> for DemoFilter {
+        fn catch<'a>(
+            &'a self,
+            exception: HttpException,
+            _host: HttpArgumentsHost,
+        ) -> ExceptionFilterFuture<'a, NivasaResponse> {
+            let _ = exception;
+            Box::pin(async move { NivasaResponse::text("handled") })
+        }
+    }
+
+    impl filters_crate::ExceptionFilterMetadata for DemoFilter {
+        fn is_catch_all(&self) -> bool {
+            true
+        }
+    }
+
+    fn assert_builder(_: NivasaServerBuilder) {}
+
+    let builder = nivasa::AppBootstrapConfig::default().use_global_filter(DemoFilter);
+
+    assert_builder(builder);
+}
+
 #[cfg(feature = "config")]
 #[test]
 #[allow(unused_imports)]

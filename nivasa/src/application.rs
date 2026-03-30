@@ -4,7 +4,9 @@
 //! gives the Phase 2 bootstrap work a stable place for server and versioning
 //! configuration without pulling transport details into the main crate yet.
 
-use nivasa_http::{NivasaMiddleware, NivasaServer, NivasaServerBuilder};
+use nivasa_common::HttpException;
+use nivasa_filters::{ExceptionFilter, ExceptionFilterMetadata};
+use nivasa_http::{NivasaMiddleware, NivasaResponse, NivasaServer, NivasaServerBuilder};
 use nivasa_interceptors::Interceptor;
 
 /// Supported API versioning strategies.
@@ -218,6 +220,22 @@ impl AppBootstrapConfig {
         I: Interceptor<Response = nivasa_http::NivasaResponse> + Send + Sync + 'static,
     {
         self.server_builder().interceptor(interceptor)
+    }
+
+    /// Register a single global exception filter at bootstrap time.
+    ///
+    /// This is a thin facade over the existing transport filter hook. It keeps
+    /// the bootstrap layer focused on configuration and leaves runtime filter
+    /// semantics to the HTTP layer.
+    pub fn use_global_filter<F>(&self, filter: F) -> NivasaServerBuilder
+    where
+        F: ExceptionFilter<HttpException, NivasaResponse>
+            + ExceptionFilterMetadata
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.server_builder().use_global_filter(filter)
     }
 
     /// Compose a bootstrap-time route path from the configured global prefix.
