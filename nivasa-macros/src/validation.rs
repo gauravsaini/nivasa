@@ -96,6 +96,22 @@ fn build_field_checks(field: &Field) -> Result<Vec<proc_macro2::TokenStream>> {
                     );
                 }
             });
+        } else if attr.path().is_ident("max_length") {
+            let max_length = parse_max_length(attr)?;
+            let max_length_lit = LitInt::new(&max_length.to_string(), attr.span());
+            let message = LitStr::new(
+                &format!("must be at most {} characters", max_length),
+                attr.span(),
+            );
+
+            checks.push(quote! {
+                if #field_access.len() > #max_length_lit {
+                    errors.push(
+                        nivasa_validation::ValidationError::new(#field_label)
+                            .with_constraint("max_length", #message),
+                    );
+                }
+            });
         }
     }
 
@@ -136,4 +152,14 @@ fn parse_min_length(attr: &Attribute) -> Result<usize> {
     value
         .base10_parse::<usize>()
         .map_err(|_| Error::new(attr.span(), "expected `#[min_length(<usize>)]`"))
+}
+
+fn parse_max_length(attr: &Attribute) -> Result<usize> {
+    let value = attr
+        .parse_args::<LitInt>()
+        .map_err(|_| Error::new(attr.span(), "expected `#[max_length(<usize>)]`"))?;
+
+    value
+        .base10_parse::<usize>()
+        .map_err(|_| Error::new(attr.span(), "expected `#[max_length(<usize>)]`"))
 }

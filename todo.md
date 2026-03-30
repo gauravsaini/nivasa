@@ -627,7 +627,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[min(n)]` — minimum value (for numbers)
 - [ ] Implement `#[max(n)]` — maximum value (for numbers)
 - [x] Implement `#[min_length(n)]` — minimum string/array length
-- [ ] Implement `#[max_length(n)]` — maximum string/array length
+- [x] Implement `#[max_length(n)]` — maximum string/array length
 - [ ] Implement `#[is_not_empty]` — validate non-empty string/vec
 - [ ] Implement `#[matches(regex)]` — regex pattern match
 - [ ] Implement `#[is_optional]` — field is optional (skip if absent)
@@ -656,6 +656,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test `#[is_email]` with valid and invalid emails
 - [x] Test `#[is_string]` with valid string inputs and invalid non-string fields
 - [x] Test `#[min_length(6)]` on password field
+- [x] Test `#[max_length(12)]` on bio field
 - [x] Test multiple validation errors returned together
 - [ ] Test nested DTO validation
 - [ ] Test optional field skips validation when absent

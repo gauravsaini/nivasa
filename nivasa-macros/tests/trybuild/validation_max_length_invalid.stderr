@@ -1,0 +1,5 @@
+error: expected `#[max_length(<usize>)]`
+ --> tests/trybuild/validation_max_length_invalid.rs:5:5
+  |
+5 |     #[max_length]
+  |     ^

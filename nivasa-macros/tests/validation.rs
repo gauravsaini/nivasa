@@ -15,6 +15,12 @@ struct ProfileForm {
     display_name: String,
 }
 
+#[derive(Dto)]
+struct BioForm {
+    #[max_length(12)]
+    bio: String,
+}
+
 #[test]
 fn dto_validation_accepts_valid_input() {
     let form = SignupForm {
@@ -53,4 +59,25 @@ fn dto_validation_accepts_string_fields() {
     };
 
     assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_applies_max_length_rules() {
+    let form = BioForm {
+        bio: "short bio".into(),
+    };
+
+    assert!(form.validate().is_ok());
+
+    let form = BioForm {
+        bio: "this bio is too long".into(),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "bio");
+    assert_eq!(
+        errors.errors()[0].constraints.get("max_length"),
+        Some(&"must be at most 12 characters".to_string())
+    );
 }
