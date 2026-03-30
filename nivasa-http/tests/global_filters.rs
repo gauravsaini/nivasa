@@ -160,7 +160,7 @@ async fn global_filter_handles_http_exception_and_sees_request_context(
 }
 
 #[tokio::test]
-async fn global_filter_panics_fall_back_to_the_standard_http_shape(
+async fn global_filter_panics_fall_back_to_the_internal_server_error_shape(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let port = free_port();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
@@ -191,13 +191,13 @@ async fn global_filter_panics_fall_back_to_the_standard_http_shape(
     drop(client);
     server_task.await??;
 
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
         json!({
-            "statusCode": 400,
-            "message": "global filter intercepted",
-            "error": "Bad Request"
+            "statusCode": 500,
+            "message": "request handler failed",
+            "error": "Internal Server Error"
         })
     );
     Ok(())

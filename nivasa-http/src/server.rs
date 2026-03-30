@@ -723,16 +723,24 @@ async fn handle_http_exception(
             let filter_future =
                 match catch_unwind(AssertUnwindSafe(|| filter.filter.catch(error, host))) {
                     Ok(future) => future,
-                    Err(_) => return HttpExceptionSummary::from(&fallback_error).into_response(),
+                    Err(_) => return fallback_unhandled_exception_response(&fallback_error),
                 };
 
             match AssertUnwindSafe(filter_future).catch_unwind().await {
                 Ok(response) => response,
-                Err(_) => HttpExceptionSummary::from(&fallback_error).into_response(),
+                Err(_) => fallback_unhandled_exception_response(&fallback_error),
             }
         }
-        None => HttpExceptionSummary::from(&error).into_response(),
+        None => fallback_unhandled_exception_response(&error),
     }
+}
+
+fn fallback_unhandled_exception_response(error: &HttpException) -> NivasaResponse {
+    eprintln!("nivasa-http fallback filter handling unhandled exception: {error}");
+    HttpExceptionSummary::from(&HttpException::internal_server_error(
+        "request handler failed",
+    ))
+    .into_response()
 }
 
 fn select_exception_filter(filters: &[GlobalFilterBinding]) -> Option<&GlobalFilterBinding> {

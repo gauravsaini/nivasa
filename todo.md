@@ -680,7 +680,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 5.1.3 — Filter Execution
 - [x] Implement filter matching by exception type (most specific first)
 - [x] Implement filter precedence: handler → controller → global
-- [ ] Implement fallback filter for completely unhandled exceptions (500 + log)
+- [x] Implement fallback filter for completely unhandled exceptions (500 + log)
 - [x] Ensure filters can themselves throw (caught by next-level filter)
 
 #### 5.1.4 — Built-in Filters
@@ -984,7 +984,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `.use_global_guard(Guard)` — apply guard to all routes
 - [ ] Implement `.use_global_interceptor(Interceptor)` — apply interceptor globally
 - [ ] Implement `.use_global_pipe(Pipe)` — apply pipe globally (e.g., ValidationPipe)
-- [ ] Implement `.use_global_filter(Filter)` — apply exception filter globally
+- [x] Implement `.use_global_filter(Filter)` — apply exception filter globally
 - [x] Implement `.enable_cors()` — minimal transport-side CORS bridge on `ServerOptions`; richer middleware/CorsOptions work remains future
 - [ ] Implement `.enable_versioning(VersioningOptions)` — API versioning config
 - [x] Implement `.use_(Middleware)` — apply global middleware (bootstrap-only facade via `AppBootstrapConfig::use_middleware(...)`)

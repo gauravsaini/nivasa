@@ -110,3 +110,24 @@ async fn http_exception_filter_maps_any_http_exception_to_the_standard_shape() {
     );
     assert!(json.get("details").is_none());
 }
+
+#[test]
+fn http_exception_internal_server_error_maps_to_the_fallback_shape() {
+    let response = HttpException::internal_server_error("request handler failed").into_response();
+
+    assert_eq!(response.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        response.headers().get(http::header::CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
+
+    let json: serde_json::Value = serde_json::from_slice(&response.body().as_bytes()).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "statusCode": 500,
+            "message": "request handler failed",
+            "error": "Internal Server Error"
+        })
+    );
+}
