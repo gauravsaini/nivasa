@@ -554,7 +554,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.3.5 — Built-in Middleware
 - [ ] Implement `CorsMiddleware` (configurable origins, methods, headers, credentials)
 - [x] Implement `HelmetMiddleware` (security headers: CSP, HSTS, X-Frame-Options, etc.)
-- [ ] Implement `CompressionMiddleware` (gzip, brotli, deflate — feature-gated)
+- [ ] Implement `CompressionMiddleware` (gzip and deflate shipped; brotli remaining — feature-gated)
 - [x] Implement `RequestIdMiddleware` (generate/propagate `X-Request-Id` header)
 - [x] Implement `LoggerMiddleware` (structured request logging via `tracing`)
 
@@ -602,7 +602,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `ParseUuidPipe` (parse string to `Uuid`)
 - [ ] Implement `ParseEnumPipe` (parse string to enum variant)
 - [ ] Implement `DefaultValuePipe` (provide default if value is missing/null)
-- [ ] Implement `TrimPipe` (trim whitespace from string values)
+- [x] Implement `TrimPipe` (trim whitespace from string values)
 
 #### 4.1.4 — Pipe Tests
 - [x] Test ParseIntPipe with valid input → returns i32
@@ -639,8 +639,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[custom_validate(fn)]` — custom validation function
 
 #### 4.2.2 — Validation Engine
-- [ ] Integrate `validator` crate or build custom validation engine
-- [ ] Collect ALL validation errors for a DTO (don't fail on first)
+- [x] Integrate `validator` crate or build custom validation engine
+- [x] Collect ALL validation errors for a DTO (don't fail on first)
 - [ ] Format validation errors as structured JSON: `{ field, constraints: { rule: message } }`
 - [ ] Support nested DTO validation (recursive)
 - [ ] Support `Vec<T>` element validation
