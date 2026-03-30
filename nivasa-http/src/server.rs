@@ -7,8 +7,8 @@ use futures_util::FutureExt;
 use http::{
     header::{
         HeaderMap, HeaderValue, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
-        ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_REQUEST_HEADERS, ACCESS_CONTROL_REQUEST_METHOD,
-        ALLOW, CONTENT_TYPE, ORIGIN,
+        ACCESS_CONTROL_ALLOW_CREDENTIALS, ACCESS_CONTROL_ALLOW_ORIGIN,
+        ACCESS_CONTROL_REQUEST_HEADERS, ACCESS_CONTROL_REQUEST_METHOD, ALLOW, CONTENT_TYPE, ORIGIN,
     },
     Method, Request, Response, StatusCode,
 };
@@ -117,6 +117,138 @@ struct RouteMiddlewareBinding {
     middleware: MiddlewareLayer,
 }
 
+/// Configuration for transport-level CORS handling.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorsOptions {
+    allowed_origins: Option<Vec<String>>,
+    allowed_methods: Option<Vec<Method>>,
+    allowed_headers: Option<Vec<String>>,
+    allow_credentials: bool,
+}
+
+impl Default for CorsOptions {
+    fn default() -> Self {
+        Self {
+            allowed_origins: None,
+            allowed_methods: None,
+            allowed_headers: None,
+            allow_credentials: false,
+        }
+    }
+}
+
+impl CorsOptions {
+    /// Create a permissive CORS configuration that preserves the existing default bridge.
+    pub fn permissive() -> Self {
+        Self::default()
+    }
+
+    /// Restrict allowed origins to a fixed allowlist.
+    pub fn allow_origins<I, S>(mut self, origins: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.allowed_origins = Some(origins.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// Restrict allowed methods for preflight responses.
+    pub fn allow_methods<I>(mut self, methods: I) -> Self
+    where
+        I: IntoIterator<Item = Method>,
+    {
+        self.allowed_methods = Some(methods.into_iter().collect());
+        self
+    }
+
+    /// Restrict allowed request headers for preflight responses.
+    pub fn allow_headers<I, S>(mut self, headers: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.allowed_headers = Some(headers.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// Whether credentialed requests should be allowed.
+    pub fn allow_credentials(mut self, allow: bool) -> Self {
+        self.allow_credentials = allow;
+        self
+    }
+
+    fn allow_origin_header_value(&self, request_origin: Option<&str>) -> Option<HeaderValue> {
+        if let Some(allowed_origins) = &self.allowed_origins {
+            let request_origin = request_origin?;
+            if allowed_origins.iter().any(|allowed| allowed == request_origin) {
+                return HeaderValue::from_str(request_origin).ok();
+            }
+
+            return None;
+        }
+
+        match (self.allow_credentials, request_origin) {
+            (true, Some(request_origin)) => HeaderValue::from_str(request_origin).ok(),
+            (true, None) => None,
+            (false, _) => Some(HeaderValue::from_static("*")),
+        }
+    }
+
+    fn allow_methods_header_value(&self, headers: &HeaderMap) -> Option<HeaderValue> {
+        if let Some(allowed_methods) = &self.allowed_methods {
+            if allowed_methods.is_empty() {
+                return None;
+            }
+
+            let methods = allowed_methods
+                .iter()
+                .map(Method::as_str)
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            return HeaderValue::from_str(&methods).ok();
+        }
+
+        let requested_method = headers
+            .get(ACCESS_CONTROL_REQUEST_METHOD)
+            .and_then(|value| value.to_str().ok())?
+            .trim();
+        if requested_method.is_empty() {
+            return None;
+        }
+
+        let methods = if requested_method.eq_ignore_ascii_case("OPTIONS") {
+            "OPTIONS".to_string()
+        } else {
+            format!("{requested_method}, OPTIONS")
+        };
+
+        HeaderValue::from_str(&methods).ok()
+    }
+
+    fn allow_headers_header_value(&self, headers: &HeaderMap) -> Option<HeaderValue> {
+        if let Some(allowed_headers) = &self.allowed_headers {
+            if allowed_headers.is_empty() {
+                return None;
+            }
+
+            let headers = allowed_headers.join(", ");
+            return HeaderValue::from_str(&headers).ok();
+        }
+
+        headers
+            .get(ACCESS_CONTROL_REQUEST_HEADERS)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| HeaderValue::from_str(value).ok())
+    }
+
+    fn allow_credentials_header_value(&self) -> Option<HeaderValue> {
+        self.allow_credentials
+            .then_some(HeaderValue::from_static("true"))
+    }
+}
+
 /// Minimal HTTP transport shell for Nivasa.
 pub struct NivasaServer {
     routes: RouteDispatchRegistry<RouteHandlerBinding>,
@@ -125,7 +257,7 @@ pub struct NivasaServer {
     route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
-    cors: bool,
+    cors: Option<CorsOptions>,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
     shutdown: Option<oneshot::Receiver<()>>,
@@ -141,7 +273,7 @@ pub struct NivasaServerBuilder {
     route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
-    cors: bool,
+    cors: Option<CorsOptions>,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
     shutdown: Option<oneshot::Receiver<()>>,
@@ -186,6 +318,7 @@ impl NivasaServer {
                     let route_middlewares = route_middlewares.clone();
                     let interceptors = interceptors.clone();
                     let global_filters_for_connection = global_filters.clone();
+                    let cors = cors.clone();
                     #[cfg(feature = "tls")]
                     let tls_config = tls_config.clone();
 
@@ -243,7 +376,7 @@ impl NivasaServerBuilder {
             route_middlewares: Vec::new(),
             interceptors: Vec::new(),
             global_filters: Vec::new(),
-            cors: false,
+            cors: None,
             request_timeout: None,
             request_body_size_limit: None,
             shutdown: None,
@@ -344,7 +477,7 @@ impl NivasaServerBuilder {
 
     /// Enable permissive transport-side CORS handling.
     pub fn enable_cors(mut self) -> Self {
-        self.cors = true;
+        self.cors = Some(CorsOptions::permissive());
         self
     }
 
@@ -400,9 +533,15 @@ impl NivasaServerBuilder {
         self
     }
 
+    /// Configure transport-side CORS handling with explicit origins, methods, and headers.
+    pub fn cors_options(mut self, cors: CorsOptions) -> Self {
+        self.cors = Some(cors);
+        self
+    }
+
     /// Toggle permissive transport-side CORS handling explicitly.
     pub fn cors(mut self, cors: bool) -> Self {
-        self.cors = cors;
+        self.cors = cors.then(CorsOptions::permissive);
         self
     }
 
@@ -458,7 +597,7 @@ async fn serve_connection<S>(
     route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
-    cors: bool,
+    cors: Option<CorsOptions>,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
 ) where
@@ -472,7 +611,7 @@ async fn serve_connection<S>(
         let route_middlewares = route_middlewares.clone();
         let interceptors = interceptors.clone();
         let global_filters = global_filters.clone();
-        let cors = cors;
+        let cors = cors.clone();
         let request_timeout = request_timeout;
         let request_body_size_limit = request_body_size_limit;
         async move {
@@ -487,7 +626,7 @@ async fn serve_connection<S>(
                         route_middlewares,
                         interceptors,
                         global_filters,
-                        cors,
+                        cors.clone(),
                         request_body_size_limit,
                     ),
                 )
@@ -499,7 +638,8 @@ async fn serve_connection<S>(
                             StatusCode::REQUEST_TIMEOUT,
                             Body::text("request timed out"),
                         ),
-                        cors,
+                        cors.as_ref(),
+                        None,
                         None,
                     )),
                 }
@@ -512,7 +652,7 @@ async fn serve_connection<S>(
                     route_middlewares,
                     interceptors,
                     global_filters,
-                    cors,
+                    cors.clone(),
                     request_body_size_limit,
                 )
                 .await
@@ -532,12 +672,22 @@ async fn handle_request(
     route_middlewares: Vec<RouteMiddlewareBinding>,
     interceptors: Vec<InterceptorLayer>,
     global_filters: Vec<GlobalFilterBinding>,
-    cors: bool,
+    cors: Option<CorsOptions>,
     request_body_size_limit: Option<usize>,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
     let (parts, body) = request.into_parts();
-    if cors && is_cors_preflight(&parts.headers, &parts.method) {
-        return Ok(build_cors_preflight_response(&parts.headers));
+    let request_origin = parts
+        .headers
+        .get(ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+
+    if cors.is_some() && is_cors_preflight(&parts.headers, &parts.method) {
+        return Ok(build_cors_preflight_response(
+            &parts.headers,
+            cors.as_ref(),
+            request_origin.as_deref(),
+        ));
     }
 
     let body = match collect_request_body(body, request_body_size_limit).await {
@@ -548,14 +698,16 @@ async fn handle_request(
                     StatusCode::PAYLOAD_TOO_LARGE,
                     Body::text("request body too large"),
                 ),
-                cors,
+                cors.as_ref(),
+                request_origin.as_deref(),
                 None,
             ));
         }
         Err(BodyCollectionError::Invalid) => {
             return Ok(finalize_response(
                 NivasaResponse::new(StatusCode::BAD_REQUEST, Body::text("invalid request body")),
-                cors,
+                cors.as_ref(),
+                request_origin.as_deref(),
                 None,
             ));
         }
@@ -584,12 +736,18 @@ async fn handle_request(
                             StatusCode::INTERNAL_SERVER_ERROR,
                             Body::text("request pipeline middleware transition failed"),
                         ),
-                        cors,
+                        cors.as_ref(),
+                        request_origin.as_deref(),
                         None,
                     ));
                 }
 
-                return Ok(finalize_response(response, cors, request_id.as_deref()));
+                return Ok(finalize_response(
+                    response,
+                    cors.as_ref(),
+                    request_origin.as_deref(),
+                    request_id.as_deref(),
+                ));
             }
         },
         None => request,
@@ -606,7 +764,8 @@ async fn handle_request(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Body::text("request pipeline parse transition failed"),
             ),
-            cors,
+            cors.as_ref(),
+            request_origin.as_deref(),
             request_id.as_deref(),
         ));
     }
@@ -617,7 +776,8 @@ async fn handle_request(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Body::text("request pipeline middleware transition failed"),
             ),
-            cors,
+            cors.as_ref(),
+            request_origin.as_deref(),
             request_id.as_deref(),
         ));
     }
@@ -636,20 +796,35 @@ async fn handle_request(
             let request = match execute_middleware_sequence(module_middlewares, request).await {
                 MiddlewareExecution::Forwarded(request) => request,
                 MiddlewareExecution::ShortCircuited { response, .. } => {
-                    return Ok(finalize_response(response, cors, request_id.as_deref()));
+                    return Ok(finalize_response(
+                        response,
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        request_id.as_deref(),
+                    ));
                 }
             };
             let request = match execute_middleware_sequence(route_module_middlewares, request).await
             {
                 MiddlewareExecution::Forwarded(request) => request,
                 MiddlewareExecution::ShortCircuited { response, .. } => {
-                    return Ok(finalize_response(response, cors, request_id.as_deref()));
+                    return Ok(finalize_response(
+                        response,
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        request_id.as_deref(),
+                    ));
                 }
             };
             let request = match execute_middleware_sequence(route_middlewares, request).await {
                 MiddlewareExecution::Forwarded(request) => request,
                 MiddlewareExecution::ShortCircuited { response, .. } => {
-                    return Ok(finalize_response(response, cors, request_id.as_deref()));
+                    return Ok(finalize_response(
+                        response,
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        request_id.as_deref(),
+                    ));
                 }
             };
             match interceptors.is_empty() {
@@ -745,7 +920,12 @@ async fn handle_request(
         ),
     };
 
-    Ok(finalize_response(response, cors, request_id.as_deref()))
+    Ok(finalize_response(
+        response,
+        cors.as_ref(),
+        request_origin.as_deref(),
+        request_id.as_deref(),
+    ))
 }
 
 enum MiddlewareExecution {
@@ -1099,15 +1279,14 @@ fn with_request_id(response: NivasaResponse, request_id: Option<&str>) -> Nivasa
 
 fn finalize_response(
     mut response: NivasaResponse,
-    cors: bool,
+    cors: Option<&CorsOptions>,
+    request_origin: Option<&str>,
     request_id: Option<&str>,
 ) -> Response<Full<Bytes>> {
     response = with_request_id(response, request_id);
 
     let mut response = build_response(response.status(), response);
-    if cors {
-        apply_cors_headers(response.headers_mut());
-    }
+    apply_cors_headers(response.headers_mut(), cors, request_origin);
     response
 }
 
@@ -1146,53 +1325,74 @@ fn is_cors_preflight(headers: &HeaderMap, method: &Method) -> bool {
         && headers.contains_key(ACCESS_CONTROL_REQUEST_METHOD)
 }
 
-fn build_cors_preflight_response(headers: &HeaderMap) -> Response<Full<Bytes>> {
+fn build_cors_preflight_response(
+    headers: &HeaderMap,
+    cors: Option<&CorsOptions>,
+    request_origin: Option<&str>,
+) -> Response<Full<Bytes>> {
     let mut response = Response::new(Full::new(Bytes::new()));
     *response.status_mut() = StatusCode::NO_CONTENT;
-    apply_cors_headers(response.headers_mut());
+    apply_cors_headers(response.headers_mut(), cors, request_origin);
 
-    if let Some(value) = allow_methods_header_value(headers) {
+    if let Some(value) = allow_methods_header_value(headers, cors) {
         response
             .headers_mut()
             .insert(ACCESS_CONTROL_ALLOW_METHODS, value);
     }
 
-    if let Some(value) = echo_request_headers(headers) {
+    if let Some(value) = allow_headers_header_value(headers, cors) {
         response
             .headers_mut()
             .insert(ACCESS_CONTROL_ALLOW_HEADERS, value);
     }
 
+    if let Some(cors) = cors {
+        if let Some(value) = cors.allow_credentials_header_value() {
+            response
+                .headers_mut()
+                .insert(ACCESS_CONTROL_ALLOW_CREDENTIALS, value);
+        }
+    }
+
     response
 }
 
-fn apply_cors_headers(headers: &mut HeaderMap) {
-    headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
-}
-
-fn allow_methods_header_value(headers: &HeaderMap) -> Option<HeaderValue> {
-    let requested_method = headers
-        .get(ACCESS_CONTROL_REQUEST_METHOD)
-        .and_then(|value| value.to_str().ok())?
-        .trim();
-    if requested_method.is_empty() {
-        return None;
-    }
-
-    let methods = if requested_method.eq_ignore_ascii_case("OPTIONS") {
-        "OPTIONS".to_string()
-    } else {
-        format!("{requested_method}, OPTIONS")
+fn apply_cors_headers(
+    headers: &mut HeaderMap,
+    cors: Option<&CorsOptions>,
+    request_origin: Option<&str>,
+) {
+    let Some(cors) = cors else {
+        return;
     };
 
-    HeaderValue::from_str(&methods).ok()
+    if let Some(value) = cors.allow_origin_header_value(request_origin) {
+        headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, value);
+    }
+
+    if let Some(value) = cors.allow_credentials_header_value() {
+        headers.insert(ACCESS_CONTROL_ALLOW_CREDENTIALS, value);
+    }
 }
 
-fn echo_request_headers(headers: &HeaderMap) -> Option<HeaderValue> {
-    headers
-        .get(ACCESS_CONTROL_REQUEST_HEADERS)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| HeaderValue::from_str(value).ok())
+fn allow_methods_header_value(
+    headers: &HeaderMap,
+    cors: Option<&CorsOptions>,
+) -> Option<HeaderValue> {
+    match cors {
+        Some(cors) => cors.allow_methods_header_value(headers),
+        None => None,
+    }
+}
+
+fn allow_headers_header_value(
+    headers: &HeaderMap,
+    cors: Option<&CorsOptions>,
+) -> Option<HeaderValue> {
+    match cors {
+        Some(cors) => cors.allow_headers_header_value(headers),
+        None => None,
+    }
 }
 
 fn socket_addr(host: &str, port: u16) -> io::Result<SocketAddr> {

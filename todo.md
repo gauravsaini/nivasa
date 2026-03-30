@@ -562,7 +562,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test global middleware runs on every request
 - [x] Test module-level middleware runs only for that module's routes
 - [x] Test middleware ordering (global before module before route)
-- [ ] Test richer CORS middleware/CorsOptions integration adds correct headers
+- [x] Test richer CORS middleware/CorsOptions integration adds correct headers
 - [x] Test middleware exclusion (`.exclude()`)
 - [x] Test Tower middleware adapter works
 
