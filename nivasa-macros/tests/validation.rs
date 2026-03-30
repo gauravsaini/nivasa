@@ -36,6 +36,14 @@ struct FeatureFlags {
 }
 
 #[derive(Dto)]
+struct UsageStats {
+    #[is_number]
+    retry_count: u32,
+    #[is_number]
+    average_latency_ms: f64,
+}
+
+#[derive(Dto)]
 struct BioForm {
     #[max_length(12)]
     bio: String,
@@ -119,6 +127,16 @@ fn dto_validation_accepts_nested_valid_input() {
 #[test]
 fn dto_validation_accepts_boolean_fields() {
     let form = FeatureFlags { enabled: true };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_accepts_numeric_fields() {
+    let form = UsageStats {
+        retry_count: 3,
+        average_latency_ms: 12.5,
+    };
 
     assert!(form.validate().is_ok());
 }

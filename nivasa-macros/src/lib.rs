@@ -78,6 +78,7 @@ pub fn scxml_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
     attributes(
         is_email,
         is_string,
+        is_number,
         is_boolean,
         is_optional,
         validate_nested,

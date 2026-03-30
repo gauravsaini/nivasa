@@ -621,7 +621,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 4.2.1 — Validation Decorators (Attribute Macros)
 - [x] Implement `#[is_email]` — validate email format
 - [x] Implement `#[is_string]` — validate is string type
-- [ ] Implement `#[is_number]` — validate is numeric type
+- [x] Implement `#[is_number]` — validate is numeric type
 - [ ] Implement `#[is_int]` — validate is integer
 - [x] Implement `#[is_boolean]` — validate is boolean
 - [ ] Implement `#[min(n)]` — minimum value (for numbers)
