@@ -723,7 +723,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `Serialize` for `HttpException`
 - [ ] Implement standard error response shape: `{ statusCode, message, error }`
 - [ ] Support custom error details/payload via `.with_details(json!(...))`
-- [ ] Support error cause chaining (`.with_cause(inner_error)`)
+- [x] Support error cause chaining (`.with_cause(inner_error)`)
 
 #### 5.2.3 — Exception Tests
 - [ ] Test each exception type returns correct status code

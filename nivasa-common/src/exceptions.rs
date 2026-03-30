@@ -4,7 +4,7 @@
 //! error response shape: `{ statusCode, message, error }`.
 
 use serde::Serialize;
-use std::fmt;
+use std::{error::Error as StdError, fmt, sync::Arc};
 
 use crate::HttpStatus;
 
@@ -20,6 +20,8 @@ pub struct HttpException {
     pub error: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<serde_json::Value>,
+    #[serde(skip)]
+    cause: Option<Arc<dyn StdError + Send + Sync + 'static>>,
 }
 
 impl HttpException {
@@ -31,6 +33,7 @@ impl HttpException {
             message: message.into(),
             error,
             details: None,
+            cause: None,
         }
     }
 
@@ -42,6 +45,12 @@ impl HttpException {
     /// Attach additional details to the exception.
     pub fn with_details(mut self, details: serde_json::Value) -> Self {
         self.details = Some(details);
+        self
+    }
+
+    /// Attach an underlying cause without changing the serialized payload.
+    pub fn with_cause(mut self, cause: impl StdError + Send + Sync + 'static) -> Self {
+        self.cause = Some(Arc::new(cause));
         self
     }
 
@@ -106,7 +115,13 @@ impl fmt::Display for HttpException {
     }
 }
 
-impl std::error::Error for HttpException {}
+impl StdError for HttpException {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        self.cause
+            .as_deref()
+            .map(|cause| cause as &(dyn StdError + 'static))
+    }
+}
 
 fn default_error_name(status_code: u16) -> String {
     HttpStatus::try_from(status_code)
@@ -131,10 +146,14 @@ mod tests {
     fn test_exception_serialization() {
         let ex = HttpException::bad_request("Invalid email");
         let json = serde_json::to_value(&ex).unwrap();
-        assert_eq!(json["statusCode"], 400);
-        assert_eq!(json["message"], "Invalid email");
-        assert_eq!(json["error"], "Bad Request");
-        assert!(json.get("details").is_none());
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "statusCode": 400,
+                "message": "Invalid email",
+                "error": "Bad Request"
+            })
+        );
     }
 
     #[test]
@@ -147,8 +166,50 @@ mod tests {
             }),
         );
         let json = serde_json::to_value(&ex).unwrap();
-        assert_eq!(json["statusCode"], 422);
-        assert!(json["details"]["fields"]["email"].is_string());
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "statusCode": 422,
+                "message": "Validation failed",
+                "error": "Unprocessable Entity",
+                "details": {
+                    "fields": {
+                        "email": "must be a valid email"
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn test_exception_display_and_error_traits() {
+        let ex = HttpException::internal_server_error("Something broke");
+
+        assert_eq!(ex.to_string(), "500 Internal Server Error: Something broke");
+
+        let err: &dyn std::error::Error = &ex;
+        assert!(err.source().is_none());
+    }
+
+    #[test]
+    fn test_exception_cause_chaining_keeps_serialization_shape() {
+        let inner = std::io::Error::new(std::io::ErrorKind::Other, "disk failed");
+        let ex = HttpException::internal_server_error("Something broke").with_cause(inner);
+
+        assert_eq!(ex.to_string(), "500 Internal Server Error: Something broke");
+
+        let err: &dyn std::error::Error = &ex;
+        assert_eq!(err.source().map(ToString::to_string), Some("disk failed".into()));
+
+        let json = serde_json::to_value(&ex).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "statusCode": 500,
+                "message": "Something broke",
+                "error": "Internal Server Error"
+            })
+        );
     }
 
     #[test]
