@@ -699,24 +699,24 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 5.2.1 — Base Exception Types
 - [ ] Implement `HttpException` base struct (status: u16, message: String, description: Option<String>)
 - [ ] Derive `thiserror::Error` for all exception types
-- [ ] Implement `BadRequestException` (400)
-- [ ] Implement `UnauthorizedException` (401)
-- [ ] Implement `PaymentRequiredException` (402)
-- [ ] Implement `ForbiddenException` (403)
-- [ ] Implement `NotFoundException` (404)
-- [ ] Implement `MethodNotAllowedException` (405)
-- [ ] Implement `NotAcceptableException` (406)
+- [x] Implement `BadRequestException` (400)
+- [x] Implement `UnauthorizedException` (401)
+- [x] Implement `PaymentRequiredException` (402)
+- [x] Implement `ForbiddenException` (403)
+- [x] Implement `NotFoundException` (404)
+- [x] Implement `MethodNotAllowedException` (405)
+- [x] Implement `NotAcceptableException` (406)
 - [x] Implement `RequestTimeoutException` (408)
-- [ ] Implement `ConflictException` (409)
-- [ ] Implement `GoneException` (410)
-- [ ] Implement `PayloadTooLargeException` (413)
-- [ ] Implement `UnsupportedMediaTypeException` (415)
-- [ ] Implement `UnprocessableEntityException` (422)
-- [ ] Implement `TooManyRequestsException` (429)
-- [ ] Implement `InternalServerErrorException` (500)
+- [x] Implement `ConflictException` (409)
+- [x] Implement `GoneException` (410)
+- [x] Implement `PayloadTooLargeException` (413)
+- [x] Implement `UnsupportedMediaTypeException` (415)
+- [x] Implement `UnprocessableEntityException` (422)
+- [x] Implement `TooManyRequestsException` (429)
+- [x] Implement `InternalServerErrorException` (500)
 - [x] Implement `NotImplementedException` (501)
-- [ ] Implement `BadGatewayException` (502)
-- [ ] Implement `ServiceUnavailableException` (503)
+- [x] Implement `BadGatewayException` (502)
+- [x] Implement `ServiceUnavailableException` (503)
 - [x] Implement `GatewayTimeoutException` (504)
 
 #### 5.2.2 — Exception Serialization
@@ -726,7 +726,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support error cause chaining (`.with_cause(inner_error)`)
 
 #### 5.2.3 — Exception Tests
-- [ ] Test each exception type returns correct status code
+- [x] Test each exception type returns correct status code
 - [x] Test exception serialization to JSON matches expected shape
 - [x] Test custom exception with additional details
 - [x] Test `Display` / `Error` trait implementations

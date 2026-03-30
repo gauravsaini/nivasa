@@ -64,6 +64,10 @@ impl HttpException {
         Self::new(401u16, message)
     }
 
+    pub fn payment_required(message: impl Into<String>) -> Self {
+        Self::new(402u16, message)
+    }
+
     pub fn forbidden(message: impl Into<String>) -> Self {
         Self::new(403u16, message)
     }
@@ -76,8 +80,24 @@ impl HttpException {
         Self::new(405u16, message)
     }
 
+    pub fn not_acceptable(message: impl Into<String>) -> Self {
+        Self::new(406u16, message)
+    }
+
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::new(409u16, message)
+    }
+
+    pub fn gone(message: impl Into<String>) -> Self {
+        Self::new(410u16, message)
+    }
+
+    pub fn payload_too_large(message: impl Into<String>) -> Self {
+        Self::new(413u16, message)
+    }
+
+    pub fn unsupported_media_type(message: impl Into<String>) -> Self {
+        Self::new(415u16, message)
     }
 
     pub fn unprocessable_entity(message: impl Into<String>) -> Self {
@@ -98,6 +118,10 @@ impl HttpException {
 
     pub fn not_implemented(message: impl Into<String>) -> Self {
         Self::new(501u16, message)
+    }
+
+    pub fn bad_gateway(message: impl Into<String>) -> Self {
+        Self::new(502u16, message)
     }
 
     pub fn service_unavailable(message: impl Into<String>) -> Self {
@@ -140,6 +164,50 @@ mod tests {
         assert_eq!(ex.status_code, 404);
         assert_eq!(ex.message, "User not found");
         assert_eq!(ex.error, "Not Found");
+    }
+
+    #[test]
+    fn test_exception_status_code_matrix() {
+        macro_rules! assert_exception_case {
+            ($ctor:expr, $status:expr, $error:expr) => {{
+                let ex = ($ctor)("example");
+                assert_eq!(ex.status_code, $status);
+                assert_eq!(ex.message, "example");
+                assert_eq!(ex.error, $error);
+            }};
+        }
+
+        assert_exception_case!(HttpException::bad_request, 400, "Bad Request");
+        assert_exception_case!(HttpException::unauthorized, 401, "Unauthorized");
+        assert_exception_case!(HttpException::payment_required, 402, "Payment Required");
+        assert_exception_case!(HttpException::forbidden, 403, "Forbidden");
+        assert_exception_case!(HttpException::not_found, 404, "Not Found");
+        assert_exception_case!(HttpException::method_not_allowed, 405, "Method Not Allowed");
+        assert_exception_case!(HttpException::not_acceptable, 406, "Not Acceptable");
+        assert_exception_case!(HttpException::request_timeout, 408, "Request Timeout");
+        assert_exception_case!(HttpException::conflict, 409, "Conflict");
+        assert_exception_case!(HttpException::gone, 410, "Gone");
+        assert_exception_case!(HttpException::payload_too_large, 413, "Payload Too Large");
+        assert_exception_case!(
+            HttpException::unsupported_media_type,
+            415,
+            "Unsupported Media Type"
+        );
+        assert_exception_case!(
+            HttpException::unprocessable_entity,
+            422,
+            "Unprocessable Entity"
+        );
+        assert_exception_case!(HttpException::too_many_requests, 429, "Too Many Requests");
+        assert_exception_case!(
+            HttpException::internal_server_error,
+            500,
+            "Internal Server Error"
+        );
+        assert_exception_case!(HttpException::not_implemented, 501, "Not Implemented");
+        assert_exception_case!(HttpException::bad_gateway, 502, "Bad Gateway");
+        assert_exception_case!(HttpException::service_unavailable, 503, "Service Unavailable");
+        assert_exception_case!(HttpException::gateway_timeout, 504, "Gateway Timeout");
     }
 
     #[test]
@@ -212,30 +280,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_request_timeout_exception_constructor() {
-        let ex = HttpException::request_timeout("Request timed out");
-
-        assert_eq!(ex.status_code, 408);
-        assert_eq!(ex.message, "Request timed out");
-        assert_eq!(ex.error, "Request Timeout");
-    }
-
-    #[test]
-    fn test_not_implemented_exception_constructor() {
-        let ex = HttpException::not_implemented("Not implemented yet");
-
-        assert_eq!(ex.status_code, 501);
-        assert_eq!(ex.message, "Not implemented yet");
-        assert_eq!(ex.error, "Not Implemented");
-    }
-
-    #[test]
-    fn test_gateway_timeout_exception_constructor() {
-        let ex = HttpException::gateway_timeout("Gateway timed out");
-
-        assert_eq!(ex.status_code, 504);
-        assert_eq!(ex.message, "Gateway timed out");
-        assert_eq!(ex.error, "Gateway Timeout");
-    }
 }
