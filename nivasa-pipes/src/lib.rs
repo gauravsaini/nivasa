@@ -233,6 +233,31 @@ impl Pipe for TrimPipe {
     }
 }
 
+/// Replace an explicit `null` value with a configured default.
+///
+/// Missing values are handled by the extractor/macro layer later.
+#[derive(Debug, Clone)]
+pub struct DefaultValuePipe {
+    default_value: Value,
+}
+
+impl DefaultValuePipe {
+    /// Create a new default-value pipe.
+    pub fn new(default_value: Value) -> Self {
+        Self { default_value }
+    }
+}
+
+impl Pipe for DefaultValuePipe {
+    fn transform(&self, value: Value, _metadata: ArgumentMetadata) -> Result<Value, HttpException> {
+        if value.is_null() {
+            Ok(self.default_value.clone())
+        } else {
+            Ok(value)
+        }
+    }
+}
+
 /// Parse a JSON string into a UUID value.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ParseUuidPipe;
@@ -562,6 +587,25 @@ mod tests {
 
         assert_eq!(error.status_code, 400);
         assert_eq!(error.message, "TrimPipe expects a string value");
+    }
+
+    #[test]
+    fn default_value_pipe_replaces_explicit_null_and_preserves_present_values() {
+        let pipe = DefaultValuePipe::new(json!({
+            "role": "guest"
+        }));
+
+        assert_eq!(
+            pipe.transform(Value::Null, ArgumentMetadata::new(8)).unwrap(),
+            json!({
+                "role": "guest"
+            })
+        );
+        assert_eq!(
+            pipe.transform(json!("already-present"), ArgumentMetadata::new(9))
+                .unwrap(),
+            json!("already-present")
+        );
     }
 
     #[test]
