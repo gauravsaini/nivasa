@@ -622,7 +622,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `#[is_email]` — validate email format
 - [x] Implement `#[is_string]` — validate is string type
 - [x] Implement `#[is_number]` — validate is numeric type
-- [ ] Implement `#[is_int]` — validate is integer
+- [x] Implement `#[is_int]` — validate is integer
 - [x] Implement `#[is_boolean]` — validate is boolean
 - [ ] Implement `#[min(n)]` — minimum value (for numbers)
 - [ ] Implement `#[max(n)]` — maximum value (for numbers)
@@ -632,20 +632,20 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[matches(regex)]` — regex pattern match
 - [ ] Implement `#[is_optional]` — field is optional (skip if absent)
 - [ ] Implement `#[is_enum(EnumType)]` — validate value is valid enum variant
-- [ ] Implement `#[is_url]` — validate URL format
+- [x] Implement `#[is_url]` — validate URL format
 - [ ] Implement `#[is_uuid]` — validate UUID format
 - [ ] Implement `#[array_min_size(n)]` / `#[array_max_size(n)]`
-- [ ] Implement `#[validate_nested]` — validate nested DTO recursively
+- [x] Implement `#[validate_nested]` — validate nested DTO recursively
 - [ ] Implement `#[custom_validate(fn)]` — custom validation function
 
 #### 4.2.2 — Validation Engine
 - [x] Integrate `validator` crate or build custom validation engine
 - [x] Collect ALL validation errors for a DTO (don't fail on first)
 - [x] Format validation errors as structured JSON: `{ field, constraints: { rule: message } }`
-- [ ] Support nested DTO validation (recursive)
+- [x] Support nested DTO validation (recursive)
 - [ ] Support `Vec<T>` element validation
 - [ ] Support conditional validation (validate field X only if field Y has value Z)
-- [ ] Support validation groups (e.g., "create" vs "update" different rules)
+- [ ] Support validation groups (core context carrier landed; "create" vs "update" rule wiring still pending)
 
 #### 4.2.3 — DTO Derive Macro
 - [x] Implement `#[derive(Dto)]` to auto-generate `Validate` impl
@@ -659,7 +659,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test `#[min_length(6)]` on password field
 - [x] Test `#[max_length(12)]` on bio field
 - [x] Test multiple validation errors returned together
-- [ ] Test nested DTO validation
+- [x] Test nested DTO validation
 - [ ] Test optional field skips validation when absent
 - [ ] Test `#[validate_nested]` on vec of DTOs
 - [ ] Test custom validation function

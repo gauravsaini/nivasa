@@ -44,6 +44,12 @@ struct UsageStats {
 }
 
 #[derive(Dto)]
+struct IntMetrics {
+    #[is_int]
+    retry_count: i32,
+}
+
+#[derive(Dto)]
 struct BioForm {
     #[max_length(12)]
     bio: String,
@@ -137,6 +143,13 @@ fn dto_validation_accepts_numeric_fields() {
         retry_count: 3,
         average_latency_ms: 12.5,
     };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_accepts_integer_fields() {
+    let form = IntMetrics { retry_count: 3 };
 
     assert!(form.validate().is_ok());
 }
