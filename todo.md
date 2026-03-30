@@ -599,7 +599,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `ParseIntPipe` (parse string to `i32`/`i64`, 400 on failure)
 - [x] Implement `ParseFloatPipe` (parse string to `f32`/`f64`)
 - [x] Implement `ParseBoolPipe` (parse string to `bool`)
-- [ ] Implement `ParseUuidPipe` (parse string to `Uuid`)
+- [x] Implement `ParseUuidPipe` (parse string to `Uuid`)
 - [ ] Implement `ParseEnumPipe` (parse string to enum variant)
 - [ ] Implement `DefaultValuePipe` (provide default if value is missing/null)
 - [x] Implement `TrimPipe` (trim whitespace from string values)
@@ -613,7 +613,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test ValidationPipe with valid DTO → passes through
 - [ ] Test ValidationPipe with invalid DTO → 400 with field-level errors
 - [ ] Test pipe chaining (TrimPipe → ValidationPipe)
-- [ ] Test ParseUuidPipe with valid/invalid UUID
+- [x] Test ParseUuidPipe with valid/invalid UUID
 - [ ] Test DefaultValuePipe provides fallback
 
 ### 4.2 — Validation Integration (`nivasa-validation`)

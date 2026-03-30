@@ -9,6 +9,7 @@ use std::marker::PhantomData;
 use std::num::ParseFloatError;
 use std::num::ParseIntError;
 use std::str::ParseBoolError;
+use uuid::Uuid;
 
 /// Metadata passed into a pipe for the current argument.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -229,6 +230,33 @@ impl Pipe for TrimPipe {
             .ok_or_else(|| HttpException::bad_request("TrimPipe expects a string value"))?;
 
         Ok(Value::from(input.trim().to_string()))
+    }
+}
+
+/// Parse a JSON string into a UUID value.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ParseUuidPipe;
+
+impl ParseUuidPipe {
+    /// Create a new UUID parser.
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Pipe for ParseUuidPipe {
+    fn transform(&self, value: Value, _metadata: ArgumentMetadata) -> Result<Value, HttpException> {
+        let input = value
+            .as_str()
+            .ok_or_else(|| HttpException::bad_request("ParseUuidPipe expects a string value"))?;
+
+        let parsed = Uuid::parse_str(input).map_err(|_| {
+            HttpException::bad_request(format!(
+                "ParseUuidPipe could not parse `{input}` as a UUID"
+            ))
+        })?;
+
+        Ok(Value::from(parsed.to_string()))
     }
 }
 
@@ -489,6 +517,43 @@ mod tests {
 
         assert_eq!(error.status_code, 400);
         assert_eq!(error.message, "TrimPipe expects a string value");
+    }
+
+    #[test]
+    fn parse_uuid_pipe_transforms_uuid_strings() {
+        let pipe = ParseUuidPipe::new();
+
+        assert_eq!(
+            pipe.transform(
+                json!("550E8400-E29B-41D4-A716-446655440000"),
+                ArgumentMetadata::new(8),
+            )
+            .unwrap(),
+            json!("550e8400-e29b-41d4-a716-446655440000")
+        );
+    }
+
+    #[test]
+    fn parse_uuid_pipe_rejects_invalid_uuid_text_and_non_strings() {
+        let pipe = ParseUuidPipe::new();
+
+        let invalid_uuid_error = pipe
+            .transform(json!("not-a-uuid"), ArgumentMetadata::new(9))
+            .unwrap_err();
+        assert_eq!(invalid_uuid_error.status_code, 400);
+        assert_eq!(
+            invalid_uuid_error.message,
+            "ParseUuidPipe could not parse `not-a-uuid` as a UUID"
+        );
+
+        let non_string_error = pipe
+            .transform(json!(123), ArgumentMetadata::new(10))
+            .unwrap_err();
+        assert_eq!(non_string_error.status_code, 400);
+        assert_eq!(
+            non_string_error.message,
+            "ParseUuidPipe expects a string value"
+        );
     }
 
     #[test]

@@ -9,3 +9,4 @@ license.workspace = true
 [dependencies]
 nivasa-common = { path = "../nivasa-common" }
 serde_json = { workspace = true }
+uuid = { workspace = true }
