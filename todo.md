@@ -641,7 +641,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 4.2.2 — Validation Engine
 - [x] Integrate `validator` crate or build custom validation engine
 - [x] Collect ALL validation errors for a DTO (don't fail on first)
-- [ ] Format validation errors as structured JSON: `{ field, constraints: { rule: message } }`
+- [x] Format validation errors as structured JSON: `{ field, constraints: { rule: message } }`
 - [ ] Support nested DTO validation (recursive)
 - [ ] Support `Vec<T>` element validation
 - [ ] Support conditional validation (validate field X only if field Y has value Z)

@@ -5,6 +5,7 @@
 //! This crate provides the validation core used by later DTO and pipe
 //! integrations. It stays crate-local for now: no macros, no HTTP wiring.
 
+use serde::Serialize;
 use std::{collections::BTreeMap, error::Error as StdError, fmt};
 
 /// Trait for types that can validate their own invariants.
@@ -14,7 +15,7 @@ pub trait Validate {
 }
 
 /// A single field-level validation error with structured constraint messages.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ValidationError {
     /// The field or property name that failed validation.
     pub field: String,
@@ -39,7 +40,7 @@ impl ValidationError {
 }
 
 /// Aggregate of one or more validation errors.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
 pub struct ValidationErrors {
     errors: Vec<ValidationError>,
 }
@@ -167,6 +168,59 @@ mod tests {
         assert_eq!(
             errors.errors()[1].constraints.get("is_email"),
             Some(&"must contain an @ symbol".to_string())
+        );
+    }
+
+    #[test]
+    fn validation_error_serializes_as_structured_json() {
+        let error = ValidationError::new("email")
+            .with_constraint("is_email", "must contain an @ symbol")
+            .with_constraint("min_length", "must be at least 3 characters");
+
+        let json = serde_json::to_value(&error).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "field": "email",
+                "constraints": {
+                    "is_email": "must contain an @ symbol",
+                    "min_length": "must be at least 3 characters"
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn validation_errors_serializes_as_collection_of_structured_errors() {
+        let mut errors = ValidationErrors::new();
+        errors.push(
+            ValidationError::new("username")
+                .with_constraint("min_length", "must be at least 3 characters"),
+        );
+        errors.push(
+            ValidationError::new("email")
+                .with_constraint("is_email", "must contain an @ symbol"),
+        );
+
+        let json = serde_json::to_value(&errors).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "errors": [
+                    {
+                        "field": "username",
+                        "constraints": {
+                            "min_length": "must be at least 3 characters"
+                        }
+                    },
+                    {
+                        "field": "email",
+                        "constraints": {
+                            "is_email": "must contain an @ symbol"
+                        }
+                    }
+                ]
+            })
         );
     }
 }

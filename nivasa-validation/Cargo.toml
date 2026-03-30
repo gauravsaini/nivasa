@@ -8,3 +8,5 @@ license.workspace = true
 
 [dependencies]
 nivasa-common = { path = "../nivasa-common" }
+serde = { workspace = true }
+serde_json = { workspace = true }
