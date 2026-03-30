@@ -6,6 +6,7 @@ use nivasa_common::HttpException;
 use serde_json::Value;
 use std::any::TypeId;
 use std::marker::PhantomData;
+use std::num::ParseFloatError;
 use std::num::ParseIntError;
 
 /// Metadata passed into a pipe for the current argument.
@@ -83,6 +84,37 @@ impl ParseIntTarget for i64 {
     }
 }
 
+/// Supported floating-point targets for [`ParseFloatPipe`].
+pub trait ParseFloatTarget: Send + Sync + 'static {
+    fn parse(input: &str) -> Result<Self, ParseFloatError>
+    where
+        Self: Sized;
+
+    fn into_value(value: Self) -> Value
+    where
+        Self: Sized;
+}
+
+impl ParseFloatTarget for f32 {
+    fn parse(input: &str) -> Result<Self, ParseFloatError> {
+        input.parse::<f32>()
+    }
+
+    fn into_value(value: Self) -> Value {
+        Value::from(value)
+    }
+}
+
+impl ParseFloatTarget for f64 {
+    fn parse(input: &str) -> Result<Self, ParseFloatError> {
+        input.parse::<f64>()
+    }
+
+    fn into_value(value: Self) -> Value {
+        Value::from(value)
+    }
+}
+
 /// Parse a JSON string into an integer value.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ParseIntPipe<T = i64> {
@@ -109,6 +141,40 @@ where
 
         let parsed = T::parse(input).map_err(|_| {
             HttpException::bad_request(format!("ParseIntPipe could not parse `{input}` as an integer"))
+        })?;
+
+        Ok(T::into_value(parsed))
+    }
+}
+
+/// Parse a JSON string into a floating-point value.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ParseFloatPipe<T = f64> {
+    _marker: PhantomData<T>,
+}
+
+impl<T> ParseFloatPipe<T> {
+    /// Create a new float parser.
+    pub const fn new() -> Self {
+        Self {
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T> Pipe for ParseFloatPipe<T>
+where
+    T: ParseFloatTarget,
+{
+    fn transform(&self, value: Value, _metadata: ArgumentMetadata) -> Result<Value, HttpException> {
+        let input = value.as_str().ok_or_else(|| {
+            HttpException::bad_request("ParseFloatPipe expects a string value")
+        })?;
+
+        let parsed = T::parse(input).map_err(|_| {
+            HttpException::bad_request(format!(
+                "ParseFloatPipe could not parse `{input}` as a float"
+            ))
         })?;
 
         Ok(T::into_value(parsed))
@@ -193,6 +259,36 @@ mod tests {
         assert_eq!(
             error.message,
             "ParseIntPipe could not parse `abc` as an integer"
+        );
+    }
+
+    #[test]
+    fn parse_float_pipe_transforms_float_strings_for_f32_and_f64() {
+        let metadata = ArgumentMetadata::new(0);
+
+        let f32_pipe = ParseFloatPipe::<f32>::new();
+        let f64_pipe = ParseFloatPipe::<f64>::new();
+
+        assert_eq!(
+            f32_pipe.transform(json!("3.5"), metadata.clone()).unwrap(),
+            json!(3.5f32)
+        );
+        assert_eq!(
+            f64_pipe.transform(json!("-0.125"), metadata).unwrap(),
+            json!(-0.125f64)
+        );
+    }
+
+    #[test]
+    fn parse_float_pipe_rejects_non_float_input() {
+        let pipe = ParseFloatPipe::<f64>::new();
+
+        let error = pipe.transform(json!("not-a-float"), ArgumentMetadata::new(4)).unwrap_err();
+
+        assert_eq!(error.status_code, 400);
+        assert_eq!(
+            error.message,
+            "ParseFloatPipe could not parse `not-a-float` as a float"
         );
     }
 }

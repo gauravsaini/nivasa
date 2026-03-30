@@ -57,7 +57,7 @@
 
 ### 0.4 — Umbrella Crate Re-export Strategy
 - [x] Design `nivasa::prelude::*` — users should only need one import
-- [x] Re-export key traits and runtime types: `Controller`, `Module`, `Injectable`, plus the landed DI/module/runtime surface; `GuardExecutionContext`, `GuardExecutionOutcome`, `Interceptor`, `Reflector`, `ExceptionFilter`, and `Middleware` (the `NivasaMiddleware` alias) are now re-exported from the umbrella crate, and the `filters`/`pipes` umbrella namespaces are also re-exported; `Pipe` still needs upstream exports
+- [x] Re-export key traits and runtime types: `Controller`, `Module`, `Injectable`, plus the landed DI/module/runtime surface; `GuardExecutionContext`, `GuardExecutionOutcome`, `Interceptor`, `Reflector`, `ExceptionFilter`, `Middleware` (the `NivasaMiddleware` alias), `Pipe`, and `ArgumentMetadata` are now re-exported from the umbrella crate, and the `filters`/`pipes` umbrella namespaces are also re-exported
 - [x] Re-export key macros: `#[module]`, `#[injectable]`, `#[controller]`, `#[get]`, `#[post]`, `#[put]`, `#[delete]`, `#[patch]`, `#[head]`, `#[options]`, `#[all]`, `#[impl_controller]`, `#[scxml_handler]`
 - [x] Re-export `ServerOptions`, `HttpException`, and the existing HTTP/server surface
 - [x] Re-export `StatechartEngine`, generated state/event enums from `nivasa-statechart`
@@ -597,7 +597,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 4.1.3 — Built-in Pipes
 - [ ] Implement `ValidationPipe` (validate DTO fields, return 400 with error details)
 - [x] Implement `ParseIntPipe` (parse string to `i32`/`i64`, 400 on failure)
-- [ ] Implement `ParseFloatPipe` (parse string to `f32`/`f64`)
+- [x] Implement `ParseFloatPipe` (parse string to `f32`/`f64`)
 - [ ] Implement `ParseBoolPipe` (parse string to `bool`)
 - [ ] Implement `ParseUuidPipe` (parse string to `Uuid`)
 - [ ] Implement `ParseEnumPipe` (parse string to enum variant)
@@ -607,6 +607,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 4.1.4 — Pipe Tests
 - [x] Test ParseIntPipe with valid input → returns i32
 - [x] Test ParseIntPipe with "abc" → 400 with message
+- [x] Test ParseFloatPipe with valid input → returns f32/f64
+- [x] Test ParseFloatPipe with "not-a-float" → 400 with message
 - [ ] Test ValidationPipe with valid DTO → passes through
 - [ ] Test ValidationPipe with invalid DTO → 400 with field-level errors
 - [ ] Test pipe chaining (TrimPipe → ValidationPipe)
@@ -1016,7 +1018,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Write interceptors documentation (with caching, logging examples)
 - [ ] Write pipes documentation (built-in pipes, custom pipes)
 - [x] Write exception filters documentation
-- [ ] Write middleware documentation (including Tower compatibility)
+- [x] Write middleware documentation (including Tower compatibility)
 - [ ] Write configuration documentation (env loading, type-safe config)
 - [ ] Write testing documentation (TestingModule, TestClient, mocking)
 - [ ] Write CLI documentation (all generators, options)
