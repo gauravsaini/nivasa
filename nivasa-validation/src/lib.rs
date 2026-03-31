@@ -43,6 +43,16 @@ pub fn is_url(value: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Return whether the supplied string matches the supplied regular expression.
+///
+/// The helper keeps regex compilation and matching encapsulated so later macro
+/// wiring can reuse the same core behavior without inventing a new contract.
+pub fn matches_regex(value: &str, pattern: &str) -> bool {
+    regex::Regex::new(pattern)
+        .map(|regex| regex.is_match(value))
+        .unwrap_or(false)
+}
+
 /// Named validation group active for a validation pass.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -401,6 +411,17 @@ mod tests {
         assert!(!is_url("/relative/path"));
         assert!(!is_url("https://"));
         assert!(!is_url("not a url"));
+    }
+
+    #[test]
+    fn matches_regex_accepts_matching_values() {
+        assert!(matches_regex("alice@example.com", r"^[^@\s]+@[^@\s]+\.[^@\s]+$"));
+    }
+
+    #[test]
+    fn matches_regex_rejects_non_matching_or_invalid_patterns() {
+        assert!(!matches_regex("alice@example.com", r"^[0-9]+$"));
+        assert!(!matches_regex("alice@example.com", r"(["));
     }
 
     #[test]
