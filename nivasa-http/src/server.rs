@@ -922,6 +922,18 @@ async fn handle_request(
                 }
             }
 
+            if pipeline.complete_interceptors_pre().is_err() {
+                return Ok(finalize_response(
+                    NivasaResponse::new(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Body::text("request pipeline interceptor transition failed"),
+                    ),
+                    cors.as_ref(),
+                    request_origin.as_deref(),
+                    request_id.as_deref(),
+                ));
+            }
+
             let transformed_body = match apply_global_pipes(pipeline.request(), &global_pipes) {
                 Ok(body) => body,
                 Err(error) => {
@@ -970,8 +982,7 @@ async fn handle_request(
             match interceptors.is_empty() {
                 false => match execute_interceptors(interceptors, request, handler).await {
                     InterceptorExecution::Completed(response) => {
-                        if pipeline.complete_interceptors_pre().is_err()
-                            || pipeline.complete_handler().is_err()
+                        if pipeline.complete_handler().is_err()
                             || pipeline.complete_interceptors_post().is_err()
                             || pipeline.complete_response().is_err()
                         {
@@ -1005,8 +1016,7 @@ async fn handle_request(
                         handler_called,
                     } => {
                         let transition_failed = if handler_called {
-                            pipeline.complete_interceptors_pre().is_err()
-                                || pipeline.complete_handler().is_err()
+                            pipeline.complete_handler().is_err()
                                 || pipeline.fail_interceptors_post().is_err()
                         } else {
                             pipeline.fail_interceptors_pre().is_err()
@@ -1029,13 +1039,37 @@ async fn handle_request(
                         }
                     }
                 },
-                true => match tokio::task::spawn_blocking(move || (handler)(&request)).await {
-                    Ok(response) => response,
-                    Err(_) => NivasaResponse::new(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Body::text("request handler failed"),
-                    ),
-                },
+                true => {
+                    let request = pipeline.request().clone();
+                    match tokio::task::spawn_blocking(move || (handler)(&request)).await {
+                        Ok(response) => {
+                            if pipeline.complete_handler().is_err()
+                                || pipeline.complete_interceptors_post().is_err()
+                                || pipeline.complete_response().is_err()
+                            {
+                                NivasaResponse::new(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    Body::text("request pipeline handler transition failed"),
+                                )
+                            } else {
+                                response
+                            }
+                        }
+                        Err(_) => {
+                            if pipeline.fail_handler().is_err() {
+                                NivasaResponse::new(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    Body::text("request pipeline handler transition failed"),
+                                )
+                            } else {
+                                NivasaResponse::new(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    Body::text("request handler failed"),
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
         Ok(RouteDispatchOutcome::NotFound) => {
