@@ -216,7 +216,17 @@ fn build_nested_validation_check(
     let field_access = quote!(self.#field_name);
 
     if is_option_like_type(&field.ty) {
+        if let Some(inner) = option_inner_type(&field.ty) {
+            if is_vec_like_type(inner) {
+                return build_nested_validation_check_for_vec_option(field_label, field_access);
+            }
+        }
+
         return build_nested_validation_check_from_option(field_label, field_access);
+    }
+
+    if is_vec_like_type(&field.ty) {
+        return build_nested_validation_check_for_vec(field_label, field_access);
     }
 
     build_nested_validation_check_direct(field_label, field_access)
@@ -235,10 +245,7 @@ fn build_nested_validation_check_with_access(
     }
 
     build_nested_validation_check_direct(
-        LitStr::new(
-            &field.ident.as_ref().unwrap().to_string(),
-            field.ident.as_ref().unwrap().span(),
-        ),
+        LitStr::new(&field.ident.as_ref().unwrap().to_string(), field.ident.as_ref().unwrap().span()),
         field_access.clone(),
     )
 }
@@ -265,6 +272,62 @@ fn build_nested_validation_check_from_option(
                 Ok(()) => {}
                 Err(child_errors) => {
                     #child_errors_push
+                }
+            }
+        }
+    })
+}
+
+fn build_nested_validation_check_for_vec_option(
+    field_label: LitStr,
+    field_access: proc_macro2::TokenStream,
+) -> Result<proc_macro2::TokenStream> {
+    let child_errors_push = quote! {
+        for (index, child) in child.iter().enumerate() {
+            match nivasa_validation::Validate::validate(child) {
+                Ok(()) => {}
+                Err(child_errors) => {
+                    for mut child_error in child_errors.into_errors() {
+                        if child_error.field.is_empty() {
+                            child_error.field = ::std::format!("{}[{}]", #field_label, index);
+                        } else {
+                            child_error.field =
+                                ::std::format!("{}[{}].{}", #field_label, index, child_error.field);
+                        }
+
+                        errors.push(child_error);
+                    }
+                }
+            }
+        }
+    };
+
+    Ok(quote! {
+        if let Some(child) = &#field_access {
+            #child_errors_push
+        }
+    })
+}
+
+fn build_nested_validation_check_for_vec(
+    field_label: LitStr,
+    field_access: proc_macro2::TokenStream,
+) -> Result<proc_macro2::TokenStream> {
+    Ok(quote! {
+        for (index, child) in #field_access.iter().enumerate() {
+            match nivasa_validation::Validate::validate(child) {
+                Ok(()) => {}
+                Err(child_errors) => {
+                    for mut child_error in child_errors.into_errors() {
+                        if child_error.field.is_empty() {
+                            child_error.field = ::std::format!("{}[{}]", #field_label, index);
+                        } else {
+                            child_error.field =
+                                ::std::format!("{}[{}].{}", #field_label, index, child_error.field);
+                        }
+
+                        errors.push(child_error);
+                    }
                 }
             }
         }
@@ -450,6 +513,21 @@ fn is_option_like_type(ty: &Type) -> bool {
         Type::Reference(reference) => is_option_like_type(reference.elem.as_ref()),
         Type::Group(group) => is_option_like_type(group.elem.as_ref()),
         Type::Paren(paren) => is_option_like_type(paren.elem.as_ref()),
+        _ => false,
+    }
+}
+
+fn is_vec_like_type(ty: &Type) -> bool {
+    match ty {
+        Type::Path(path) => path
+            .path
+            .segments
+            .last()
+            .map(|segment| segment.ident == "Vec")
+            .unwrap_or(false),
+        Type::Reference(reference) => is_vec_like_type(reference.elem.as_ref()),
+        Type::Group(group) => is_vec_like_type(group.elem.as_ref()),
+        Type::Paren(paren) => is_vec_like_type(paren.elem.as_ref()),
         _ => false,
     }
 }

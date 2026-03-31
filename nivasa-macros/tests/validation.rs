@@ -30,6 +30,12 @@ struct AccountForm {
 }
 
 #[derive(Dto)]
+struct ContactListForm {
+    #[validate_nested]
+    contacts: Vec<ContactDetails>,
+}
+
+#[derive(Dto)]
 struct FeatureFlags {
     #[is_boolean]
     enabled: bool,
@@ -144,6 +150,46 @@ fn dto_validation_accepts_nested_valid_input() {
             email: "alice@example.com".into(),
             password: "secret1".into(),
         },
+    };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_collects_vec_nested_field_errors_with_indices() {
+    let form = ContactListForm {
+        contacts: vec![
+            ContactDetails {
+                email: "not-an-email".into(),
+                password: "123".into(),
+            },
+            ContactDetails {
+                email: "bob@example.com".into(),
+                password: "456".into(),
+            },
+        ],
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 3);
+    assert_eq!(errors.errors()[0].field, "contacts[0].email");
+    assert_eq!(errors.errors()[1].field, "contacts[0].password");
+    assert_eq!(errors.errors()[2].field, "contacts[1].password");
+}
+
+#[test]
+fn dto_validation_accepts_vec_nested_valid_input() {
+    let form = ContactListForm {
+        contacts: vec![
+            ContactDetails {
+                email: "alice@example.com".into(),
+                password: "secret1".into(),
+            },
+            ContactDetails {
+                email: "bob@example.com".into(),
+                password: "secret2".into(),
+            },
+        ],
     };
 
     assert!(form.validate().is_ok());

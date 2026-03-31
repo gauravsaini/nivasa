@@ -12,6 +12,7 @@ fn validation_macro_validation() {
     t.pass("tests/trybuild/validation_is_url_pass.rs");
     t.pass("tests/trybuild/validation_is_optional_pass.rs");
     t.pass("tests/trybuild/validation_validate_nested_pass.rs");
+    t.pass("tests/trybuild/validation_validate_nested_vec_pass.rs");
     t.compile_fail("tests/trybuild/validation_min_length_invalid.rs");
     t.compile_fail("tests/trybuild/validation_max_length_invalid.rs");
     t.compile_fail("tests/trybuild/validation_is_boolean_invalid.rs");

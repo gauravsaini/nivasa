@@ -643,7 +643,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Collect ALL validation errors for a DTO (don't fail on first)
 - [x] Format validation errors as structured JSON: `{ field, constraints: { rule: message } }`
 - [x] Support nested DTO validation (recursive)
-- [ ] Support `Vec<T>` element validation
+- [x] Support `Vec<T>` element validation
 - [ ] Support conditional validation (validate field X only if field Y has value Z)
 - [ ] Support validation groups (core context carrier landed; "create" vs "update" rule wiring still pending)
 
@@ -661,7 +661,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test multiple validation errors returned together
 - [x] Test nested DTO validation
 - [x] Test optional field skips validation when absent
-- [ ] Test `#[validate_nested]` on vec of DTOs
+- [x] Test `#[validate_nested]` on vec of DTOs
 - [ ] Test custom validation function
 
 ---
