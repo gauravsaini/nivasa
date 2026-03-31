@@ -93,6 +93,16 @@ fn build_field_checks(field: &Field) -> Result<Vec<proc_macro2::TokenStream>> {
                     errors.push(
                         nivasa_validation::ValidationError::new(#field_label)
                             .with_constraint("is_uuid", "must be a valid UUID"),
+                        );
+                }
+            });
+        } else if attr.path().is_ident("is_url") {
+            ensure_url_type(field, attr)?;
+            checks.push(quote! {
+                if !nivasa_validation::is_url(&#field_access) {
+                    errors.push(
+                        nivasa_validation::ValidationError::new(#field_label)
+                            .with_constraint("is_url", "must be a valid URL"),
                     );
                 }
             });
@@ -218,6 +228,17 @@ fn ensure_uuid_type(field: &Field, attr: &Attribute) -> Result<()> {
         Err(Error::new(
             attr.span(),
             "expected a string field for `#[is_uuid]`",
+        ))
+    }
+}
+
+fn ensure_url_type(field: &Field, attr: &Attribute) -> Result<()> {
+    if is_string_like_type(&field.ty) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            attr.span(),
+            "expected a string field for `#[is_url]`",
         ))
     }
 }

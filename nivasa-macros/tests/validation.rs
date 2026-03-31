@@ -61,6 +61,12 @@ struct SessionForm {
     session_id: String,
 }
 
+#[derive(Dto)]
+struct WebhookForm {
+    #[is_url]
+    callback_url: String,
+}
+
 #[test]
 fn dto_validation_accepts_valid_input() {
     let form = SignupForm {
@@ -202,5 +208,29 @@ fn dto_validation_rejects_invalid_uuid_fields() {
     assert_eq!(
         errors.errors()[0].constraints.get("is_uuid"),
         Some(&"must be a valid UUID".to_string())
+    );
+}
+
+#[test]
+fn dto_validation_accepts_url_fields() {
+    let form = WebhookForm {
+        callback_url: "https://example.com/webhook".into(),
+    };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_rejects_invalid_url_fields() {
+    let form = WebhookForm {
+        callback_url: "not a url".into(),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "callback_url");
+    assert_eq!(
+        errors.errors()[0].constraints.get("is_url"),
+        Some(&"must be a valid URL".to_string())
     );
 }
