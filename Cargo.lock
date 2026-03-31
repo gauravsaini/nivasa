@@ -1093,6 +1093,7 @@ version = "0.1.0"
 dependencies = [
  "http",
  "nivasa-common",
+ "regex",
  "serde",
  "serde_json",
 ]
