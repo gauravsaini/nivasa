@@ -1156,6 +1156,10 @@ fn apply_global_pipes(
     request: &NivasaRequest,
     pipes: &[PipeLayer],
 ) -> Result<Body, HttpException> {
+    if pipes.is_empty() {
+        return Ok(request.body().clone());
+    }
+
     let mut value = request_body_to_pipe_value(request)?;
     let metadata = ArgumentMetadata::new(0).with_data_type("body");
 
