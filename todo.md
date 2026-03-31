@@ -632,7 +632,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[matches(regex)]` — regex pattern match
 - [ ] Implement `#[is_optional]` — field is optional (skip if absent)
 - [ ] Implement `#[is_enum(EnumType)]` — validate value is valid enum variant
-- [x] Implement `#[is_url]` — validate URL format
+- [ ] Implement `#[is_url]` — validate URL format (core helper landed; macro wiring pending)
 - [x] Implement `#[is_uuid]` — validate UUID format
 - [ ] Implement `#[array_min_size(n)]` / `#[array_max_size(n)]`
 - [x] Implement `#[validate_nested]` — validate nested DTO recursively
