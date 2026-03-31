@@ -67,6 +67,13 @@ struct WebhookForm {
     callback_url: String,
 }
 
+#[derive(Dto)]
+struct OptionalContactForm {
+    #[is_optional]
+    #[is_email]
+    email: Option<String>,
+}
+
 #[test]
 fn dto_validation_accepts_valid_input() {
     let form = SignupForm {
@@ -232,5 +239,27 @@ fn dto_validation_rejects_invalid_url_fields() {
     assert_eq!(
         errors.errors()[0].constraints.get("is_url"),
         Some(&"must be a valid URL".to_string())
+    );
+}
+
+#[test]
+fn dto_validation_skips_optional_fields_when_absent() {
+    let form = OptionalContactForm { email: None };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_validates_optional_fields_when_present() {
+    let form = OptionalContactForm {
+        email: Some("not-an-email".into()),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "email");
+    assert_eq!(
+        errors.errors()[0].constraints.get("is_email"),
+        Some(&"must be a valid email".to_string())
     );
 }

@@ -1,0 +1,5 @@
+error: expected an `Option<T>` field for `#[is_optional]`
+ --> tests/trybuild/validation_is_optional_invalid.rs:5:5
+  |
+5 |     #[is_optional]
+  |     ^

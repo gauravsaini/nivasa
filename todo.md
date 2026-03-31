@@ -630,7 +630,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `#[max_length(n)]` — maximum string/array length
 - [ ] Implement `#[is_not_empty]` — validate non-empty string/vec
 - [ ] Implement `#[matches(regex)]` — regex pattern match
-- [ ] Implement `#[is_optional]` — field is optional (skip if absent)
+- [x] Implement `#[is_optional]` — field is optional (skip if absent)
 - [ ] Implement `#[is_enum(EnumType)]` — validate value is valid enum variant
 - [x] Implement `#[is_url]` — validate URL format (core helper landed; macro wiring complete)
 - [x] Implement `#[is_uuid]` — validate UUID format
@@ -660,7 +660,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test `#[max_length(12)]` on bio field
 - [x] Test multiple validation errors returned together
 - [x] Test nested DTO validation
-- [ ] Test optional field skips validation when absent
+- [x] Test optional field skips validation when absent
 - [ ] Test `#[validate_nested]` on vec of DTOs
 - [ ] Test custom validation function
 
