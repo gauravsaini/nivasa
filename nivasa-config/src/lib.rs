@@ -32,7 +32,7 @@ mod tests {
 
     #[test]
     fn config_module_supports_the_expected_core_traits() {
-        let module = ConfigModule::default();
+        let module = ConfigModule;
 
         assert_eq!(module, ConfigModule::new());
         assert_eq!(format!("{module:?}"), "ConfigModule");
