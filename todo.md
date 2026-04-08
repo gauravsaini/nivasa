@@ -478,7 +478,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.1.5 — Built-in Guards
 - [x] Implement `AuthGuard` skeleton (JWT validation pattern)
 - [x] Implement `RolesGuard` (check roles via Reflector + `#[roles(...)]`)
-- [ ] Implement `ThrottlerGuard` (rate limiting — see Phase 3.4)
+- [x] Implement `ThrottlerGuard` (rate limiting — see Phase 3.4)
 
 #### 3.1.6 — Guard Tests
 - [x] Test guard that always allows → handler executes
@@ -844,9 +844,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `nivasa generate middleware <name>`
 - [ ] Implement `nivasa info` — print framework version, Rust version, OS info
 - [x] Implement `nivasa statechart validate --all` — validate all SCXML files in project
-- [ ] Implement `nivasa statechart visualize` — generate diagrams from SCXML
-- [ ] Implement `nivasa statechart parity` — check generated code matches SCXML
-- [ ] Implement `nivasa statechart diff` — show SCXML changes between commits
+- [x] Implement `nivasa statechart visualize` — generate diagrams from SCXML
+- [x] Implement `nivasa statechart parity` — check generated code matches SCXML
+- [x] Implement `nivasa statechart diff` — show SCXML changes between commits
 
 #### 6.4.2 — Project Scaffolding Templates
 - [ ] Create template for new project: `Cargo.toml`, `main.rs`, `app_module.rs`, `.env`, `.gitignore`
