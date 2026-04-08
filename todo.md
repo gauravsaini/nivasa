@@ -595,7 +595,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Support pipe chaining: `#[pipe(Pipe1, Pipe2)]` (left to right)
 
 #### 4.1.3 — Built-in Pipes
-- [ ] Implement `ValidationPipe` (validate DTO fields, return 400 with error details)
+- [x] Implement `ValidationPipe` (validate DTO fields, return 400 with error details)
 - [x] Implement `ParseIntPipe` (parse string to `i32`/`i64`, 400 on failure)
 - [x] Implement `ParseFloatPipe` (parse string to `f32`/`f64`)
 - [x] Implement `ParseBoolPipe` (parse string to `bool`)
@@ -610,8 +610,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test ParseFloatPipe with valid input → returns f32/f64
 - [x] Test ParseFloatPipe with "not-a-float" → 400 with message
 - [x] Test ParseBoolPipe with valid/invalid input
-- [ ] Test ValidationPipe with valid DTO → passes through
-- [ ] Test ValidationPipe with invalid DTO → 400 with field-level errors
+- [x] Test ValidationPipe with valid DTO → passes through
+- [x] Test ValidationPipe with invalid DTO → 400 with field-level errors
 - [ ] Test pipe chaining (TrimPipe → ValidationPipe)
 - [x] Test ParseUuidPipe with valid/invalid UUID
 - [x] Test DefaultValuePipe provides fallback for null values

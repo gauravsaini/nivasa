@@ -3,6 +3,8 @@
 //! Nivasa framework — pipes.
 
 use nivasa_common::HttpException;
+use nivasa_validation::{Validate, ValidationErrors};
+use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use std::any::TypeId;
 use std::marker::PhantomData;
@@ -258,6 +260,53 @@ impl Pipe for DefaultValuePipe {
     }
 }
 
+/// Deserialize and validate a JSON object DTO.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ValidationPipe<T> {
+    _marker: PhantomData<T>,
+}
+
+impl<T> ValidationPipe<T> {
+    /// Create a new validation pipe.
+    pub const fn new() -> Self {
+        Self {
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T> Pipe for ValidationPipe<T>
+where
+    T: Validate + Serialize + DeserializeOwned + Send + Sync + 'static,
+{
+    fn transform(&self, value: Value, _metadata: ArgumentMetadata) -> Result<Value, HttpException> {
+        if !value.is_object() {
+            return Err(HttpException::bad_request(
+                "ValidationPipe expects a JSON object value",
+            ));
+        }
+
+        let dto = serde_json::from_value::<T>(value).map_err(|error| {
+            HttpException::bad_request(format!(
+                "ValidationPipe could not deserialize request body: {error}"
+            ))
+        })?;
+
+        dto.validate().map_err(validation_exception)?;
+
+        serde_json::to_value(dto).map_err(|error| {
+            HttpException::bad_request(format!(
+                "ValidationPipe could not serialize validated DTO: {error}"
+            ))
+        })
+    }
+}
+
+fn validation_exception(errors: ValidationErrors) -> HttpException {
+    let details = serde_json::to_value(&errors).unwrap_or_else(|_| Value::Null);
+    HttpException::bad_request("Validation failed").with_details(details)
+}
+
 /// Parse a JSON string into a UUID value.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ParseUuidPipe;
@@ -359,6 +408,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::{Deserialize, Serialize};
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
@@ -609,6 +659,102 @@ mod tests {
     }
 
     #[test]
+    fn validation_pipe_accepts_valid_dto_objects() {
+        let pipe = ValidationPipe::<SignupDto>::new();
+
+        let output = pipe
+            .transform(
+                json!({
+                    "email": "alice@example.com",
+                    "password": "secret1"
+                }),
+                ArgumentMetadata::new(10).with_data_type("body"),
+            )
+            .unwrap();
+
+        assert_eq!(
+            output,
+            json!({
+                "email": "alice@example.com",
+                "password": "secret1"
+            })
+        );
+    }
+
+    #[test]
+    fn validation_pipe_returns_field_level_errors_for_invalid_dtos() {
+        let pipe = ValidationPipe::<SignupDto>::new();
+
+        let error = pipe
+            .transform(
+                json!({
+                    "email": "invalid-email",
+                    "password": "123"
+                }),
+                ArgumentMetadata::new(11).with_data_type("body"),
+            )
+            .unwrap_err();
+
+        assert_eq!(error.status_code, 400);
+        assert_eq!(error.message, "Validation failed");
+        assert_eq!(
+            error.details,
+            Some(json!({
+                "errors": [
+                    {
+                        "field": "email",
+                        "constraints": {
+                            "is_email": "must be a valid email"
+                        }
+                    },
+                    {
+                        "field": "password",
+                        "constraints": {
+                            "min_length": "must be at least 6 characters"
+                        }
+                    }
+                ]
+            }))
+        );
+    }
+
+    #[test]
+    fn validation_pipe_rejects_non_object_input() {
+        let pipe = ValidationPipe::<SignupDto>::new();
+
+        let error = pipe
+            .transform(json!("not-an-object"), ArgumentMetadata::new(12))
+            .unwrap_err();
+
+        assert_eq!(error.status_code, 400);
+        assert_eq!(error.message, "ValidationPipe expects a JSON object value");
+    }
+
+    #[test]
+    fn validation_pipe_rejects_deserialization_errors() {
+        let pipe = ValidationPipe::<SignupDto>::new();
+
+        let error = pipe
+            .transform(
+                json!({
+                    "email": "alice@example.com",
+                    "password": 123
+                }),
+                ArgumentMetadata::new(13).with_data_type("body"),
+            )
+            .unwrap_err();
+
+        assert_eq!(error.status_code, 400);
+        assert!(
+            error
+                .message
+                .starts_with("ValidationPipe could not deserialize request body:"),
+            "unexpected error message: {}",
+            error.message
+        );
+    }
+
+    #[test]
     fn parse_uuid_pipe_transforms_uuid_strings() {
         let pipe = ParseUuidPipe::new();
 
@@ -664,6 +810,38 @@ mod tests {
             match value {
                 Self::Admin => Value::from("admin"),
                 Self::Reader => Value::from("reader"),
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    struct SignupDto {
+        email: String,
+        password: String,
+    }
+
+    impl Validate for SignupDto {
+        fn validate(&self) -> Result<(), ValidationErrors> {
+            let mut errors = ValidationErrors::new();
+
+            if !self.email.contains('@') {
+                errors.push(
+                    nivasa_validation::ValidationError::new("email")
+                        .with_constraint("is_email", "must be a valid email"),
+                );
+            }
+
+            if self.password.len() < 6 {
+                errors.push(
+                    nivasa_validation::ValidationError::new("password")
+                        .with_constraint("min_length", "must be at least 6 characters"),
+                );
+            }
+
+            if errors.is_empty() {
+                Ok(())
+            } else {
+                Err(errors)
             }
         }
     }
