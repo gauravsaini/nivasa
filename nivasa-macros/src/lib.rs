@@ -77,6 +77,8 @@ pub fn scxml_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
     Dto,
     attributes(
         groups,
+        min,
+        max,
         is_email,
         is_string,
         is_number,
@@ -85,6 +87,7 @@ pub fn scxml_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
         is_uuid,
         is_url,
         is_enum,
+        validate_if,
         matches,
         is_not_empty,
         custom_validate,
@@ -104,6 +107,8 @@ pub fn dto(input: TokenStream) -> TokenStream {
     PartialDto,
     attributes(
         groups,
+        min,
+        max,
         is_email,
         is_string,
         is_number,
@@ -112,6 +117,7 @@ pub fn dto(input: TokenStream) -> TokenStream {
         is_uuid,
         is_url,
         is_enum,
+        validate_if,
         matches,
         is_not_empty,
         custom_validate,

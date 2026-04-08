@@ -644,7 +644,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Format validation errors as structured JSON: `{ field, constraints: { rule: message } }`
 - [x] Support nested DTO validation (recursive)
 - [x] Support `Vec<T>` element validation
-- [ ] Support conditional validation (validate field X only if field Y has value Z)
+- [x] Support conditional validation (validate field X only if field Y has value Z)
 - [x] Support validation groups (field-scoped group gating via `ValidationContext` and nested `validate_with` propagation)
 
 #### 4.2.3 — DTO Derive Macro
