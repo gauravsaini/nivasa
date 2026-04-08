@@ -263,7 +263,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support `middlewares: [...]` in module config
 
 #### 1.2.3 — Dynamic Modules (NestJS `forRoot` / `forFeature`)
-- [ ] Define `DynamicModule` struct (metadata + extra providers)
+- [x] Define `DynamicModule` struct (metadata + extra providers)
 - [ ] Implement `ConfigurableModule` trait with `fn for_root(options) -> DynamicModule`
 - [ ] Implement `fn for_feature(options) -> DynamicModule`
 - [ ] Support `is_global: true` to make a dynamic module globally available
