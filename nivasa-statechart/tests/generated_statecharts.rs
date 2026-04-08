@@ -232,6 +232,32 @@ fn application_container_state_enters_its_initial_child() {
 }
 
 #[test]
+fn application_container_states_enter_their_initial_children() {
+    let (engine, tracer) = traced_engine::<NivasaApplicationStatechart>(
+        NivasaApplicationState::Bootstrapping,
+    );
+    assert_eq!(engine.current_state(), NivasaApplicationState::ResolvingModules);
+    assert_eq!(
+        engine.valid_events(),
+        vec![
+            NivasaApplicationEvent::ModulesResolved,
+            NivasaApplicationEvent::ErrorModuleCircularDependency,
+        ],
+    );
+    assert_valid_trace(&engine, &tracer, &[]);
+
+    let (engine, tracer) = traced_engine::<NivasaApplicationStatechart>(
+        NivasaApplicationState::ShuttingDown,
+    );
+    assert_eq!(engine.current_state(), NivasaApplicationState::DestroyingModules);
+    assert_eq!(
+        engine.valid_events(),
+        vec![NivasaApplicationEvent::ModulesDestroyed],
+    );
+    assert_valid_trace(&engine, &tracer, &[]);
+}
+
+#[test]
 fn application_failure_path_reaches_terminated() {
     let (mut engine, tracer) = traced_engine::<NivasaApplicationStatechart>(
         NivasaApplicationState::ResolvingModules,
@@ -248,6 +274,38 @@ fn application_failure_path_reaches_terminated() {
             (
                 NivasaApplicationEvent::AppAbort,
                 NivasaApplicationState::Terminated,
+            ),
+        ],
+    );
+
+    assert!(engine.is_in_final_state());
+}
+
+#[test]
+fn application_shutdown_path_reaches_shutdown_complete() {
+    let (mut engine, tracer) = traced_engine::<NivasaApplicationStatechart>(
+        NivasaApplicationState::Listening,
+    );
+
+    drive_and_assert_trace(
+        &mut engine,
+        &tracer,
+        &[
+            (
+                NivasaApplicationEvent::AppShutdown,
+                NivasaApplicationState::Draining,
+            ),
+            (
+                NivasaApplicationEvent::AppDrainComplete,
+                NivasaApplicationState::DestroyingModules,
+            ),
+            (
+                NivasaApplicationEvent::ModulesDestroyed,
+                NivasaApplicationState::Cleanup,
+            ),
+            (
+                NivasaApplicationEvent::CleanupDone,
+                NivasaApplicationState::ShutdownComplete,
             ),
         ],
     );
