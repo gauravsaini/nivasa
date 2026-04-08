@@ -465,7 +465,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.1.3 — Guard Execution Pipeline
 - [x] Implement guard chain execution (AND logic: all must pass)
 - [x] Implement short-circuit on first failure
-- [ ] Return `ForbiddenException` on guard failure (configurable)
+- [ ] Default `ForbiddenException` on guard failure exists; configurable override remains future work
 - [x] Support guard returning custom exception on failure
 - [x] Support async guard execution
 
