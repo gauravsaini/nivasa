@@ -649,7 +649,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 4.2.3 — DTO Derive Macro
 - [x] Implement `#[derive(Dto)]` to auto-generate `Validate` impl
-- [ ] Generate `validate() -> Result<(), Vec<ValidationError>>` from annotated fields
+- [x] Generate `Validate` impls from annotated fields (`validate() -> Result<(), ValidationErrors>` plus group-aware `validate_with(&ValidationContext)`)
 - [x] Support `#[derive(PartialDto)]` for patch/update operations (narrow `Option<T>`-only slice)
 
 #### 4.2.4 — Validation Tests
