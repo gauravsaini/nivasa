@@ -634,9 +634,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `#[is_enum(EnumType)]` — validate value is valid enum variant
 - [x] Implement `#[is_url]` — validate URL format (core helper landed; macro wiring complete)
 - [x] Implement `#[is_uuid]` — validate UUID format
-- [ ] Implement `#[array_min_size(n)]` / `#[array_max_size(n)]`
+- [x] Implement `#[array_min_size(n)]` / `#[array_max_size(n)]`
 - [x] Implement `#[validate_nested]` — validate nested DTO recursively
-- [ ] Implement `#[custom_validate(fn)]` — custom validation function
+- [x] Implement `#[custom_validate(fn)]` — custom validation function
 
 #### 4.2.2 — Validation Engine
 - [x] Integrate `validator` crate or build custom validation engine
@@ -645,7 +645,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support nested DTO validation (recursive)
 - [x] Support `Vec<T>` element validation
 - [ ] Support conditional validation (validate field X only if field Y has value Z)
-- [ ] Support validation groups (core context carrier landed; "create" vs "update" rule wiring still pending)
+- [x] Support validation groups (field-scoped group gating via `ValidationContext` and nested `validate_with` propagation)
 
 #### 4.2.3 — DTO Derive Macro
 - [x] Implement `#[derive(Dto)]` to auto-generate `Validate` impl

@@ -1,6 +1,6 @@
 use nivasa_macros::{Dto, PartialDto};
 use nivasa_pipes::ParseEnumTarget;
-use nivasa_validation::Validate;
+use nivasa_validation::{Validate, ValidationContext};
 
 #[derive(Dto)]
 struct SignupForm {
@@ -112,6 +112,21 @@ struct NonEmptyForm {
 }
 
 #[derive(Dto)]
+struct ArraySizeForm {
+    #[array_min_size(2)]
+    #[array_max_size(3)]
+    tags: Vec<String>,
+}
+
+#[derive(Dto)]
+struct OptionalArraySizeForm {
+    #[is_optional]
+    #[array_min_size(2)]
+    #[array_max_size(3)]
+    tags: Option<Vec<String>>,
+}
+
+#[derive(Dto)]
 struct OptionalNonEmptyForm {
     #[is_optional]
     #[is_not_empty]
@@ -131,12 +146,56 @@ struct OptionalContactForm {
     email: Option<String>,
 }
 
+#[derive(Dto)]
+struct GroupedChildForm {
+    #[groups("create")]
+    #[is_email]
+    email: String,
+}
+
+#[derive(Dto)]
+struct GroupedParentForm {
+    #[groups("create")]
+    #[is_email]
+    create_email: String,
+    #[groups("create", "update")]
+    #[min_length(6)]
+    password: String,
+    #[is_email]
+    always_email: String,
+    #[validate_nested]
+    child: GroupedChildForm,
+}
+
+fn uses_example_domain(value: &String) -> bool {
+    value.ends_with("@example.com")
+}
+
+#[derive(Dto)]
+struct CustomValidateForm {
+    #[custom_validate(uses_example_domain)]
+    email: String,
+}
+
+#[derive(Dto)]
+struct OptionalCustomValidateForm {
+    #[is_optional]
+    #[custom_validate(uses_example_domain)]
+    email: Option<String>,
+}
+
 #[derive(PartialDto)]
 struct PartialContactForm {
     #[is_email]
     email: Option<String>,
     #[min_length(6)]
     password: Option<String>,
+}
+
+#[derive(PartialDto)]
+struct PartialCustomValidateForm {
+    #[custom_validate(uses_example_domain)]
+    email: Option<String>,
 }
 
 #[derive(PartialDto)]
@@ -378,6 +437,87 @@ fn dto_validation_rejects_invalid_enum_variants() {
 }
 
 #[test]
+fn dto_validation_groups_skip_grouped_fields_for_plain_validate() {
+    let form = GroupedParentForm {
+        create_email: "not-an-email".into(),
+        password: "123".into(),
+        always_email: "still-not-an-email".into(),
+        child: GroupedChildForm {
+            email: "child-not-an-email".into(),
+        },
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "always_email");
+    assert_eq!(
+        errors.errors()[0].constraints.get("is_email"),
+        Some(&"must be a valid email".to_string())
+    );
+}
+
+#[test]
+fn dto_validation_groups_fire_for_matching_group() {
+    let form = GroupedParentForm {
+        create_email: "not-an-email".into(),
+        password: "123".into(),
+        always_email: "still-not-an-email".into(),
+        child: GroupedChildForm {
+            email: "child-not-an-email".into(),
+        },
+    };
+
+    let errors = form
+        .validate_with(&ValidationContext::new().with_group("create"))
+        .unwrap_err();
+    assert_eq!(errors.len(), 4);
+    assert!(errors.errors().iter().any(|error| error.field == "create_email"));
+    assert!(errors.errors().iter().any(|error| error.field == "password"));
+    assert!(errors.errors().iter().any(|error| error.field == "always_email"));
+    assert!(errors.errors().iter().any(|error| error.field == "child.email"));
+}
+
+#[test]
+fn dto_validation_groups_skip_non_matching_group() {
+    let form = GroupedParentForm {
+        create_email: "not-an-email".into(),
+        password: "123".into(),
+        always_email: "still-not-an-email".into(),
+        child: GroupedChildForm {
+            email: "child-not-an-email".into(),
+        },
+    };
+
+    let errors = form
+        .validate_with(&ValidationContext::new().with_group("delete"))
+        .unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "always_email");
+}
+
+#[test]
+fn dto_validation_groups_allow_multi_group_rules() {
+    let form = GroupedParentForm {
+        create_email: "person@example.com".into(),
+        password: "123".into(),
+        always_email: "person@example.com".into(),
+        child: GroupedChildForm {
+            email: "child@example.com".into(),
+        },
+    };
+
+    let errors = form
+        .validate_with(&ValidationContext::new().with_group("update"))
+        .unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "password");
+    assert_eq!(
+        errors.errors()[0].constraints.get("min_length"),
+        Some(&"must be at least 6 characters".to_string())
+    );
+}
+
+#[test]
 fn dto_validation_accepts_non_empty_fields() {
     let form = NonEmptyForm {
         title: "hello".into(),
@@ -414,6 +554,61 @@ fn dto_validation_rejects_empty_fields() {
     assert_eq!(
         tags_error.constraints.get("is_not_empty"),
         Some(&"must not be empty".to_string())
+    );
+}
+
+#[test]
+fn dto_validation_enforces_array_size_bounds() {
+    let form = ArraySizeForm {
+        tags: vec!["one".into(), "two".into()],
+    };
+
+    assert!(form.validate().is_ok());
+
+    let form = ArraySizeForm {
+        tags: vec!["one".into()],
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "tags");
+    assert_eq!(
+        errors.errors()[0].constraints.get("array_min_size"),
+        Some(&"must contain at least 2 items".to_string())
+    );
+
+    let form = ArraySizeForm {
+        tags: vec!["one".into(), "two".into(), "three".into(), "four".into()],
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "tags");
+    assert_eq!(
+        errors.errors()[0].constraints.get("array_max_size"),
+        Some(&"must contain at most 3 items".to_string())
+    );
+}
+
+#[test]
+fn dto_validation_skips_optional_array_size_when_absent() {
+    let form = OptionalArraySizeForm { tags: None };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_applies_optional_array_size_when_present() {
+    let form = OptionalArraySizeForm {
+        tags: Some(vec!["one".into()]),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "tags");
+    assert_eq!(
+        errors.errors()[0].constraints.get("array_min_size"),
+        Some(&"must contain at least 2 items".to_string())
     );
 }
 
@@ -471,6 +666,52 @@ fn dto_validation_validates_optional_fields_when_present() {
 }
 
 #[test]
+fn dto_validation_accepts_custom_validators() {
+    let form = CustomValidateForm {
+        email: "alice@example.com".into(),
+    };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_rejects_failed_custom_validators() {
+    let form = CustomValidateForm {
+        email: "alice@other.dev".into(),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "email");
+    assert_eq!(
+        errors.errors()[0].constraints.get("custom_validate"),
+        Some(&"failed custom validation".to_string())
+    );
+}
+
+#[test]
+fn dto_validation_skips_optional_custom_validators_when_absent() {
+    let form = OptionalCustomValidateForm { email: None };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_runs_optional_custom_validators_when_present() {
+    let form = OptionalCustomValidateForm {
+        email: Some("alice@other.dev".into()),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "email");
+    assert_eq!(
+        errors.errors()[0].constraints.get("custom_validate"),
+        Some(&"failed custom validation".to_string())
+    );
+}
+
+#[test]
 fn partial_dto_validation_accepts_absent_fields() {
     let form = PartialContactForm {
         email: None,
@@ -508,6 +749,28 @@ fn partial_dto_validation_collects_present_invalid_fields() {
     assert_eq!(
         errors.errors()[1].constraints.get("min_length"),
         Some(&"must be at least 6 characters".to_string())
+    );
+}
+
+#[test]
+fn partial_dto_validation_accepts_custom_validators_when_absent() {
+    let form = PartialCustomValidateForm { email: None };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn partial_dto_validation_runs_custom_validators_when_present() {
+    let form = PartialCustomValidateForm {
+        email: Some("alice@other.dev".into()),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "email");
+    assert_eq!(
+        errors.errors()[0].constraints.get("custom_validate"),
+        Some(&"failed custom validation".to_string())
     );
 }
 

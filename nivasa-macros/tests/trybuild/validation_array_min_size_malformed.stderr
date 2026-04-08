@@ -1,0 +1,5 @@
+error: expected `#[array_min_size(<usize>)]`
+ --> tests/trybuild/validation_array_min_size_malformed.rs:5:5
+  |
+5 |     #[array_min_size("two")]
+  |     ^

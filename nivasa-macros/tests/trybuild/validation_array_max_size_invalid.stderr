@@ -1,0 +1,5 @@
+error: expected a vec field for `#[array_max_size]`
+ --> tests/trybuild/validation_array_max_size_invalid.rs:5:5
+  |
+5 |     #[array_max_size(3)]
+  |     ^

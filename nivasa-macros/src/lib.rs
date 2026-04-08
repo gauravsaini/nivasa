@@ -76,6 +76,7 @@ pub fn scxml_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_derive(
     Dto,
     attributes(
+        groups,
         is_email,
         is_string,
         is_number,
@@ -86,6 +87,9 @@ pub fn scxml_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
         is_enum,
         matches,
         is_not_empty,
+        custom_validate,
+        array_min_size,
+        array_max_size,
         is_optional,
         validate_nested,
         min_length,
@@ -99,6 +103,7 @@ pub fn dto(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(
     PartialDto,
     attributes(
+        groups,
         is_email,
         is_string,
         is_number,
@@ -109,6 +114,9 @@ pub fn dto(input: TokenStream) -> TokenStream {
         is_enum,
         matches,
         is_not_empty,
+        custom_validate,
+        array_min_size,
+        array_max_size,
         is_optional,
         validate_nested,
         min_length,

@@ -1,0 +1,5 @@
+error: expected `#[groups("create", "update")]`
+ --> tests/trybuild/validation_groups_numeric.rs:5:5
+  |
+5 |     #[groups(123)]
+  |     ^

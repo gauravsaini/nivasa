@@ -2,9 +2,10 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
     parse_macro_input,
+    punctuated::Punctuated,
     spanned::Spanned,
     Attribute, Data, DeriveInput, Error, Field, Fields, GenericArgument, LitInt, LitStr, Meta,
-    PathArguments, Result, Type, TypePath,
+    Path, PathArguments, Result, Token, Type, TypePath,
 };
 
 pub fn dto_impl(input: TokenStream) -> TokenStream {
@@ -82,6 +83,13 @@ fn expand_validation_derive(
     Ok(quote! {
         impl #impl_generics nivasa_validation::Validate for #name #ty_generics #where_clause {
             fn validate(&self) -> ::core::result::Result<(), nivasa_validation::ValidationErrors> {
+                self.validate_with(&nivasa_validation::ValidationContext::new())
+            }
+
+            fn validate_with(
+                &self,
+                context: &nivasa_validation::ValidationContext,
+            ) -> ::core::result::Result<(), nivasa_validation::ValidationErrors> {
                 let mut errors = nivasa_validation::ValidationErrors::new();
                 #(#field_checks)*
                 if errors.is_empty() {
@@ -127,10 +135,18 @@ fn build_field_checks(field: &Field, mode: DeriveMode) -> Result<Vec<proc_macro2
     };
     let field_value_ident = format_ident!("__nivasa_validation_value");
     let field_value_access = quote!(#field_value_ident);
+    let field_groups = field
+        .attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("groups"))
+        .try_fold(Vec::new(), |mut groups, attr| {
+            groups.extend(parse_groups(attr)?);
+            Ok::<_, Error>(groups)
+        })?;
     let mut checks = Vec::new();
 
     for attr in &field.attrs {
-        if attr.path().is_ident("is_optional") {
+        if attr.path().is_ident("is_optional") || attr.path().is_ident("groups") {
             continue;
         }
 
@@ -204,15 +220,61 @@ fn build_field_checks(field: &Field, mode: DeriveMode) -> Result<Vec<proc_macro2
                     );
                 }
             });
+        } else if attr.path().is_ident("custom_validate") {
+            let validator_path = parse_custom_validate_path(attr)?;
+            checks.push(quote! {
+                let __nivasa_custom_validate: fn(&#field_ty) -> bool = #validator_path;
+                if !__nivasa_custom_validate(#field_value_access) {
+                    errors.push(
+                        nivasa_validation::ValidationError::new(#field_label)
+                        .with_constraint("custom_validate", "failed custom validation"),
+                    );
+                }
+            });
+        } else if attr.path().is_ident("array_min_size") {
+            ensure_array_size_type(field_ty, attr, "array_min_size")?;
+            let min_size = parse_array_min_size(attr)?;
+            let min_size_lit = LitInt::new(&min_size.to_string(), attr.span());
+            let message = LitStr::new(
+                &format!("must contain at least {} items", min_size),
+                attr.span(),
+            );
+
+            checks.push(quote! {
+                if #field_value_access.len() < #min_size_lit {
+                    errors.push(
+                        nivasa_validation::ValidationError::new(#field_label)
+                            .with_constraint("array_min_size", #message),
+                    );
+                }
+            });
+        } else if attr.path().is_ident("array_max_size") {
+            ensure_array_size_type(field_ty, attr, "array_max_size")?;
+            let max_size = parse_array_max_size(attr)?;
+            let max_size_lit = LitInt::new(&max_size.to_string(), attr.span());
+            let message = LitStr::new(
+                &format!("must contain at most {} items", max_size),
+                attr.span(),
+            );
+
+            checks.push(quote! {
+                if #field_value_access.len() > #max_size_lit {
+                    errors.push(
+                        nivasa_validation::ValidationError::new(#field_label)
+                            .with_constraint("array_max_size", #message),
+                    );
+                }
+            });
         } else if attr.path().is_ident("validate_nested") {
             if is_optional {
                 checks.push(build_nested_validation_check_with_access(
                     field,
                     attr,
                     &field_value_access,
+                    &quote!(context),
                 )?);
             } else {
-                checks.push(build_nested_validation_check(field, attr)?);
+                checks.push(build_nested_validation_check(field, attr, &quote!(context))?);
             }
         } else if attr.path().is_ident("min_length") {
             let min_length = parse_min_length(attr)?;
@@ -266,12 +328,22 @@ fn build_field_checks(field: &Field, mode: DeriveMode) -> Result<Vec<proc_macro2
         }
     };
 
-    Ok(vec![field_scope])
+    if field_groups.is_empty() {
+        Ok(vec![field_scope])
+    } else {
+        let groups_guard = build_groups_guard(&field_groups);
+        Ok(vec![quote! {
+            if #groups_guard {
+                #field_scope
+            }
+        }])
+    }
 }
 
 fn build_nested_validation_check(
     field: &Field,
     attr: &Attribute,
+    context_access: &proc_macro2::TokenStream,
 ) -> Result<proc_macro2::TokenStream> {
     if !matches!(&attr.meta, Meta::Path(_)) {
         return Err(Error::new(
@@ -290,24 +362,37 @@ fn build_nested_validation_check(
     if is_option_like_type(&field.ty) {
         if let Some(inner) = option_inner_type(&field.ty) {
             if is_vec_like_type(inner) {
-                return build_nested_validation_check_for_vec_option(field_label, field_access);
+                return build_nested_validation_check_for_vec_option(
+                    field_label,
+                    field_access,
+                    context_access.clone(),
+                );
             }
         }
 
-        return build_nested_validation_check_from_option(field_label, field_access);
+        return build_nested_validation_check_from_option(
+            field_label,
+            field_access,
+            context_access.clone(),
+        );
     }
 
     if is_vec_like_type(&field.ty) {
-        return build_nested_validation_check_for_vec(field_label, field_access);
+        return build_nested_validation_check_for_vec(
+            field_label,
+            field_access,
+            context_access.clone(),
+        );
     }
 
-    build_nested_validation_check_direct(field_label, field_access)
+    build_nested_validation_check_direct(field_label, field_access, context_access.clone())
 }
 
 fn build_nested_validation_check_with_access(
     field: &Field,
     attr: &Attribute,
     field_access: &proc_macro2::TokenStream,
+    context_access: &proc_macro2::TokenStream,
 ) -> Result<proc_macro2::TokenStream> {
     if !matches!(&attr.meta, Meta::Path(_)) {
         return Err(Error::new(
@@ -319,12 +404,14 @@ fn build_nested_validation_check_with_access(
     build_nested_validation_check_direct(
         LitStr::new(&field.ident.as_ref().unwrap().to_string(), field.ident.as_ref().unwrap().span()),
         field_access.clone(),
+        context_access.clone(),
     )
 }
 
 fn build_nested_validation_check_from_option(
     field_label: LitStr,
     field_access: proc_macro2::TokenStream,
+    context_access: proc_macro2::TokenStream,
 ) -> Result<proc_macro2::TokenStream> {
     let child_errors_push = quote! {
         for mut child_error in child_errors.into_errors() {
@@ -340,7 +427,7 @@ fn build_nested_validation_check_from_option(
 
     Ok(quote! {
         if let Some(child) = &#field_access {
-            match nivasa_validation::Validate::validate(child) {
+            match nivasa_validation::Validate::validate_with(child, #context_access) {
                 Ok(()) => {}
                 Err(child_errors) => {
                     #child_errors_push
@@ -353,10 +440,11 @@ fn build_nested_validation_check_from_option(
 fn build_nested_validation_check_for_vec_option(
     field_label: LitStr,
     field_access: proc_macro2::TokenStream,
+    context_access: proc_macro2::TokenStream,
 ) -> Result<proc_macro2::TokenStream> {
     let child_errors_push = quote! {
         for (index, child) in child.iter().enumerate() {
-            match nivasa_validation::Validate::validate(child) {
+            match nivasa_validation::Validate::validate_with(child, #context_access) {
                 Ok(()) => {}
                 Err(child_errors) => {
                     for mut child_error in child_errors.into_errors() {
@@ -384,10 +472,11 @@ fn build_nested_validation_check_for_vec_option(
 fn build_nested_validation_check_for_vec(
     field_label: LitStr,
     field_access: proc_macro2::TokenStream,
+    context_access: proc_macro2::TokenStream,
 ) -> Result<proc_macro2::TokenStream> {
     Ok(quote! {
         for (index, child) in #field_access.iter().enumerate() {
-            match nivasa_validation::Validate::validate(child) {
+            match nivasa_validation::Validate::validate_with(child, #context_access) {
                 Ok(()) => {}
                 Err(child_errors) => {
                     for mut child_error in child_errors.into_errors() {
@@ -409,6 +498,7 @@ fn build_nested_validation_check_for_vec(
 fn build_nested_validation_check_direct(
     field_label: LitStr,
     field_access: proc_macro2::TokenStream,
+    context_access: proc_macro2::TokenStream,
 ) -> Result<proc_macro2::TokenStream> {
     let child_errors_push = quote! {
         for mut child_error in child_errors.into_errors() {
@@ -423,7 +513,7 @@ fn build_nested_validation_check_direct(
     };
 
     Ok(quote! {
-        match nivasa_validation::Validate::validate(&#field_access) {
+        match nivasa_validation::Validate::validate_with(&#field_access, #context_access) {
             Ok(()) => {}
             Err(child_errors) => {
                 #child_errors_push
@@ -505,6 +595,17 @@ fn ensure_not_empty_type(ty: &Type, attr: &Attribute) -> Result<()> {
         Err(Error::new(
             attr.span(),
             "expected a string, slice, or vec-like field for `#[is_not_empty]`",
+        ))
+    }
+}
+
+fn ensure_array_size_type(ty: &Type, attr: &Attribute, rule_name: &str) -> Result<()> {
+    if is_vec_like_type(ty) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            attr.span(),
+            format!("expected a vec field for `#[{}]`", rule_name),
         ))
     }
 }
@@ -699,6 +800,61 @@ fn parse_matches_pattern(attr: &Attribute) -> Result<String> {
         .map_err(|_| Error::new(attr.span(), "expected `#[matches(\"<regex>\")]`"))
 }
 
+fn parse_groups(attr: &Attribute) -> Result<Vec<LitStr>> {
+    if !matches!(&attr.meta, Meta::List(_)) {
+        return Err(Error::new(
+            attr.span(),
+            "expected `#[groups(\"create\", \"update\")]`",
+        ));
+    }
+
+    let groups = attr
+        .parse_args_with(Punctuated::<LitStr, Token![,]>::parse_terminated)
+        .map_err(|_| {
+            Error::new(
+                attr.span(),
+                "expected `#[groups(\"create\", \"update\")]`",
+            )
+        })?
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    if groups.is_empty() {
+        return Err(Error::new(
+            attr.span(),
+            "expected `#[groups(\"create\", \"update\")]`",
+        ));
+    }
+
+    Ok(groups)
+}
+
+fn build_groups_guard(groups: &[LitStr]) -> proc_macro2::TokenStream {
+    quote! {
+        #(context.has_group(#groups))||*
+    }
+}
+
+fn parse_array_min_size(attr: &Attribute) -> Result<usize> {
+    let value = attr
+        .parse_args::<LitInt>()
+        .map_err(|_| Error::new(attr.span(), "expected `#[array_min_size(<usize>)]`"))?;
+
+    value
+        .base10_parse::<usize>()
+        .map_err(|_| Error::new(attr.span(), "expected `#[array_min_size(<usize>)]`"))
+}
+
+fn parse_array_max_size(attr: &Attribute) -> Result<usize> {
+    let value = attr
+        .parse_args::<LitInt>()
+        .map_err(|_| Error::new(attr.span(), "expected `#[array_max_size(<usize>)]`"))?;
+
+    value
+        .base10_parse::<usize>()
+        .map_err(|_| Error::new(attr.span(), "expected `#[array_max_size(<usize>)]`"))
+}
+
 fn parse_enum_type(attr: &Attribute) -> Result<TypePath> {
     if !matches!(&attr.meta, Meta::List(_)) {
         return Err(Error::new(attr.span(), "expected `#[is_enum(MyEnum)]`"));
@@ -706,4 +862,20 @@ fn parse_enum_type(attr: &Attribute) -> Result<TypePath> {
 
     attr.parse_args::<TypePath>()
         .map_err(|_| Error::new(attr.span(), "expected `#[is_enum(MyEnum)]`"))
+}
+
+fn parse_custom_validate_path(attr: &Attribute) -> Result<Path> {
+    if !matches!(&attr.meta, Meta::List(_)) {
+        return Err(Error::new(
+            attr.span(),
+            "expected `#[custom_validate(path_to_fn)]`",
+        ));
+    }
+
+    attr.parse_args::<Path>().map_err(|_| {
+        Error::new(
+            attr.span(),
+            "expected `#[custom_validate(path_to_fn)]`",
+        )
+    })
 }
