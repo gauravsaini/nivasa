@@ -261,6 +261,7 @@ fn expand_controller(
     let mut controller_interceptors = Vec::new();
     let mut controller_filters = Vec::new();
     let mut controller_metadata = Vec::new();
+    let mut controller_tags = Vec::new();
     let mut retained_attrs = Vec::new();
 
     for attr in input.attrs.drain(..) {
@@ -276,7 +277,10 @@ fn expand_controller(
                             Some(filters) => controller_filters.extend(filters),
                             None => match parse_set_metadata_binding(&attr)? {
                                 Some(metadata) => controller_metadata.extend(metadata),
-                                None => retained_attrs.push(attr),
+                                None => match parse_api_tags_binding(&attr)? {
+                                    Some(tags) => controller_tags.extend(tags),
+                                    None => retained_attrs.push(attr),
+                                },
                             },
                         },
                     },
@@ -312,6 +316,11 @@ fn expand_controller(
         let value = &entry.value;
         quote! {
             (#key, #value)
+        }
+    });
+    let controller_tag_entries = controller_tags.iter().map(|tag| {
+        quote! {
+            #tag
         }
     });
 
@@ -371,6 +380,12 @@ fn expand_controller(
             ) -> Vec<(&'static str, &'static str)> {
                 vec![
                     #(#controller_metadata_entries),*
+                ]
+            }
+
+            pub fn __nivasa_controller_api_tags() -> Vec<&'static str> {
+                vec![
+                    #(#controller_tag_entries),*
                 ]
             }
         }
@@ -802,6 +817,36 @@ fn parse_set_metadata_binding(attr: &Attribute) -> Result<Option<Vec<MetadataBin
         key: key.to_owned(),
         value: value.to_owned(),
     }]))
+}
+
+fn parse_api_tags_binding(attr: &Attribute) -> Result<Option<Vec<LitStr>>> {
+    if !attr_path_matches(attr, "api_tags") {
+        return Ok(None);
+    }
+
+    let tags: syn::punctuated::Punctuated<LitStr, Token![,]> = attr
+        .parse_args_with(syn::punctuated::Punctuated::parse_terminated)
+        .map_err(|_| Error::new(attr.span(), "`#[api_tags]` requires at least one tag"))?;
+
+    if tags.is_empty() {
+        return Err(Error::new(
+            attr.span(),
+            "`#[api_tags]` requires at least one tag",
+        ));
+    }
+
+    let tags = tags
+        .into_iter()
+        .map(|tag| {
+            if tag.value().trim().is_empty() {
+                return Err(Error::new(tag.span(), "`#[api_tags]` tag cannot be empty"));
+            }
+
+            Ok(tag)
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(Some(tags))
 }
 
 fn parse_api_operation_binding(attr: &Attribute) -> Result<Option<OperationBinding>> {

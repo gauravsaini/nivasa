@@ -947,7 +947,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 7.5 — OpenAPI / Swagger Integration
 
 #### 7.5.1 — OpenAPI Spec Generation
-- [ ] Implement `#[api_tags("Users")]` decorator on controllers
+- [x] Implement `#[api_tags("Users")]` decorator on controllers
 - [x] Implement `#[api_operation(summary = "Get all users")]` on handlers
 - [ ] Implement `#[api_param(name = "id", description = "User ID")]`
 - [ ] Implement `#[api_body(type = CreateUserDto)]`

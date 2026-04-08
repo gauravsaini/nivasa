@@ -1,0 +1,11 @@
+error: `#[api_tags]` tag cannot be empty
+ --> tests/trybuild/controller_api_tags_invalid.rs:4:27
+  |
+4 | #[nivasa_macros::api_tags("")]
+  |                           ^^
+
+error[E0412]: cannot find type `UsersController` in this scope
+ --> tests/trybuild/controller_api_tags_invalid.rs:8:6
+  |
+8 | impl UsersController {
+  |      ^^^^^^^^^^^^^^^ not found in this scope
