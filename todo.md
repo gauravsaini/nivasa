@@ -628,7 +628,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[max(n)]` — maximum value (for numbers)
 - [x] Implement `#[min_length(n)]` — minimum string/array length
 - [x] Implement `#[max_length(n)]` — maximum string/array length
-- [ ] Implement `#[is_not_empty]` — validate non-empty string/vec (core helper landed; macro wiring pending)
+- [x] Implement `#[is_not_empty]` — validate non-empty string/vec
 - [x] Implement `#[matches(regex)]` — regex pattern match
 - [x] Implement `#[is_optional]` — field is optional (skip if absent)
 - [ ] Implement `#[is_enum(EnumType)]` — validate value is valid enum variant

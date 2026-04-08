@@ -183,6 +183,16 @@ fn build_field_checks(field: &Field, mode: DeriveMode) -> Result<Vec<proc_macro2
                     );
                 }
             });
+        } else if attr.path().is_ident("is_not_empty") {
+            ensure_not_empty_type(field_ty, attr)?;
+            checks.push(quote! {
+                if !nivasa_validation::is_not_empty(::core::ops::Deref::deref(#field_value_access)) {
+                    errors.push(
+                        nivasa_validation::ValidationError::new(#field_label)
+                            .with_constraint("is_not_empty", "must not be empty"),
+                    );
+                }
+            });
         } else if attr.path().is_ident("validate_nested") {
             if is_optional {
                 checks.push(build_nested_validation_check_with_access(
@@ -466,6 +476,17 @@ fn ensure_matches_type(ty: &Type, attr: &Attribute) -> Result<()> {
     }
 }
 
+fn ensure_not_empty_type(ty: &Type, attr: &Attribute) -> Result<()> {
+    if is_string_like_type(ty) || is_vec_like_type(ty) || is_slice_like_type(ty) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            attr.span(),
+            "expected a string, slice, or vec-like field for `#[is_not_empty]`",
+        ))
+    }
+}
+
 fn ensure_number_type(ty: &Type, attr: &Attribute) -> Result<()> {
     if is_number_like_type(ty) {
         Ok(())
@@ -590,6 +611,16 @@ fn is_vec_like_type(ty: &Type) -> bool {
         Type::Reference(reference) => is_vec_like_type(reference.elem.as_ref()),
         Type::Group(group) => is_vec_like_type(group.elem.as_ref()),
         Type::Paren(paren) => is_vec_like_type(paren.elem.as_ref()),
+        _ => false,
+    }
+}
+
+fn is_slice_like_type(ty: &Type) -> bool {
+    match ty {
+        Type::Slice(_) => true,
+        Type::Reference(reference) => is_slice_like_type(reference.elem.as_ref()),
+        Type::Group(group) => is_slice_like_type(group.elem.as_ref()),
+        Type::Paren(paren) => is_slice_like_type(paren.elem.as_ref()),
         _ => false,
     }
 }

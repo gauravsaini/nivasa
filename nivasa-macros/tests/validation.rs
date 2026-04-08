@@ -74,6 +74,21 @@ struct WebhookForm {
 }
 
 #[derive(Dto)]
+struct NonEmptyForm {
+    #[is_not_empty]
+    title: String,
+    #[is_not_empty]
+    tags: Vec<String>,
+}
+
+#[derive(Dto)]
+struct OptionalNonEmptyForm {
+    #[is_optional]
+    #[is_not_empty]
+    title: Option<String>,
+}
+
+#[derive(Dto)]
 struct SlugForm {
     #[matches("^[a-z0-9-]+$")]
     slug: String,
@@ -306,6 +321,53 @@ fn dto_validation_rejects_invalid_url_fields() {
         errors.errors()[0].constraints.get("is_url"),
         Some(&"must be a valid URL".to_string())
     );
+}
+
+#[test]
+fn dto_validation_accepts_non_empty_fields() {
+    let form = NonEmptyForm {
+        title: "hello".into(),
+        tags: vec!["one".into()],
+    };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_rejects_empty_fields() {
+    let form = NonEmptyForm {
+        title: String::new(),
+        tags: Vec::new(),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 2);
+    let title_error = errors
+        .errors()
+        .iter()
+        .find(|error| error.field == "title")
+        .expect("title error must exist");
+    assert_eq!(
+        title_error.constraints.get("is_not_empty"),
+        Some(&"must not be empty".to_string())
+    );
+
+    let tags_error = errors
+        .errors()
+        .iter()
+        .find(|error| error.field == "tags")
+        .expect("tags error must exist");
+    assert_eq!(
+        tags_error.constraints.get("is_not_empty"),
+        Some(&"must not be empty".to_string())
+    );
+}
+
+#[test]
+fn dto_validation_skips_optional_non_empty_fields_when_absent() {
+    let form = OptionalNonEmptyForm { title: None };
+
+    assert!(form.validate().is_ok());
 }
 
 #[test]
