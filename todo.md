@@ -789,7 +789,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Support structured JSON logging (for production)
 - [ ] Support pretty console logging (for development)
 - [ ] Support log context propagation (request ID, user ID, module name)
-- [ ] Implement request logging span (method, path, status, duration)
+- [x] Implement request logging span (method, path, status, duration)
 - [ ] Support configurable log levels per module
 - [x] Test log output contains expected fields
 - [x] Test log level filtering
@@ -949,7 +949,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 7.5.1 — OpenAPI Spec Generation
 - [x] Implement `#[api_tags("Users")]` decorator on controllers
 - [x] Implement `#[api_operation(summary = "Get all users")]` on handlers
-- [ ] Implement `#[api_param(name = "id", description = "User ID")]`
+- [x] Implement `#[api_param(name = "id", description = "User ID")]`
 - [ ] Implement `#[api_body(type = CreateUserDto)]`
 - [ ] Implement `#[api_response(status = 200, type = User, description = "Success")]`
 - [ ] Implement `#[api_bearer_auth]` for auth documentation

@@ -22,7 +22,7 @@ impl Write for BufferWriter {
 }
 
 #[tokio::test]
-async fn logger_middleware_emits_method_path_and_status_without_altering_response() {
+async fn logger_middleware_emits_method_path_status_and_duration_without_altering_response() {
     let buffer = Arc::new(Mutex::new(Vec::new()));
     let subscriber = tracing_subscriber::fmt()
         .without_time()
@@ -60,6 +60,7 @@ async fn logger_middleware_emits_method_path_and_status_without_altering_respons
     assert!(logs.contains("method=POST"));
     assert!(logs.contains("path=/logger"));
     assert!(logs.contains("status=201"));
+    assert!(logs.contains("duration="));
 }
 
 #[tokio::test]

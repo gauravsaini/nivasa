@@ -37,10 +37,11 @@ use std::{
     convert::Infallible,
     fmt,
     future::Future,
-    pin::Pin,
     io::Write,
+    pin::Pin,
     sync::Arc,
     task::{Context, Poll},
+    time::Instant,
 };
 use tokio::sync::Mutex;
 use tower::{Layer, Service};
@@ -1300,12 +1301,15 @@ impl NivasaMiddleware for LoggerMiddleware {
     async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
         let method = req.method().clone();
         let path = req.path().to_owned();
+        let start = Instant::now();
         let response = next.run(req).await;
+        let duration = start.elapsed();
 
         tracing::info!(
             method = %method,
             path = %path,
             status = response.status().as_u16(),
+            duration = ?duration,
             "request completed"
         );
 
