@@ -792,7 +792,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Support log context propagation (request ID, user ID, module name)
 - [ ] Implement request logging span (method, path, status, duration)
 - [ ] Support configurable log levels per module
-- [ ] Test log output contains expected fields
+- [x] Test log output contains expected fields
 - [ ] Test log level filtering
 
 ### 6.3 — Testing Utilities (`nivasa-testing` or `nivasa` main crate)
@@ -842,7 +842,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `nivasa generate filter <name>`
 - [ ] Implement `nivasa generate resource <name>` (full CRUD: module + controller + service + DTOs)
 - [ ] Implement `nivasa generate middleware <name>`
-- [ ] Implement `nivasa info` — print framework version, Rust version, OS info
+- [x] Implement `nivasa info` — print framework version, Rust version, OS info
 - [x] Implement `nivasa statechart validate --all` — validate all SCXML files in project
 - [x] Implement `nivasa statechart visualize` — generate diagrams from SCXML
 - [x] Implement `nivasa statechart parity` — check generated code matches SCXML

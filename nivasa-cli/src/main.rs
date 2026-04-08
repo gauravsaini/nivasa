@@ -9,6 +9,7 @@ use statechart::{
     DiagramFormat,
 };
 use std::fs;
+use std::process::Command;
 
 #[derive(Parser)]
 #[command(name = "nivasa", about = "CLI tool for the Nivasa framework")]
@@ -75,10 +76,7 @@ fn main() {
 fn run() -> Result<(), String> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Info => {
-            println!("Nivasa Framework v{}", env!("CARGO_PKG_VERSION"));
-            Ok(())
-        }
+        Commands::Info => info_command(),
         Commands::Statechart { action } => match action {
             StatechartAction::Validate { all, file } => validate_command(all, file),
             StatechartAction::Parity => parity_command(),
@@ -87,6 +85,24 @@ fn run() -> Result<(), String> {
             StatechartAction::Inspect { host, port } => inspect_command(&host, port),
         },
     }
+}
+
+fn info_command() -> Result<(), String> {
+    let rust_version = Command::new("rustc")
+        .arg("--version")
+        .output()
+        .map_err(|err| format!("failed to run rustc --version: {err}"))?;
+    if !rust_version.status.success() {
+        return Err("rustc --version exited unsuccessfully".to_string());
+    }
+
+    let rust_version = String::from_utf8(rust_version.stdout)
+        .map_err(|err| format!("rustc --version returned non-utf8 output: {err}"))?;
+
+    println!("Nivasa Framework v{}", env!("CARGO_PKG_VERSION"));
+    println!("Rust {}", rust_version.trim());
+    println!("OS {} {}", std::env::consts::OS, std::env::consts::ARCH);
+    Ok(())
 }
 
 fn validate_command(all: bool, file: Option<String>) -> Result<(), String> {
