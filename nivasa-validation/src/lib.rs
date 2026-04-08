@@ -53,6 +53,41 @@ pub fn matches_regex(value: &str, pattern: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Trait for values that can report whether they are empty.
+pub trait IsNotEmpty {
+    /// Return whether the value contains at least one element or character.
+    fn is_not_empty(&self) -> bool;
+}
+
+impl IsNotEmpty for str {
+    fn is_not_empty(&self) -> bool {
+        !self.is_empty()
+    }
+}
+
+impl IsNotEmpty for String {
+    fn is_not_empty(&self) -> bool {
+        !self.is_empty()
+    }
+}
+
+impl<T> IsNotEmpty for [T] {
+    fn is_not_empty(&self) -> bool {
+        !self.is_empty()
+    }
+}
+
+impl<T> IsNotEmpty for Vec<T> {
+    fn is_not_empty(&self) -> bool {
+        !self.is_empty()
+    }
+}
+
+/// Return whether a string or vec-like value is non-empty.
+pub fn is_not_empty<T: ?Sized + IsNotEmpty>(value: &T) -> bool {
+    value.is_not_empty()
+}
+
 /// Named validation group active for a validation pass.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -422,6 +457,25 @@ mod tests {
     fn matches_regex_rejects_non_matching_or_invalid_patterns() {
         assert!(!matches_regex("alice@example.com", r"^[0-9]+$"));
         assert!(!matches_regex("alice@example.com", r"(["));
+    }
+
+    #[test]
+    fn is_not_empty_accepts_strings_and_vecs_with_content() {
+        assert!(is_not_empty("hello"));
+        assert!(is_not_empty(&String::from("hello")));
+        assert!(is_not_empty(&[1, 2, 3][..]));
+        assert!(is_not_empty(&vec!["a", "b"]));
+    }
+
+    #[test]
+    fn is_not_empty_rejects_empty_strings_and_vecs() {
+        let empty_vec: Vec<u8> = Vec::new();
+        let empty_slice: &[u8] = &[];
+
+        assert!(!is_not_empty(""));
+        assert!(!is_not_empty(&String::new()));
+        assert!(!is_not_empty(empty_slice));
+        assert!(!is_not_empty(&empty_vec));
     }
 
     #[test]
