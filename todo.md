@@ -704,7 +704,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 5.2.1 — Base Exception Types
 - [x] Implement `HttpException` base struct (status_code: u16, message: String, error: String, details: Option<serde_json::Value>, cause: Option<Arc<dyn Error + Send + Sync>>)
-- [ ] Derive `thiserror::Error` for all exception types
+- [x] Derive `thiserror::Error` for all exception types
 - [x] Implement `BadRequestException` (400)
 - [x] Implement `UnauthorizedException` (401)
 - [x] Implement `PaymentRequiredException` (402)

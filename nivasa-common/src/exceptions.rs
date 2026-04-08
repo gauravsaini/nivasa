@@ -4,7 +4,8 @@
 //! error response shape: `{ statusCode, message, error }`.
 
 use serde::Serialize;
-use std::{error::Error as StdError, fmt, sync::Arc};
+use std::{error::Error as StdError, sync::Arc};
+use thiserror::Error;
 
 use crate::HttpStatus;
 
@@ -12,7 +13,8 @@ use crate::HttpStatus;
 ///
 /// All specific exception types (BadRequest, NotFound, etc.) are created
 /// via constructor functions on this type.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Error)]
+#[error("{status_code} {error}: {message}")]
 #[serde(rename_all = "camelCase")]
 pub struct HttpException {
     pub status_code: u16,
@@ -21,6 +23,7 @@ pub struct HttpException {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<serde_json::Value>,
     #[serde(skip)]
+    #[source]
     cause: Option<Arc<dyn StdError + Send + Sync + 'static>>,
 }
 
@@ -130,20 +133,6 @@ impl HttpException {
 
     pub fn gateway_timeout(message: impl Into<String>) -> Self {
         Self::new(504u16, message)
-    }
-}
-
-impl fmt::Display for HttpException {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}: {}", self.status_code, self.error, self.message)
-    }
-}
-
-impl StdError for HttpException {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        self.cause
-            .as_deref()
-            .map(|cause| cause as &(dyn StdError + 'static))
     }
 }
 
