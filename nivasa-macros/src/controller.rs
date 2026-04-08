@@ -55,6 +55,7 @@ struct ControllerMethodBinding {
     interceptors: Vec<String>,
     filters: Vec<String>,
     metadata: Vec<MetadataBinding>,
+    operation: Option<OperationBinding>,
     response: Option<ResponseBinding>,
 }
 
@@ -84,6 +85,11 @@ struct ResponseBinding {
 struct MetadataBinding {
     key: String,
     value: String,
+}
+
+#[derive(Debug, Clone)]
+struct OperationBinding {
+    summary: LitStr,
 }
 
 impl ControllerArgs {
@@ -798,6 +804,39 @@ fn parse_set_metadata_binding(attr: &Attribute) -> Result<Option<Vec<MetadataBin
     }]))
 }
 
+fn parse_api_operation_binding(attr: &Attribute) -> Result<Option<OperationBinding>> {
+    if !attr_path_matches(attr, "api_operation") {
+        return Ok(None);
+    }
+
+    let mut summary: Option<LitStr> = None;
+    attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("summary") {
+            if summary.is_some() {
+                return Err(meta.error("duplicate `summary` entry in `#[api_operation]`"));
+            }
+
+            summary = Some(meta.value()?.parse()?);
+            return Ok(());
+        }
+
+        Err(meta.error("expected `summary = \"...\"` in `#[api_operation]`"))
+    })?;
+
+    let summary = summary.ok_or_else(|| {
+        Error::new(attr.span(), "`#[api_operation]` requires a `summary` entry")
+    })?;
+
+    if summary.value().trim().is_empty() {
+        return Err(Error::new(
+            summary.span(),
+            "`#[api_operation]` summary cannot be empty",
+        ));
+    }
+
+    Ok(Some(OperationBinding { summary }))
+}
+
 fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding>> {
     let kind = if attr_path_matches(attr, "body") {
         Some(ParameterExtractorKind::Body)
@@ -1241,6 +1280,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         let mut interceptor_bindings = Vec::new();
         let mut filter_bindings = Vec::new();
         let mut metadata_bindings = Vec::new();
+        let mut operation_binding: Option<OperationBinding> = None;
         let mut retained_attrs = Vec::new();
 
         for attr in method.attrs.drain(..) {
@@ -1254,24 +1294,35 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                             Some(mut filters) => filter_bindings.append(&mut filters),
                             None => match parse_set_metadata_binding(&attr)? {
                                 Some(mut metadata) => metadata_bindings.append(&mut metadata),
-                                None => match parse_route_binding(&attr)? {
-                                    Some(binding) => {
-                                        if method_route.is_some() {
+                                None => match parse_api_operation_binding(&attr)? {
+                                    Some(operation) => {
+                                        if operation_binding.is_some() {
                                             return Err(Error::new(
                                                 attr.span(),
-                                                "a controller method can only use one HTTP method attribute",
+                                                "a controller method can only use one `#[api_operation]` attribute",
                                             ));
                                         }
-                                        method_route = Some(binding);
+                                        operation_binding = Some(operation);
                                     }
-                                    None => match parse_pipe_binding(&attr)? {
-                                        Some(mut pipes) => {
-                                            method_pipe_attr_count += 1;
-                                            pipe_bindings.append(&mut pipes);
+                                    None => match parse_route_binding(&attr)? {
+                                        Some(binding) => {
+                                            if method_route.is_some() {
+                                                return Err(Error::new(
+                                                    attr.span(),
+                                                    "a controller method can only use one HTTP method attribute",
+                                                ));
+                                            }
+                                            method_route = Some(binding);
                                         }
-                                        None => match parse_response_binding(&attr)? {
-                                            Some(binding) => response_bindings.push(binding),
-                                            None => retained_attrs.push(attr),
+                                        None => match parse_pipe_binding(&attr)? {
+                                            Some(mut pipes) => {
+                                                method_pipe_attr_count += 1;
+                                                pipe_bindings.append(&mut pipes);
+                                            }
+                                            None => match parse_response_binding(&attr)? {
+                                                Some(binding) => response_bindings.push(binding),
+                                                None => retained_attrs.push(attr),
+                                            },
                                         },
                                     },
                                 },
@@ -1298,7 +1349,8 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             || !role_bindings.is_empty()
             || !interceptor_bindings.is_empty()
             || !filter_bindings.is_empty()
-            || !metadata_bindings.is_empty();
+            || !metadata_bindings.is_empty()
+            || operation_binding.is_some();
         let response = if response_bindings.is_empty() {
             None
         } else {
@@ -1354,6 +1406,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                 interceptors: interceptor_bindings,
                 filters: filter_bindings,
                 metadata: metadata_bindings,
+                operation: operation_binding,
                 response,
             });
         }
@@ -1550,6 +1603,25 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         }
     });
 
+    let operation_entries = methods.iter().map(|method| {
+        let handler = &method.handler;
+        let summary = method
+            .operation
+            .as_ref()
+            .map(|operation| {
+                let summary = &operation.summary;
+                quote!(Some(#summary))
+            })
+            .unwrap_or_else(|| quote!(None));
+
+        quote! {
+            (
+                stringify!(#handler),
+                #summary
+            )
+        }
+    });
+
     Ok(quote! {
         #input
 
@@ -1635,6 +1707,13 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             ) -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
                 vec![
                     #(#metadata_entries),*
+                ]
+            }
+
+            pub fn __nivasa_controller_api_operation_metadata(
+            ) -> Vec<(&'static str, Option<&'static str>)> {
+                vec![
+                    #(#operation_entries),*
                 ]
             }
         }
