@@ -265,7 +265,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 1.2.3 — Dynamic Modules (NestJS `forRoot` / `forFeature`)
 - [x] Define `DynamicModule` struct (metadata + extra providers)
 - [ ] Implement `ConfigurableModule` trait with `fn for_root(options) -> DynamicModule`
-- [ ] Implement `fn for_feature(options) -> DynamicModule`
+- [x] Implement `fn for_feature(options) -> DynamicModule`
 - [ ] Support `is_global: true` to make a dynamic module globally available
 - [ ] Test dynamic module with `for_root` provides config to all consumers
 - [ ] Test `for_feature` creates isolated instance per importing module
@@ -1048,7 +1048,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Write integration tests: validation flow (invalid DTO → ValidationPipe → 400 response)
 - [ ] Write integration tests: WebSocket lifecycle
 - [x] **SCXML compliance tests:** verify every state in every statechart is reachable by integration tests
-- [ ] **SCXML compliance tests:** verify every error transition is exercised (guard denied, validation error, handler error, etc.)
+- [x] **SCXML compliance tests:** verify every error transition is exercised (guard denied, validation error, handler error, etc.)
 - [x] **SCXML compliance tests:** verify StatechartTracer log exactly matches expected transition sequence for each test scenario
 - [ ] Set up mutation testing (cargo-mutants) for critical paths
 - [ ] Run `cargo clippy` with all warnings as errors
