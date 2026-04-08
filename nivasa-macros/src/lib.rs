@@ -189,6 +189,11 @@ pub fn query(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn pipe(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::pipe(attr, item)
+}
+
+#[proc_macro_attribute]
 pub fn headers(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
 }

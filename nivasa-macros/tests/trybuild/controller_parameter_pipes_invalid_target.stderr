@@ -1,0 +1,7 @@
+error: `#[pipe]` only supports controller method parameters
+ --> tests/trybuild/controller_parameter_pipes_invalid_target.rs:1:1
+  |
+1 | #[nivasa_macros::pipe(nivasa_pipes::TrimPipe)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `nivasa_macros::pipe` (in Nightly builds, run with -Z macro-backtrace for more info)
