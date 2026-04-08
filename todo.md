@@ -267,7 +267,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Define `ConfigurableModule` trait with `fn for_root(options) -> DynamicModule` and `fn for_feature(options) -> DynamicModule`
 - [x] Support `is_global: true` to make a dynamic module globally available
 - [x] Test dynamic module with `for_root` provides config to all consumers
-- [ ] Test `for_feature` creates isolated instance per importing module
+- [x] Test `for_feature` creates isolated instance per importing module
 
 #### 1.2.4 — Module Registry & Dependency Graph
 - [x] Implement `ModuleRegistry` to track all registered modules
