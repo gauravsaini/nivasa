@@ -662,7 +662,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test nested DTO validation
 - [x] Test optional field skips validation when absent
 - [x] Test `#[validate_nested]` on vec of DTOs
-- [ ] Test custom validation function
+- [x] Test custom validation function
 
 ---
 
