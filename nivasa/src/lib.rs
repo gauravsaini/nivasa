@@ -42,6 +42,7 @@ pub mod prelude {
     pub use nivasa_filters as filters;
     pub use nivasa_filters::{
         ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost,
+        WsArgumentsHost,
     };
     pub use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
     pub use nivasa_http::upload::MultipartLimits;
@@ -64,6 +65,7 @@ pub mod prelude {
         http_code, impl_controller, injectable, ip, module, options, param, patch, post, put,
         query, req, res, scxml_handler, session, use_filters,
     };
+    pub use nivasa_pipes::{ArgumentMetadata, Pipe};
     pub use nivasa_pipes as pipes;
     pub use nivasa_routing::Controller;
     pub use nivasa_statechart::{
@@ -101,7 +103,7 @@ pub use nivasa_core::{
 };
 pub use nivasa_filters as filters;
 pub use nivasa_filters::{
-    ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost,
+    ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost, WsArgumentsHost,
 };
 pub use nivasa_guards::{self, ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 pub use nivasa_http::upload::MultipartLimits;
@@ -124,6 +126,7 @@ pub use nivasa_macros::{
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
     req, res, scxml_handler, session, use_filters,
 };
+pub use nivasa_pipes::{self, ArgumentMetadata, Pipe};
 pub use nivasa_pipes as pipes;
 pub use nivasa_routing::Controller;
 pub use nivasa_statechart::{

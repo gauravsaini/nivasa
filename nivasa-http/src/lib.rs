@@ -7,9 +7,21 @@ mod server;
 pub mod upload;
 
 pub use http::header::HeaderMap;
-pub use server::GlobalFilterBinding;
+pub use server::{CorsOptions, GlobalFilterBinding};
 
 use async_trait::async_trait;
+#[cfg(feature = "compression-brotli")]
+use brotli::CompressorWriter;
+#[cfg(feature = "compression-deflate")]
+use flate2::write::DeflateEncoder;
+#[cfg(feature = "compression-gzip")]
+use flate2::write::GzEncoder;
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
+use flate2::Compression;
 use http::{
     header::{HeaderName, HeaderValue, CONTENT_TYPE},
     Method, Request, Response, StatusCode, Uri,
@@ -26,11 +38,13 @@ use std::{
     fmt,
     future::Future,
     pin::Pin,
+    io::Write,
     sync::Arc,
     task::{Context, Poll},
 };
 use tokio::sync::Mutex;
 use tower::{Layer, Service};
+use uuid::Uuid;
 
 /// Minimal response/request body abstraction for the HTTP wrapper layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1267,10 +1281,337 @@ where
     }
 }
 
+/// Middleware surface for structured request logging.
+///
+/// This stays intentionally tiny: one log event around `next.run(...)` and no
+/// change to the request/response flow.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LoggerMiddleware;
+
+impl LoggerMiddleware {
+    /// Create a new logging middleware.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[async_trait]
+impl NivasaMiddleware for LoggerMiddleware {
+    async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
+        let method = req.method().clone();
+        let path = req.path().to_owned();
+        let response = next.run(req).await;
+
+        tracing::info!(
+            method = %method,
+            path = %path,
+            status = response.status().as_u16(),
+            "request completed"
+        );
+
+        response
+    }
+}
+
+/// Middleware surface for gzip, deflate, and brotli compression.
+///
+/// This stays intentionally tiny: if the request advertises a supported
+/// encoding and the response has a non-empty body, the body is compressed
+/// after `next.run(...)` and the standard compression headers are updated.
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CompressionMiddleware;
+
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
+impl CompressionMiddleware {
+    /// Create a new compression middleware.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
+const COMPRESSION_ACCEPT_ENCODING_HEADER: &str = "accept-encoding";
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompressionFormat {
+    #[cfg(feature = "compression-brotli")]
+    Brotli,
+    #[cfg(feature = "compression-gzip")]
+    Gzip,
+    #[cfg(feature = "compression-deflate")]
+    Deflate,
+}
+
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
+fn accepts_compression(request: &NivasaRequest) -> Option<CompressionFormat> {
+    request
+        .header(COMPRESSION_ACCEPT_ENCODING_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| {
+            value.split(',').find_map(|encoding| {
+                let encoding = encoding.trim();
+                let encoding = encoding.split(';').next().map(str::trim).unwrap_or(encoding);
+
+                match encoding {
+                    "br" => {
+                        #[cfg(feature = "compression-brotli")]
+                        {
+                            Some(CompressionFormat::Brotli)
+                        }
+                        #[cfg(not(feature = "compression-brotli"))]
+                        {
+                            None
+                        }
+                    }
+                    "gzip" => {
+                        #[cfg(feature = "compression-gzip")]
+                        {
+                            Some(CompressionFormat::Gzip)
+                        }
+                        #[cfg(not(feature = "compression-gzip"))]
+                        {
+                            None
+                        }
+                    }
+                    "deflate" => {
+                        #[cfg(feature = "compression-deflate")]
+                        {
+                            Some(CompressionFormat::Deflate)
+                        }
+                        #[cfg(not(feature = "compression-deflate"))]
+                        {
+                            None
+                        }
+                    }
+                    "*" => {
+                        #[cfg(feature = "compression-brotli")]
+                        {
+                            Some(CompressionFormat::Brotli)
+                        }
+                        #[cfg(all(not(feature = "compression-brotli"), feature = "compression-gzip"))]
+                        {
+                            Some(CompressionFormat::Gzip)
+                        }
+                        #[cfg(all(
+                            not(feature = "compression-brotli"),
+                            not(feature = "compression-gzip"),
+                            feature = "compression-deflate"
+                        ))]
+                        {
+                            Some(CompressionFormat::Deflate)
+                        }
+                        #[cfg(all(
+                            not(feature = "compression-brotli"),
+                            not(feature = "compression-gzip"),
+                            not(feature = "compression-deflate")
+                        ))]
+                        {
+                            None
+                        }
+                    }
+                    "identity" => None,
+                    _ => None,
+                }
+            })
+        })
+}
+
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
+fn append_vary_accept_encoding(headers: &mut HeaderMap) {
+    use http::header::VARY;
+
+    let updated = match headers.get(VARY).and_then(|value| value.to_str().ok()) {
+        Some(existing)
+            if existing
+                .split(',')
+                .any(|part| part.trim().eq_ignore_ascii_case("accept-encoding")) =>
+        {
+            None
+        }
+        Some(existing) => Some(format!("{existing}, Accept-Encoding")),
+        None => Some(String::from("Accept-Encoding")),
+    };
+
+    if let Some(value) = updated {
+        headers.insert(
+            VARY,
+            HeaderValue::from_str(&value).expect("vary header must be valid"),
+        );
+    }
+}
+
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
+fn compress_response(response: NivasaResponse, format: CompressionFormat) -> NivasaResponse {
+    if response.body().is_empty() {
+        return response;
+    }
+
+    let inner = response.into_inner();
+    let body = inner.body().clone().into_bytes();
+    let compressed = match format {
+        #[cfg(feature = "compression-brotli")]
+        CompressionFormat::Brotli => {
+            let mut encoder = CompressorWriter::new(Vec::new(), 4096, 5, 22);
+            encoder
+                .write_all(&body)
+                .expect("brotli compression must succeed");
+            encoder.into_inner()
+        }
+        #[cfg(feature = "compression-gzip")]
+        CompressionFormat::Gzip => {
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            encoder
+                .write_all(&body)
+                .expect("gzip compression must succeed");
+            encoder.finish().expect("gzip compression must finish")
+        }
+        #[cfg(feature = "compression-deflate")]
+        CompressionFormat::Deflate => {
+            let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+            encoder
+                .write_all(&body)
+                .expect("deflate compression must succeed");
+            encoder
+                .finish()
+                .expect("deflate compression must finish")
+        }
+    };
+
+    let content_encoding = match format {
+        #[cfg(feature = "compression-brotli")]
+        CompressionFormat::Brotli => "br",
+        #[cfg(feature = "compression-gzip")]
+        CompressionFormat::Gzip => "gzip",
+        #[cfg(feature = "compression-deflate")]
+        CompressionFormat::Deflate => "deflate",
+    };
+
+    let (mut parts, _) = inner.into_parts();
+    parts.headers.remove(http::header::CONTENT_LENGTH);
+    parts.headers.insert(
+        http::header::CONTENT_ENCODING,
+        HeaderValue::from_static(content_encoding),
+    );
+    append_vary_accept_encoding(&mut parts.headers);
+    parts.headers.insert(
+        http::header::CONTENT_LENGTH,
+        HeaderValue::from_str(&compressed.len().to_string())
+            .expect("compressed body length must be valid"),
+    );
+
+    NivasaResponse {
+        inner: Response::from_parts(parts, Body::bytes(compressed)),
+    }
+}
+
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
+#[async_trait]
+impl NivasaMiddleware for CompressionMiddleware {
+    async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
+        let compression = accepts_compression(&req);
+        let response = next.run(req).await;
+
+        if let Some(format) = compression {
+            compress_response(response, format)
+        } else {
+            response
+        }
+    }
+}
+
+/// Middleware surface for conservative security response headers.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HelmetMiddleware;
+
+impl HelmetMiddleware {
+    /// Create a new security-header middleware.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+const HELMET_CONTENT_SECURITY_POLICY: &str =
+    "default-src 'self'; base-uri 'self'; frame-ancestors 'none'";
+const HELMET_REFERRER_POLICY: &str = "no-referrer";
+const HELMET_STRICT_TRANSPORT_SECURITY: &str = "max-age=31536000; includeSubDomains";
+const HELMET_X_CONTENT_TYPE_OPTIONS: &str = "nosniff";
+const HELMET_X_FRAME_OPTIONS: &str = "DENY";
+
+#[async_trait]
+impl NivasaMiddleware for HelmetMiddleware {
+    async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
+        next.run(req)
+            .await
+            .with_header("content-security-policy", HELMET_CONTENT_SECURITY_POLICY)
+            .with_header("referrer-policy", HELMET_REFERRER_POLICY)
+            .with_header(
+                "strict-transport-security",
+                HELMET_STRICT_TRANSPORT_SECURITY,
+            )
+            .with_header("x-content-type-options", HELMET_X_CONTENT_TYPE_OPTIONS)
+            .with_header("x-frame-options", HELMET_X_FRAME_OPTIONS)
+    }
+}
+
 /// Middleware surface for request pre-processing and delegation.
 ///
 /// This is intentionally just the foundational trait and continuation handle.
 /// Full middleware registration and SCXML-driven execution wiring land later.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RequestIdMiddleware;
+
+impl RequestIdMiddleware {
+    /// Create a new request-id middleware.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+const REQUEST_ID_HEADER: &str = "x-request-id";
+
+fn resolve_request_id(request: &NivasaRequest) -> String {
+    request
+        .header(REQUEST_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| Uuid::new_v4().to_string())
+}
+
 #[async_trait]
 pub trait NivasaMiddleware: Send + Sync {
     async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse;
@@ -1284,6 +1625,18 @@ where
 {
     async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
         (self)(req, next).await
+    }
+}
+
+#[async_trait]
+impl NivasaMiddleware for RequestIdMiddleware {
+    async fn use_(&self, mut req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
+        let request_id = resolve_request_id(&req);
+        req.set_header(REQUEST_ID_HEADER, &request_id);
+
+        next.run(req)
+            .await
+            .with_header(REQUEST_ID_HEADER, request_id)
     }
 }
 

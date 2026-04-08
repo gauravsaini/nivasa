@@ -1,26 +1,29 @@
 use bytes::Bytes;
 use http::{
     header::{
-        ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN,
+        ACCESS_CONTROL_ALLOW_CREDENTIALS, ACCESS_CONTROL_ALLOW_HEADERS,
+        ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN,
         ACCESS_CONTROL_REQUEST_HEADERS, ACCESS_CONTROL_REQUEST_METHOD, ORIGIN,
     },
-    Method,
+    Method, Request,
 };
 use http_body_util::{BodyExt, Empty, Full};
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use hyper_util::rt::TokioExecutor;
 use nivasa_http::{
-    run_controller_action, run_controller_action_with_body, Body, ControllerResponse, Json,
-    NivasaRequest, NivasaResponse, NivasaServer,
+    run_controller_action, run_controller_action_with_body, Body, ControllerResponse, CorsOptions,
+    Json, NivasaRequest, NivasaResponse, NivasaServer,
 };
 use nivasa_macros::{controller, impl_controller};
+use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
+use nivasa_pipes::TrimPipe;
 use nivasa_routing::RouteMethod;
 use serde::Deserialize;
 use std::{
     error::Error,
     net::TcpListener as StdTcpListener,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     time::Duration,
@@ -71,6 +74,28 @@ impl RuntimeBodyController {
             Body::json(serde_json::json!({ "name": payload.name })),
         )
         .with_header("x-controller-runtime", "body")
+    }
+}
+
+#[derive(Clone)]
+struct DenyAllGuard {
+    calls: Arc<AtomicUsize>,
+}
+
+impl Guard for DenyAllGuard {
+    fn can_activate<'a>(&'a self, context: &'a GuardExecutionContext) -> GuardFuture<'a> {
+        let calls = Arc::clone(&self.calls);
+
+        Box::pin(async move {
+            calls.fetch_add(1, Ordering::SeqCst);
+
+            let request = context
+                .request::<NivasaRequest>()
+                .expect("guard context must expose the request");
+            assert!(request.path().starts_with("/guarded"));
+
+            Ok(false)
+        })
     }
 }
 
@@ -135,6 +160,113 @@ async fn server_dispatches_through_request_pipeline() -> Result<(), Box<dyn Erro
     drop(client);
     let _ = shutdown_tx.send(());
     timeout(std::time::Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_applies_global_guards_to_multiple_routes(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let guard_calls = Arc::new(AtomicUsize::new(0));
+    let handler_calls = Arc::new(AtomicUsize::new(0));
+
+    let first_handler_calls = Arc::clone(&handler_calls);
+    let second_handler_calls = Arc::clone(&handler_calls);
+
+    let server = NivasaServer::builder()
+        .use_global_guard(DenyAllGuard {
+            calls: Arc::clone(&guard_calls),
+        })
+        .route(RouteMethod::Get, "/guarded/one", move |_| {
+            first_handler_calls.fetch_add(1, Ordering::SeqCst);
+            NivasaResponse::text("one")
+        })
+        .expect("first guarded route must register")
+        .route(RouteMethod::Get, "/guarded/two", move |_| {
+            second_handler_calls.fetch_add(1, Ordering::SeqCst);
+            NivasaResponse::text("two")
+        })
+        .expect("second guarded route must register")
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Empty<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+
+    for path in ["/guarded/one", "/guarded/two"] {
+        let response = client
+            .get(format!("http://127.0.0.1:{port}{path}").parse()?)
+            .await?;
+        assert_eq!(response.status(), http::StatusCode::FORBIDDEN);
+
+        let body = response.into_body().collect().await?.to_bytes();
+        let body: serde_json::Value = serde_json::from_slice(&body)?;
+        assert_eq!(body["statusCode"], 403);
+        assert_eq!(body["error"], "Forbidden");
+        assert_eq!(body["message"], "request denied by guard");
+    }
+
+    assert_eq!(guard_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(handler_calls.load(Ordering::SeqCst), 0);
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_applies_global_pipes_before_handler_execution(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .use_global_pipe(TrimPipe::new())
+        .route(RouteMethod::Post, "/pipes", |request| {
+            NivasaResponse::text(
+                request
+                    .extract::<String>()
+                    .expect("global pipe must normalize the body before handler execution"),
+            )
+        })
+        .expect("pipe-enabled route must register")
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Full<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let request = Request::post(format!("http://127.0.0.1:{port}/pipes"))
+        .header(http::header::CONTENT_TYPE, "text/plain")
+        .body(Full::new(Bytes::from_static(b"  pipe me  ")))?;
+    let response = client.request(request).await?;
+    assert_eq!(response.status(), http::StatusCode::OK);
+
+    let body = response.into_body().collect().await?.to_bytes();
+    assert_eq!(body, Bytes::from_static(b"pipe me"));
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
     Ok(())
 }
 
@@ -731,6 +863,124 @@ async fn server_does_not_add_cors_headers_when_disabled() -> Result<(), Box<dyn 
 
     let body = response.into_body().collect().await?.to_bytes();
     assert_eq!(body, Bytes::from_static(b"user-7"));
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_applies_configured_cors_options_to_preflight_and_responses()
+-> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let handler_called = Arc::new(AtomicBool::new(false));
+    let handler_called_for_route = Arc::clone(&handler_called);
+    let cors = CorsOptions::permissive()
+        .allow_origins(["https://frontend.example"])
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers(["x-api-version", "content-type"])
+        .allow_credentials(true);
+
+    let server = NivasaServer::builder()
+        .route(RouteMethod::Get, "/users/:id", move |request| {
+            handler_called_for_route.store(true, Ordering::SeqCst);
+            let user_id = request
+                .path_param("id")
+                .expect("pipeline must attach route captures before handler execution");
+
+            NivasaResponse::new(http::StatusCode::OK, Body::text(format!("user-{user_id}")))
+        })
+        .expect("route must register")
+        .cors_options(cors)
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Empty<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let preflight = http::Request::builder()
+        .method(Method::OPTIONS)
+        .uri(format!("http://127.0.0.1:{port}/users/42"))
+        .header(ORIGIN, "https://frontend.example")
+        .header(ACCESS_CONTROL_REQUEST_METHOD, "POST")
+        .header(
+            ACCESS_CONTROL_REQUEST_HEADERS,
+            "x-api-version, content-type",
+        )
+        .body(Empty::<Bytes>::new())?;
+
+    let response = client.request(preflight).await?;
+    assert_eq!(response.status(), http::StatusCode::NO_CONTENT);
+    assert_eq!(
+        response
+            .headers()
+            .get(ACCESS_CONTROL_ALLOW_ORIGIN)
+            .expect("CORS origin must be present"),
+        "https://frontend.example"
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(ACCESS_CONTROL_ALLOW_METHODS)
+            .expect("allow methods header must be present"),
+        "GET, POST, OPTIONS"
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(ACCESS_CONTROL_ALLOW_HEADERS)
+            .expect("allow headers header must be present"),
+        "x-api-version, content-type"
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .expect("allow credentials header must be present"),
+        "true"
+    );
+    let body = response.into_body().collect().await?.to_bytes();
+    assert!(body.is_empty());
+    assert!(!handler_called.load(Ordering::SeqCst));
+
+    let response = client
+        .request(
+            http::Request::builder()
+                .method(Method::GET)
+                .uri(format!("http://127.0.0.1:{port}/users/42"))
+                .header(ORIGIN, "https://frontend.example")
+                .body(Empty::<Bytes>::new())?,
+        )
+        .await?;
+    assert_eq!(response.status(), http::StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get(ACCESS_CONTROL_ALLOW_ORIGIN)
+            .expect("CORS origin must be present"),
+        "https://frontend.example"
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .expect("allow credentials header must be present"),
+        "true"
+    );
+
+    let body = response.into_body().collect().await?.to_bytes();
+    assert_eq!(body, Bytes::from_static(b"user-42"));
+    assert!(handler_called.load(Ordering::SeqCst));
 
     drop(client);
     let _ = shutdown_tx.send(());

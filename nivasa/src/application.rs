@@ -4,8 +4,12 @@
 //! gives the Phase 2 bootstrap work a stable place for server and versioning
 //! configuration without pulling transport details into the main crate yet.
 
-use nivasa_http::{NivasaMiddleware, NivasaServer, NivasaServerBuilder};
+use nivasa_common::HttpException;
+use nivasa_filters::{ExceptionFilter, ExceptionFilterMetadata};
+use nivasa_http::{NivasaMiddleware, NivasaResponse, NivasaServer, NivasaServerBuilder};
+use nivasa_guards::Guard;
 use nivasa_interceptors::Interceptor;
+use nivasa_pipes::Pipe;
 
 /// Supported API versioning strategies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -182,6 +186,15 @@ impl AppBootstrapConfig {
         self.server.versioning.as_ref()
     }
 
+    /// Attach versioning configuration at bootstrap time.
+    ///
+    /// This keeps versioning as pure configuration on the bootstrap boundary
+    /// and does not add any new transport/runtime dispatch behavior.
+    pub fn enable_versioning(mut self, versioning: VersioningOptions) -> Self {
+        self.server = self.server.with_versioning(versioning);
+        self
+    }
+
     /// Adapt app bootstrap config into the existing transport builder.
     ///
     /// This stays limited to bootstrap-owned transport flags. Route prefixing,
@@ -218,6 +231,57 @@ impl AppBootstrapConfig {
         I: Interceptor<Response = nivasa_http::NivasaResponse> + Send + Sync + 'static,
     {
         self.server_builder().interceptor(interceptor)
+    }
+
+    /// Register a single global interceptor at bootstrap time.
+    ///
+    /// This is a thin alias over [`AppBootstrapConfig::use_interceptor`]
+    /// so callers can use the more explicit global naming convention.
+    pub fn use_global_interceptor<I>(&self, interceptor: I) -> NivasaServerBuilder
+    where
+        I: Interceptor<Response = nivasa_http::NivasaResponse> + Send + Sync + 'static,
+    {
+        self.use_interceptor(interceptor)
+    }
+
+    /// Register a single global guard at bootstrap time.
+    ///
+    /// This is a thin facade over the existing transport guard hook. It keeps
+    /// the bootstrap layer focused on configuration and leaves runtime guard
+    /// semantics to the HTTP layer.
+    pub fn use_global_guard<G>(&self, guard: G) -> NivasaServerBuilder
+    where
+        G: Guard + Send + Sync + 'static,
+    {
+        self.server_builder().use_global_guard(guard)
+    }
+
+    /// Register a single global pipe at bootstrap time.
+    ///
+    /// This is a thin facade over the existing transport pipe hook. It keeps
+    /// the bootstrap layer focused on configuration and leaves runtime pipe
+    /// semantics to the HTTP layer.
+    pub fn use_global_pipe<P>(&self, pipe: P) -> NivasaServerBuilder
+    where
+        P: Pipe + Send + Sync + 'static,
+    {
+        self.server_builder().use_global_pipe(pipe)
+    }
+
+    /// Register a single global exception filter at bootstrap time.
+    ///
+    /// This is a thin facade over the existing transport filter hook. It keeps
+    /// the bootstrap layer focused on configuration and leaves runtime filter
+    /// semantics to the HTTP layer.
+    pub fn use_global_filter<F>(&self, filter: F) -> NivasaServerBuilder
+    where
+        F: ExceptionFilter<HttpException, NivasaResponse>
+            + ExceptionFilterMetadata
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.server_builder().use_global_filter(filter)
     }
 
     /// Compose a bootstrap-time route path from the configured global prefix.

@@ -1,0 +1,5 @@
+error: expected a vec field for `#[array_min_size]`
+ --> tests/trybuild/validation_array_min_size_invalid.rs:5:5
+  |
+5 |     #[array_min_size(2)]
+  |     ^

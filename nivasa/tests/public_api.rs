@@ -7,8 +7,9 @@ use nivasa::prelude::*;
 use nivasa::prelude::{
     all, body, controller, custom_param, delete, file, files, get, head, header, headers,
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
-    req, res, scxml_handler, session, ArgumentsHost, ExceptionFilter, ExceptionFilterFuture,
-    HttpArgumentsHost, Middleware, NivasaMiddlewareLayer, Reflector,
+    req, res, scxml_handler, session, ArgumentMetadata, ArgumentsHost, ExceptionFilter,
+    ExceptionFilterFuture, HttpArgumentsHost, Middleware, NivasaMiddlewareLayer, Pipe, Reflector,
+    WsArgumentsHost,
 };
 use std::future::Future;
 use std::pin::Pin;
@@ -112,6 +113,15 @@ fn crate_root_reexports_bootstrap_config_as_pure_data() {
 }
 
 #[test]
+fn crate_root_reexports_global_pipe_bootstrap_surface() {
+    let builder = nivasa::AppBootstrapConfig::default()
+        .use_global_pipe(pipes_crate::TrimPipe::new());
+
+    fn _assert_builder_is_in_scope(_: Option<NivasaServerBuilder>) {}
+    let _ = builder;
+}
+
+#[test]
 fn prelude_reexports_core_traits_macros_and_http_types() {
     fn _assert_request_type_is_in_scope(_: Option<NivasaRequest>) {}
     fn _assert_response_type_is_in_scope(_: Option<NivasaResponse>) {}
@@ -125,6 +135,7 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
     }
     fn _assert_arguments_host_is_in_scope(_: Option<ArgumentsHost>) {}
     fn _assert_http_arguments_host_is_in_scope(_: Option<HttpArgumentsHost>) {}
+    fn _assert_ws_arguments_host_is_in_scope(_: Option<WsArgumentsHost>) {}
     fn _assert_interceptor_context_is_in_scope(_: Option<ExecutionContext>) {}
     fn _assert_interceptor_call_handler_is_in_scope(_: Option<CallHandler<NivasaResponse>>) {}
     fn _assert_interceptor_result_is_in_scope(_: Option<InterceptorResult<NivasaResponse>>) {}
@@ -167,7 +178,14 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
 #[test]
 #[allow(unused_imports)]
 fn crate_root_reexports_pipe_surface_as_placeholder_crate() {
-    use nivasa::pipes as pipes_crate;
+    use nivasa::{pipes as pipes_crate, ArgumentMetadata as RootArgumentMetadata, Pipe as RootPipe};
+
+    fn _assert_pipes_namespace_is_in_scope(_: Option<pipes_crate::ArgumentMetadata>) {}
+    fn _assert_pipes_namespace_pipe_is_in_scope<T: pipes_crate::Pipe>() {}
+    fn _assert_root_pipe_trait_is_in_scope<T: RootPipe>() {}
+    fn _assert_root_argument_metadata_is_in_scope(_: Option<RootArgumentMetadata>) {}
+    fn _assert_prelude_pipe_trait_is_in_scope<T: Pipe>() {}
+    fn _assert_prelude_argument_metadata_is_in_scope(_: Option<ArgumentMetadata>) {}
 }
 
 #[test]
@@ -224,6 +242,7 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
     }
     fn _assert_root_arguments_host_is_in_scope(_: Option<ArgumentsHost>) {}
     fn _assert_root_http_arguments_host_is_in_scope(_: Option<HttpArgumentsHost>) {}
+    fn _assert_root_ws_arguments_host_is_in_scope(_: Option<WsArgumentsHost>) {}
     fn _assert_root_middleware_trait_name_is_in_scope<T: NivasaMiddleware>() {}
     fn _assert_root_middleware_alias_is_in_scope<T: Middleware>() {}
     fn _assert_root_middleware_layer_is_in_scope(_: Option<NivasaMiddlewareLayer<()>>) {}
@@ -232,6 +251,10 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
     fn _assert_root_filters_crate_is_in_scope(_: Option<filters_crate::ArgumentsHost>) {}
     fn _assert_root_filters_http_arguments_host_is_in_scope(
         _: Option<filters_crate::HttpArgumentsHost>,
+    ) {
+    }
+    fn _assert_root_filters_ws_arguments_host_is_in_scope(
+        _: Option<filters_crate::WsArgumentsHost>,
     ) {
     }
     fn _assert_root_filters_exception_filter_trait_is_in_scope<
@@ -331,6 +354,104 @@ fn bootstrap_config_can_forward_global_interceptors_into_the_server_builder() {
         .expect("route registration should succeed");
 
     assert_builder(builder);
+}
+
+#[test]
+fn bootstrap_config_can_forward_global_interceptors_via_alias_into_the_server_builder() {
+    struct DemoInterceptor;
+
+    impl Interceptor for DemoInterceptor {
+        type Response = NivasaResponse;
+
+        fn intercept(
+            &self,
+            _context: &ExecutionContext,
+            next: CallHandler<Self::Response>,
+        ) -> InterceptorFuture<Self::Response> {
+            Box::pin(async move { next.handle().await })
+        }
+    }
+
+    fn assert_builder(_: NivasaServerBuilder) {}
+
+    let builder = nivasa::AppBootstrapConfig::default()
+        .use_global_interceptor(DemoInterceptor)
+        .route(nivasa_routing::RouteMethod::Get, "/health", |_| {
+            NivasaResponse::text("ok")
+        })
+        .expect("route registration should succeed");
+
+    assert_builder(builder);
+}
+
+#[test]
+fn bootstrap_config_can_forward_global_guards_into_the_server_builder() {
+    struct DemoGuard;
+
+    impl Guard for DemoGuard {
+        fn can_activate<'a>(&'a self, context: &'a GuardExecutionContext) -> GuardFuture<'a> {
+            let _request = context
+                .request::<NivasaRequest>()
+                .expect("guard context must include the request");
+
+            Box::pin(async move { Ok(true) })
+        }
+    }
+
+    fn assert_builder(_: NivasaServerBuilder) {}
+
+    let builder = nivasa::AppBootstrapConfig::default()
+        .use_global_guard(DemoGuard)
+        .route(nivasa_routing::RouteMethod::Get, "/health", |_| {
+            NivasaResponse::text("ok")
+        })
+        .expect("route registration should succeed");
+
+    assert_builder(builder);
+}
+
+#[test]
+fn bootstrap_config_can_forward_global_filters_into_the_server_builder() {
+    struct DemoFilter;
+
+    impl ExceptionFilter<HttpException, NivasaResponse> for DemoFilter {
+        fn catch<'a>(
+            &'a self,
+            exception: HttpException,
+            _host: HttpArgumentsHost,
+        ) -> ExceptionFilterFuture<'a, NivasaResponse> {
+            let _ = exception;
+            Box::pin(async move { NivasaResponse::text("handled") })
+        }
+    }
+
+    impl filters_crate::ExceptionFilterMetadata for DemoFilter {
+        fn is_catch_all(&self) -> bool {
+            true
+        }
+    }
+
+    fn assert_builder(_: NivasaServerBuilder) {}
+
+    let builder = nivasa::AppBootstrapConfig::default().use_global_filter(DemoFilter);
+
+    assert_builder(builder);
+}
+
+#[test]
+fn bootstrap_config_can_enable_versioning_without_runtime_wiring() {
+    let versioning = VersioningOptions::builder(VersioningStrategy::MediaType)
+        .default_version(" /v2/ ")
+        .build();
+
+    let bootstrap = nivasa::AppBootstrapConfig::default().enable_versioning(versioning.clone());
+
+    assert_eq!(bootstrap.versioning(), Some(&versioning));
+    assert_eq!(
+        bootstrap.versioning().and_then(|options| options.default_version.as_deref()),
+        Some("v2")
+    );
+    assert_eq!(bootstrap.server.versioning, Some(versioning));
 }
 
 #[cfg(feature = "config")]

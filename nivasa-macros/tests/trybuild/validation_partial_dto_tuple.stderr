@@ -1,0 +1,5 @@
+error: `#[derive(PartialDto)]` only supports structs with named fields
+ --> tests/trybuild/validation_partial_dto_tuple.rs:4:1
+  |
+4 | struct InvalidPatchTupleDto(
+  | ^^^^^^

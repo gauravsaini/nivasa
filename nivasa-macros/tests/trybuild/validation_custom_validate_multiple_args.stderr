@@ -1,0 +1,5 @@
+error: expected `#[custom_validate(path_to_fn)]`
+  --> tests/trybuild/validation_custom_validate_multiple_args.rs:13:5
+   |
+13 |     #[custom_validate(first, second)]
+   |     ^

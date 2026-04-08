@@ -1,0 +1,5 @@
+error: expected bare `#[validate_nested]`
+  --> tests/trybuild/validation_validate_nested_invalid.rs:10:5
+   |
+10 |     #[validate_nested(extra)]
+   |     ^

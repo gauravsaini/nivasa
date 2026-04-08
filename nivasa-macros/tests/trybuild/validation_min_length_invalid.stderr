@@ -1,0 +1,5 @@
+error: expected `#[min_length(<usize>)]`
+ --> tests/trybuild/validation_min_length_invalid.rs:5:5
+  |
+5 |     #[min_length]
+  |     ^

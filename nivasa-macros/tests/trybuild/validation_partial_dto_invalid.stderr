@@ -1,0 +1,5 @@
+error: expected an `Option<T>` field for `#[derive(PartialDto)]`
+ --> tests/trybuild/validation_partial_dto_invalid.rs:5:5
+  |
+5 |     #[is_email]
+  |     ^

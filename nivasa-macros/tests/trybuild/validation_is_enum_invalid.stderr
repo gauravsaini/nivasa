@@ -1,0 +1,5 @@
+error: expected a string field for `#[is_enum]`
+ --> tests/trybuild/validation_is_enum_invalid.rs:5:5
+  |
+5 |     #[is_enum(AccessLevel)]
+  |     ^

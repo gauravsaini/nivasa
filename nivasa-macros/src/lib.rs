@@ -3,6 +3,7 @@ mod filter;
 mod injectable;
 mod middleware;
 mod module_macro;
+mod validation;
 mod scxml_handler;
 
 use proc_macro::TokenStream;
@@ -70,6 +71,60 @@ pub fn impl_controller(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn scxml_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
     scxml_handler::scxml_handler_impl(_attr, item)
+}
+
+#[proc_macro_derive(
+    Dto,
+    attributes(
+        groups,
+        is_email,
+        is_string,
+        is_number,
+        is_int,
+        is_boolean,
+        is_uuid,
+        is_url,
+        is_enum,
+        matches,
+        is_not_empty,
+        custom_validate,
+        array_min_size,
+        array_max_size,
+        is_optional,
+        validate_nested,
+        min_length,
+        max_length
+    )
+)]
+pub fn dto(input: TokenStream) -> TokenStream {
+    validation::dto_impl(input)
+}
+
+#[proc_macro_derive(
+    PartialDto,
+    attributes(
+        groups,
+        is_email,
+        is_string,
+        is_number,
+        is_int,
+        is_boolean,
+        is_uuid,
+        is_url,
+        is_enum,
+        matches,
+        is_not_empty,
+        custom_validate,
+        array_min_size,
+        array_max_size,
+        is_optional,
+        validate_nested,
+        min_length,
+        max_length
+    )
+)]
+pub fn partial_dto(input: TokenStream) -> TokenStream {
+    validation::partial_dto_impl(input)
 }
 
 #[proc_macro_attribute]

@@ -1,0 +1,5 @@
+error: expected a string, slice, or vec-like field for `#[is_not_empty]`
+ --> tests/trybuild/validation_is_not_empty_invalid.rs:5:5
+  |
+5 |     #[is_not_empty]
+  |     ^

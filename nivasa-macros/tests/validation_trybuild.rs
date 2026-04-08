@@ -1,0 +1,54 @@
+use trybuild::TestCases;
+
+#[test]
+fn validation_macro_validation() {
+    let t = TestCases::new();
+    t.pass("tests/trybuild/validation_dto_pass.rs");
+    t.pass("tests/trybuild/validation_is_boolean_pass.rs");
+    t.pass("tests/trybuild/validation_is_number_pass.rs");
+    t.pass("tests/trybuild/validation_is_int_pass.rs");
+    t.pass("tests/trybuild/validation_is_string_pass.rs");
+    t.pass("tests/trybuild/validation_matches_pass.rs");
+    t.pass("tests/trybuild/validation_is_uuid_pass.rs");
+    t.pass("tests/trybuild/validation_is_url_pass.rs");
+    t.pass("tests/trybuild/validation_is_enum_pass.rs");
+    t.pass("tests/trybuild/validation_array_size_pass.rs");
+    t.pass("tests/trybuild/validation_custom_validate_pass.rs");
+    t.pass("tests/trybuild/validation_is_optional_pass.rs");
+    t.pass("tests/trybuild/validation_is_not_empty_pass.rs");
+    t.pass("tests/trybuild/validation_partial_dto_pass.rs");
+    t.pass("tests/trybuild/validation_groups_pass.rs");
+    t.pass("tests/trybuild/validation_groups_multi_pass.rs");
+    t.pass("tests/trybuild/validation_groups_nested_pass.rs");
+    t.pass("tests/trybuild/validation_validate_nested_pass.rs");
+    t.pass("tests/trybuild/validation_validate_nested_vec_pass.rs");
+    t.compile_fail("tests/trybuild/validation_min_length_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_max_length_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_is_boolean_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_is_number_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_is_int_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_is_string_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_matches_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_is_uuid_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_is_url_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_is_enum_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_is_enum_malformed.rs");
+    t.compile_fail("tests/trybuild/validation_array_min_size_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_array_max_size_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_array_min_size_malformed.rs");
+    t.compile_fail("tests/trybuild/validation_array_max_size_malformed.rs");
+    t.compile_fail("tests/trybuild/validation_custom_validate_missing_arg.rs");
+    t.compile_fail("tests/trybuild/validation_custom_validate_string_arg.rs");
+    t.compile_fail("tests/trybuild/validation_custom_validate_multiple_args.rs");
+    t.compile_fail("tests/trybuild/validation_custom_validate_numeric_arg.rs");
+    t.compile_fail("tests/trybuild/validation_is_optional_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_is_not_empty_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_partial_dto_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_partial_dto_tuple.rs");
+    t.compile_fail("tests/trybuild/validation_groups_empty.rs");
+    t.compile_fail("tests/trybuild/validation_groups_ident.rs");
+    t.compile_fail("tests/trybuild/validation_groups_numeric.rs");
+    t.compile_fail("tests/trybuild/validation_groups_mixed.rs");
+    t.compile_fail("tests/trybuild/validation_groups_namevalue.rs");
+    t.compile_fail("tests/trybuild/validation_validate_nested_invalid.rs");
+}

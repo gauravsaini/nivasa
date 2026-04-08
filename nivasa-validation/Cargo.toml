@@ -7,4 +7,8 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+http = { workspace = true }
 nivasa-common = { path = "../nivasa-common" }
+regex = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }

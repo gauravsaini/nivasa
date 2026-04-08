@@ -57,7 +57,7 @@
 
 ### 0.4 — Umbrella Crate Re-export Strategy
 - [x] Design `nivasa::prelude::*` — users should only need one import
-- [x] Re-export key traits and runtime types: `Controller`, `Module`, `Injectable`, plus the landed DI/module/runtime surface; `GuardExecutionContext`, `GuardExecutionOutcome`, `Interceptor`, `Reflector`, `ExceptionFilter`, and `Middleware` (the `NivasaMiddleware` alias) are now re-exported from the umbrella crate, and the `filters`/`pipes` umbrella namespaces are also re-exported; `Pipe` still needs upstream exports
+- [x] Re-export key traits and runtime types: `Controller`, `Module`, `Injectable`, plus the landed DI/module/runtime surface; `GuardExecutionContext`, `GuardExecutionOutcome`, `Interceptor`, `Reflector`, `ExceptionFilter`, `Middleware` (the `NivasaMiddleware` alias), `Pipe`, and `ArgumentMetadata` are now re-exported from the umbrella crate, and the `filters`/`pipes` umbrella namespaces are also re-exported
 - [x] Re-export key macros: `#[module]`, `#[injectable]`, `#[controller]`, `#[get]`, `#[post]`, `#[put]`, `#[delete]`, `#[patch]`, `#[head]`, `#[options]`, `#[all]`, `#[impl_controller]`, `#[scxml_handler]`
 - [x] Re-export `ServerOptions`, `HttpException`, and the existing HTTP/server surface
 - [x] Re-export `StatechartEngine`, generated state/event enums from `nivasa-statechart`
@@ -553,16 +553,16 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 3.3.5 — Built-in Middleware
 - [ ] Implement `CorsMiddleware` (configurable origins, methods, headers, credentials)
-- [ ] Implement `HelmetMiddleware` (security headers: CSP, HSTS, X-Frame-Options, etc.)
-- [ ] Implement `CompressionMiddleware` (gzip, brotli, deflate — feature-gated)
-- [ ] Implement `RequestIdMiddleware` (generate/propagate `X-Request-Id` header)
-- [ ] Implement `LoggerMiddleware` (structured request logging via `tracing`)
+- [x] Implement `HelmetMiddleware` (security headers: CSP, HSTS, X-Frame-Options, etc.)
+- [x] Implement `CompressionMiddleware` (gzip, deflate, and brotli shipped behind feature flags)
+- [x] Implement `RequestIdMiddleware` (generate/propagate `X-Request-Id` header)
+- [x] Implement `LoggerMiddleware` (structured request logging via `tracing`)
 
 #### 3.3.6 — Middleware Tests
 - [x] Test global middleware runs on every request
-- [ ] Test module-level middleware runs only for that module's routes
+- [x] Test module-level middleware runs only for that module's routes
 - [x] Test middleware ordering (global before module before route)
-- [ ] Test richer CORS middleware/CorsOptions integration adds correct headers
+- [x] Test richer CORS middleware/CorsOptions integration adds correct headers
 - [x] Test middleware exclusion (`.exclude()`)
 - [x] Test Tower middleware adapter works
 
@@ -595,68 +595,74 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Support pipe chaining: `#[pipe(Pipe1, Pipe2)]` (left to right)
 
 #### 4.1.3 — Built-in Pipes
-- [ ] Implement `ValidationPipe` (validate DTO fields, return 400 with error details)
-- [ ] Implement `ParseIntPipe` (parse string to `i32`/`i64`, 400 on failure)
-- [ ] Implement `ParseFloatPipe` (parse string to `f32`/`f64`)
-- [ ] Implement `ParseBoolPipe` (parse string to `bool`)
-- [ ] Implement `ParseUuidPipe` (parse string to `Uuid`)
-- [ ] Implement `ParseEnumPipe` (parse string to enum variant)
-- [ ] Implement `DefaultValuePipe` (provide default if value is missing/null)
-- [ ] Implement `TrimPipe` (trim whitespace from string values)
+- [x] Implement `ValidationPipe` (validate DTO fields, return 400 with error details)
+- [x] Implement `ParseIntPipe` (parse string to `i32`/`i64`, 400 on failure)
+- [x] Implement `ParseFloatPipe` (parse string to `f32`/`f64`)
+- [x] Implement `ParseBoolPipe` (parse string to `bool`)
+- [x] Implement `ParseUuidPipe` (parse string to `Uuid`)
+- [x] Implement `ParseEnumPipe` (parse string to enum variant)
+- [x] Implement `DefaultValuePipe` (provide default for explicit null values)
+- [x] Implement `TrimPipe` (trim whitespace from string values)
 
 #### 4.1.4 — Pipe Tests
-- [ ] Test ParseIntPipe with valid input → returns i32
-- [ ] Test ParseIntPipe with "abc" → 400 with message
-- [ ] Test ValidationPipe with valid DTO → passes through
-- [ ] Test ValidationPipe with invalid DTO → 400 with field-level errors
+- [x] Test ParseIntPipe with valid input → returns i32
+- [x] Test ParseIntPipe with "abc" → 400 with message
+- [x] Test ParseFloatPipe with valid input → returns f32/f64
+- [x] Test ParseFloatPipe with "not-a-float" → 400 with message
+- [x] Test ParseBoolPipe with valid/invalid input
+- [x] Test ValidationPipe with valid DTO → passes through
+- [x] Test ValidationPipe with invalid DTO → 400 with field-level errors
 - [ ] Test pipe chaining (TrimPipe → ValidationPipe)
-- [ ] Test ParseUuidPipe with valid/invalid UUID
-- [ ] Test DefaultValuePipe provides fallback
+- [x] Test ParseUuidPipe with valid/invalid UUID
+- [x] Test DefaultValuePipe provides fallback for null values
 
 ### 4.2 — Validation Integration (`nivasa-validation`)
 
 #### 4.2.1 — Validation Decorators (Attribute Macros)
-- [ ] Implement `#[is_email]` — validate email format
-- [ ] Implement `#[is_string]` — validate is string type
-- [ ] Implement `#[is_number]` — validate is numeric type
-- [ ] Implement `#[is_int]` — validate is integer
-- [ ] Implement `#[is_boolean]` — validate is boolean
+- [x] Implement `#[is_email]` — validate email format
+- [x] Implement `#[is_string]` — validate is string type
+- [x] Implement `#[is_number]` — validate is numeric type
+- [x] Implement `#[is_int]` — validate is integer
+- [x] Implement `#[is_boolean]` — validate is boolean
 - [ ] Implement `#[min(n)]` — minimum value (for numbers)
 - [ ] Implement `#[max(n)]` — maximum value (for numbers)
-- [ ] Implement `#[min_length(n)]` — minimum string/array length
-- [ ] Implement `#[max_length(n)]` — maximum string/array length
-- [ ] Implement `#[is_not_empty]` — validate non-empty string/vec
-- [ ] Implement `#[matches(regex)]` — regex pattern match
-- [ ] Implement `#[is_optional]` — field is optional (skip if absent)
-- [ ] Implement `#[is_enum(EnumType)]` — validate value is valid enum variant
-- [ ] Implement `#[is_url]` — validate URL format
-- [ ] Implement `#[is_uuid]` — validate UUID format
-- [ ] Implement `#[array_min_size(n)]` / `#[array_max_size(n)]`
-- [ ] Implement `#[validate_nested]` — validate nested DTO recursively
-- [ ] Implement `#[custom_validate(fn)]` — custom validation function
+- [x] Implement `#[min_length(n)]` — minimum string/array length
+- [x] Implement `#[max_length(n)]` — maximum string/array length
+- [x] Implement `#[is_not_empty]` — validate non-empty string/vec
+- [x] Implement `#[matches(regex)]` — regex pattern match
+- [x] Implement `#[is_optional]` — field is optional (skip if absent)
+- [x] Implement `#[is_enum(EnumType)]` — validate value is valid enum variant
+- [x] Implement `#[is_url]` — validate URL format (core helper landed; macro wiring complete)
+- [x] Implement `#[is_uuid]` — validate UUID format
+- [x] Implement `#[array_min_size(n)]` / `#[array_max_size(n)]`
+- [x] Implement `#[validate_nested]` — validate nested DTO recursively
+- [x] Implement `#[custom_validate(fn)]` — custom validation function
 
 #### 4.2.2 — Validation Engine
-- [ ] Integrate `validator` crate or build custom validation engine
-- [ ] Collect ALL validation errors for a DTO (don't fail on first)
-- [ ] Format validation errors as structured JSON: `{ field, constraints: { rule: message } }`
-- [ ] Support nested DTO validation (recursive)
-- [ ] Support `Vec<T>` element validation
+- [x] Integrate `validator` crate or build custom validation engine
+- [x] Collect ALL validation errors for a DTO (don't fail on first)
+- [x] Format validation errors as structured JSON: `{ field, constraints: { rule: message } }`
+- [x] Support nested DTO validation (recursive)
+- [x] Support `Vec<T>` element validation
 - [ ] Support conditional validation (validate field X only if field Y has value Z)
-- [ ] Support validation groups (e.g., "create" vs "update" different rules)
+- [x] Support validation groups (field-scoped group gating via `ValidationContext` and nested `validate_with` propagation)
 
 #### 4.2.3 — DTO Derive Macro
-- [ ] Implement `#[derive(Dto)]` to auto-generate `Validate` impl
-- [ ] Generate `validate() -> Result<(), Vec<ValidationError>>` from annotated fields
-- [ ] Support `#[derive(PartialDto)]` for patch/update operations (all fields optional)
+- [x] Implement `#[derive(Dto)]` to auto-generate `Validate` impl
+- [x] Generate `Validate` impls from annotated fields (`validate() -> Result<(), ValidationErrors>` plus group-aware `validate_with(&ValidationContext)`)
+- [x] Support `#[derive(PartialDto)]` for patch/update operations (narrow `Option<T>`-only slice)
 
 #### 4.2.4 — Validation Tests
-- [ ] Test `#[is_email]` with valid and invalid emails
-- [ ] Test `#[min_length(6)]` on password field
-- [ ] Test multiple validation errors returned together
-- [ ] Test nested DTO validation
-- [ ] Test optional field skips validation when absent
-- [ ] Test `#[validate_nested]` on vec of DTOs
-- [ ] Test custom validation function
+- [x] Test `#[is_email]` with valid and invalid emails
+- [x] Test `#[is_string]` with valid string inputs and invalid non-string fields
+- [x] Test `#[is_boolean]` with valid bool inputs and invalid non-bool fields
+- [x] Test `#[min_length(6)]` on password field
+- [x] Test `#[max_length(12)]` on bio field
+- [x] Test multiple validation errors returned together
+- [x] Test nested DTO validation
+- [x] Test optional field skips validation when absent
+- [x] Test `#[validate_nested]` on vec of DTOs
+- [x] Test custom validation function
 
 ---
 
@@ -668,7 +674,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Define `ExceptionFilter<E>` trait: `async fn catch(&self, exception: E, host: ArgumentsHost) -> NivasaResponse`
 - [x] Define `ArgumentsHost` struct (access to request, response, next, underlying context)
 - [x] Define `HttpArgumentsHost` for HTTP-specific context
-- [ ] Define `WsArgumentsHost` for WebSocket-specific context (future)
+- [x] Define `WsArgumentsHost` alias for WebSocket-specific context (future wiring)
 
 #### 5.1.2 — `#[catch]` Attribute Macro
 - [x] Parse `#[catch(ExceptionType)]` on filter struct
@@ -981,12 +987,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `ServerOptions` struct: `port`, `host`, `cors`, `global_prefix`, `versioning`
 - [x] Introduce `AppBootstrapConfig` boundary for server-only bootstrap config
 - [ ] Use `AppBootstrapConfig::global_prefix()` to prefix all routes during bootstrap
-- [ ] Implement `.use_global_guard(Guard)` — apply guard to all routes
+- [x] Implement `.use_global_guard(Guard)` — apply guard to all routes
 - [ ] Implement `.use_global_interceptor(Interceptor)` — apply interceptor globally
 - [ ] Implement `.use_global_pipe(Pipe)` — apply pipe globally (e.g., ValidationPipe)
 - [x] Implement `.use_global_filter(Filter)` — apply exception filter globally
 - [x] Implement `.enable_cors()` — minimal transport-side CORS bridge on `ServerOptions`; richer middleware/CorsOptions work remains future
-- [ ] Implement `.enable_versioning(VersioningOptions)` — API versioning config
+- [x] Implement `.enable_versioning(VersioningOptions)` — API versioning config
 - [x] Implement `.use_(Middleware)` — apply global middleware (bootstrap-only facade via `AppBootstrapConfig::use_middleware(...)`)
 - [ ] Implement startup banner with ASCII art + version
 - [ ] Implement startup logging: routes registered, modules loaded, listen address
@@ -1016,7 +1022,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Write interceptors documentation (with caching, logging examples)
 - [ ] Write pipes documentation (built-in pipes, custom pipes)
 - [x] Write exception filters documentation
-- [ ] Write middleware documentation (including Tower compatibility)
+- [x] Write middleware documentation (including Tower compatibility)
 - [ ] Write configuration documentation (env loading, type-safe config)
 - [ ] Write testing documentation (TestingModule, TestClient, mocking)
 - [ ] Write CLI documentation (all generators, options)
