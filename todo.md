@@ -743,7 +743,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 6.1 — Configuration Module (`nivasa-config`)
 
 #### 6.1.1 — ConfigModule
-- [ ] Implement `ConfigModule` struct
+- [x] Implement `ConfigModule` struct
 - [ ] Implement `ConfigModule::for_root(options: ConfigOptions) -> DynamicModule`
 - [ ] Implement `ConfigModule::for_feature(options: ConfigOptions) -> DynamicModule`
 - [ ] Support `is_global: true` (register ConfigService globally)
