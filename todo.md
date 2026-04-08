@@ -793,7 +793,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement request logging span (method, path, status, duration)
 - [ ] Support configurable log levels per module
 - [x] Test log output contains expected fields
-- [ ] Test log level filtering
+- [x] Test log level filtering
 
 ### 6.3 — Testing Utilities (`nivasa-testing` or `nivasa` main crate)
 
