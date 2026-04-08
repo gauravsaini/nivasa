@@ -552,7 +552,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Document how to use existing Tower ecosystem middleware
 
 #### 3.3.5 — Built-in Middleware
-- [ ] Implement richer transport-side CORS configuration via `CorsOptions` (origins, methods, headers, credentials)
+- [x] Implement richer transport-side CORS configuration via `CorsOptions` (origins, methods, headers, credentials)
 - [x] Implement `HelmetMiddleware` (security headers: CSP, HSTS, X-Frame-Options, etc.)
 - [x] Implement `CompressionMiddleware` (gzip, deflate, and brotli shipped behind feature flags)
 - [x] Implement `RequestIdMiddleware` (generate/propagate `X-Request-Id` header)
