@@ -612,7 +612,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test ParseBoolPipe with valid/invalid input
 - [x] Test ValidationPipe with valid DTO → passes through
 - [x] Test ValidationPipe with invalid DTO → 400 with field-level errors
-- [ ] Test pipe chaining with compatible pipes (left to right, e.g. `TrimPipe` → `ParseBoolPipe`)
+- [x] Test pipe chaining with compatible pipes (left to right, e.g. `TrimPipe` → `ParseBoolPipe`)
 - [x] Test ParseUuidPipe with valid/invalid UUID
 - [x] Test DefaultValuePipe provides fallback for null values
 
