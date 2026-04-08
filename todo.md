@@ -454,7 +454,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.1.1 — Guard Trait
 - [x] Define `Guard` trait: `async fn can_activate(&self, context: &ExecutionContext) -> Result<bool, HttpException>`
 - [x] Define `ExecutionContext` struct (request, handler metadata, class metadata, custom data map)
-- [ ] Support DI in guard structs (guards are injectable)
+- [x] Support DI in guard structs (guards can be registered/resolved via the DI container)
 
 #### 3.1.2 — `#[guard]` Attribute Macro
 - [x] Parse `#[guard(GuardType)]` on handler methods
@@ -507,7 +507,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 3.2.3 — Interceptor Chain Execution
 - Landed execution slices: `NivasaServerBuilder::interceptor(...)` now supports a thin server-side interceptor hook around matched route handlers, repeated `.interceptor(...)` calls execute as an ordered onion chain while `RequestPipeline` remains the owner of `InterceptorPre` / `InterceptorPost` transitions, `AppBootstrapConfig::use_interceptor(...)` now forwards into that hook, and the response-mapping hook now wraps mapped bodies before final send. Decorator-driven registration and module wiring remain open.
-- [ ] Implement interceptor chain (onion/RxJS-style: pre → next.handle() → post)
+- [x] Implement interceptor chain (onion/RxJS-style: pre → next.handle() → post)
 - [x] Implement response transformation in post-processing
 - [x] Implement response mapping (map the body before sending)
 - [x] Support async interceptor execution
@@ -515,7 +515,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.2.4 — Built-in Interceptors
 - [x] Implement `LoggingInterceptor` (log method, path, status, duration)
 - [x] Implement `TimeoutInterceptor` (fail with 408 after N ms via `tokio::time::timeout`)
-- [ ] Implement `CacheInterceptor` (in-memory TTL cache, skip handler on cache hit)
+- [x] Implement `CacheInterceptor` (in-memory TTL cache, skip handler on cache hit)
 - [x] Implement `ClassSerializerInterceptor` (transform response using `#[exclude]` / `#[expose]` on fields)
 
 #### 3.2.5 — Interceptor Tests
@@ -671,7 +671,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 5.1 — Exception Filters (`nivasa-filters` + `nivasa-macros`)
 
 #### 5.1.1 — ExceptionFilter Trait
-- [ ] Define `ExceptionFilter<E>` trait: `async fn catch(&self, exception: E, host: ArgumentsHost) -> NivasaResponse`
+- [x] Define `ExceptionFilter<E, R = HttpException>` trait: `fn catch<'a>(&'a self, exception: E, host: HttpArgumentsHost) -> ExceptionFilterFuture<'a, R>`
 - [x] Define `ArgumentsHost` struct (access to request, response, next, underlying context)
 - [x] Define `HttpArgumentsHost` for HTTP-specific context
 - [x] Define `WsArgumentsHost` alias for WebSocket-specific context (future wiring)
@@ -703,7 +703,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 5.2 — Custom Exceptions (`nivasa-common`)
 
 #### 5.2.1 — Base Exception Types
-- [ ] Implement `HttpException` base struct (status: u16, message: String, description: Option<String>)
+- [x] Implement `HttpException` base struct (status_code: u16, message: String, error: String, details: Option<serde_json::Value>, cause: Option<Arc<dyn Error + Send + Sync>>)
 - [ ] Derive `thiserror::Error` for all exception types
 - [x] Implement `BadRequestException` (400)
 - [x] Implement `UnauthorizedException` (401)
@@ -988,8 +988,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Introduce `AppBootstrapConfig` boundary for server-only bootstrap config
 - [ ] Use `AppBootstrapConfig::global_prefix()` to prefix all routes during bootstrap
 - [x] Implement `.use_global_guard(Guard)` — apply guard to all routes
-- [ ] Implement `.use_global_interceptor(Interceptor)` — apply interceptor globally
-- [ ] Implement `.use_global_pipe(Pipe)` — apply pipe globally (e.g., ValidationPipe)
+- [x] Implement `.use_global_interceptor(Interceptor)` — apply interceptor globally
+- [x] Implement `.use_global_pipe(Pipe)` — apply pipe globally (e.g., ValidationPipe)
 - [x] Implement `.use_global_filter(Filter)` — apply exception filter globally
 - [x] Implement `.enable_cors()` — minimal transport-side CORS bridge on `ServerOptions`; richer middleware/CorsOptions work remains future
 - [x] Implement `.enable_versioning(VersioningOptions)` — API versioning config
