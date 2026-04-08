@@ -843,7 +843,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `nivasa generate resource <name>` (full CRUD: module + controller + service + DTOs)
 - [ ] Implement `nivasa generate middleware <name>`
 - [ ] Implement `nivasa info` — print framework version, Rust version, OS info
-- [ ] Implement `nivasa statechart validate --all` — validate all SCXML files in project
+- [x] Implement `nivasa statechart validate --all` — validate all SCXML files in project
 - [ ] Implement `nivasa statechart visualize` — generate diagrams from SCXML
 - [ ] Implement `nivasa statechart parity` — check generated code matches SCXML
 - [ ] Implement `nivasa statechart diff` — show SCXML changes between commits
