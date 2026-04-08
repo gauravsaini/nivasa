@@ -889,7 +889,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[connected_socket]` — access the WebSocket client handle
 
 #### 7.1.3 — WebSocket Adapter
-- [ ] Define `WebSocketAdapter` trait for pluggable backends
+- [x] Define `WebSocketAdapter` trait for pluggable backends
 - [ ] Implement default adapter using `tokio-tungstenite`
 - [ ] Implement `server.emit("event", data)` — broadcast to all
 - [ ] Implement `server.to("room").emit("event", data)` — emit to room
