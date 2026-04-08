@@ -245,7 +245,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 > Adding a new lifecycle state requires updating the SCXML first → rebuild → implement new handler.
 
 #### 1.2.1 — Module Trait
-- [ ] Define `Module` trait with `fn configure(&self, container: &mut DependencyContainer)`
+- [x] Define `Module` trait with async `configure(&self, container: &DependencyContainer) -> Result<(), DiError>`
 - [x] Define `ModuleMetadata` struct: `imports`, `controllers`, `providers`, `exports`
 - [x] Define `OnModuleInit` trait with `async fn on_module_init(&self)`
 - [x] Define `OnModuleDestroy` trait with `async fn on_module_destroy(&self)`
