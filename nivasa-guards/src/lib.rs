@@ -8,6 +8,7 @@ use std::{
     future::Future,
     pin::Pin,
     sync::Arc,
+    time::Duration,
 };
 
 use nivasa_common::{HttpException, RequestContext};
@@ -228,6 +229,44 @@ impl Guard for AuthGuard {
     }
 }
 
+/// Skeleton throttling guard.
+///
+/// This keeps only the guard shape and the configured rate-limit metadata.
+/// Cross-request counters, storage backends, and true rate enforcement remain
+/// future work in the throttling module slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ThrottlerGuard {
+    limit: u32,
+    ttl: Duration,
+}
+
+impl ThrottlerGuard {
+    /// Create a new throttling guard skeleton.
+    pub fn new(limit: u32, ttl: Duration) -> Self {
+        Self { limit, ttl }
+    }
+
+    /// Number of requests allowed in the configured window.
+    pub fn limit(&self) -> u32 {
+        self.limit
+    }
+
+    /// Duration of the configured window.
+    pub fn ttl(&self) -> Duration {
+        self.ttl
+    }
+
+    fn has_minimal_valid_configuration(&self) -> bool {
+        self.limit > 0 && !self.ttl.is_zero()
+    }
+}
+
+impl Guard for ThrottlerGuard {
+    fn can_activate<'a>(&'a self, _context: &'a ExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async move { Ok(self.has_minimal_valid_configuration()) })
+    }
+}
+
 /// Guard that authorizes requests by comparing required `roles` metadata from
 /// the request context against the roles attached to the current request.
 #[derive(Debug, Default, Clone, Copy)]
@@ -317,11 +356,12 @@ impl Guard for RolesGuard {
 
 #[cfg(test)]
 mod tests {
-    use super::{AuthGuard, ExecutionContext, Guard, RolesGuard};
+    use super::{AuthGuard, ExecutionContext, Guard, RolesGuard, ThrottlerGuard};
     use nivasa_common::{HttpException, RequestContext};
     use std::{
         future::Future,
         pin::Pin,
+        time::Duration,
         task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
     };
 
@@ -421,6 +461,25 @@ mod tests {
         let malformed = ExecutionContext::new(()).with_request_context(malformed_context);
 
         assert_eq!(run_ready(guard.can_activate(&malformed)).unwrap(), false);
+    }
+
+    #[test]
+    fn throttler_guard_exposes_rate_limit_configuration_without_storage_backends() {
+        let guard = ThrottlerGuard::new(10, Duration::from_secs(60));
+
+        assert_eq!(guard.limit(), 10);
+        assert_eq!(guard.ttl(), Duration::from_secs(60));
+        assert_eq!(run_ready(guard.can_activate(&ExecutionContext::new(()))).unwrap(), true);
+    }
+
+    #[test]
+    fn throttler_guard_rejects_unconfigured_windows() {
+        let zero_limit = ThrottlerGuard::new(0, Duration::from_secs(60));
+        let zero_ttl = ThrottlerGuard::new(10, Duration::from_secs(0));
+        let context = ExecutionContext::new(());
+
+        assert_eq!(run_ready(zero_limit.can_activate(&context)).unwrap(), false);
+        assert_eq!(run_ready(zero_ttl.can_activate(&context)).unwrap(), false);
     }
 
     #[test]
