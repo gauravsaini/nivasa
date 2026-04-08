@@ -266,7 +266,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Define `DynamicModule` struct (metadata + extra providers)
 - [x] Define `ConfigurableModule` trait with `fn for_root(options) -> DynamicModule` and `fn for_feature(options) -> DynamicModule`
 - [x] Support `is_global: true` to make a dynamic module globally available
-- [ ] Test dynamic module with `for_root` provides config to all consumers
+- [x] Test dynamic module with `for_root` provides config to all consumers
 - [ ] Test `for_feature` creates isolated instance per importing module
 
 #### 1.2.4 — Module Registry & Dependency Graph
@@ -948,7 +948,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 7.5.1 — OpenAPI Spec Generation
 - [ ] Implement `#[api_tags("Users")]` decorator on controllers
-- [ ] Implement `#[api_operation(summary = "Get all users")]` on handlers
+- [x] Implement `#[api_operation(summary = "Get all users")]` on handlers
 - [ ] Implement `#[api_param(name = "id", description = "User ID")]`
 - [ ] Implement `#[api_body(type = CreateUserDto)]`
 - [ ] Implement `#[api_response(status = 200, type = User, description = "Success")]`
