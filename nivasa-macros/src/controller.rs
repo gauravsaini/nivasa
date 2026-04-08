@@ -49,7 +49,7 @@ struct ControllerMethodBinding {
     handler: Ident,
     pipes: Vec<String>,
     parameters: Vec<ParameterBinding>,
-    parameter_pipes: Vec<Option<ParameterPipeBinding>>,
+    parameter_pipes: Vec<Vec<ParameterPipeBinding>>,
     guards: Vec<String>,
     roles: Vec<String>,
     interceptors: Vec<String>,
@@ -424,12 +424,14 @@ fn filter_marker_attr(filters: &[Path]) -> Attribute {
     parse_quote!(#[doc = #marker])
 }
 
-fn pipe_marker_attr(pipe: &Path) -> Attribute {
+fn pipe_marker_attr(pipes: &[Path]) -> Attribute {
+    let payload = pipes
+        .iter()
+        .map(|pipe| pipe.to_token_stream().to_string().replace(' ', ""))
+        .collect::<Vec<_>>()
+        .join(",");
     let marker = LitStr::new(
-        &format!(
-            "{PIPE_MARKER_PREFIX} {}",
-            pipe.to_token_stream().to_string().replace(' ', "")
-        ),
+        &format!("{PIPE_MARKER_PREFIX} {payload}"),
         proc_macro2::Span::call_site(),
     );
     parse_quote!(#[doc = #marker])
@@ -669,19 +671,23 @@ fn parse_filter_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
 
 fn parse_pipe_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
     if attr_path_matches(attr, "pipe") {
-        let pipe: Path = attr
-            .parse_args()
-            .map_err(|_| Error::new(attr.span(), "`#[pipe]` requires exactly one pipe type"))?;
-        let rendered = pipe.to_token_stream().to_string().replace(' ', "");
+        let pipes: syn::punctuated::Punctuated<Path, Token![,]> = attr
+            .parse_args_with(syn::punctuated::Punctuated::parse_terminated)
+            .map_err(|_| Error::new(attr.span(), "`#[pipe]` requires at least one pipe type"))?;
 
-        if rendered.is_empty() {
+        if pipes.is_empty() {
             return Err(Error::new(
                 attr.span(),
-                "`#[pipe]` requires exactly one pipe type",
+                "`#[pipe]` requires at least one pipe type",
             ));
         }
 
-        return Ok(Some(vec![rendered]));
+        return Ok(Some(
+            pipes
+                .into_iter()
+                .map(|pipe| pipe.to_token_stream().to_string().replace(' ', ""))
+                .collect(),
+        ));
     }
 
     if !attr.path().is_ident("doc") {
@@ -704,12 +710,18 @@ fn parse_pipe_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
         return Ok(None);
     };
 
-    let rendered = rest.trim().to_owned();
-    if rendered.is_empty() {
+    let pipes = rest
+        .trim()
+        .split(',')
+        .map(str::trim)
+        .filter(|pipe| !pipe.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    if pipes.is_empty() {
         return Err(Error::new(doc.span(), "invalid controller pipe marker"));
     }
 
-    Ok(Some(vec![rendered]))
+    Ok(Some(pipes))
 }
 
 fn parse_set_metadata_binding(attr: &Attribute) -> Result<Option<Vec<MetadataBinding>>> {
@@ -891,26 +903,30 @@ fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding
     Ok(Some(binding))
 }
 
-fn parse_parameter_pipe(attr: &Attribute) -> Result<Option<ParameterPipeBinding>> {
+fn parse_parameter_pipe(attr: &Attribute) -> Result<Option<Vec<ParameterPipeBinding>>> {
     if !attr_path_matches(attr, "pipe") {
         return Ok(None);
     }
 
-    let path: Path = attr
-        .parse_args()
-        .map_err(|_| Error::new(attr.span(), "`#[pipe]` requires exactly one pipe type"))?;
-    let rendered = path.to_token_stream().to_string().replace(' ', "");
+    let paths: syn::punctuated::Punctuated<Path, Token![,]> = attr
+        .parse_args_with(syn::punctuated::Punctuated::parse_terminated)
+        .map_err(|_| Error::new(attr.span(), "`#[pipe]` requires at least one pipe type"))?;
 
-    if rendered.is_empty() {
+    if paths.is_empty() {
         return Err(Error::new(
             attr.span(),
-            "`#[pipe]` requires exactly one pipe type",
+            "`#[pipe]` requires at least one pipe type",
         ));
     }
 
-    Ok(Some(ParameterPipeBinding {
-        pipe: LitStr::new(&rendered, path.span()),
-    }))
+    Ok(Some(
+        paths
+            .into_iter()
+            .map(|path| ParameterPipeBinding {
+                pipe: LitStr::new(&path.to_token_stream().to_string().replace(' ', ""), path.span()),
+            })
+            .collect(),
+    ))
 }
 
 fn response_marker_attr(text: &str) -> Attribute {
@@ -1144,7 +1160,7 @@ fn parse_route_binding(attr: &Attribute) -> Result<Option<RouteBinding>> {
 
 fn collect_parameter_bindings(
     method: &mut ImplItemFn,
-) -> Result<(Vec<ParameterBinding>, Vec<Option<ParameterPipeBinding>>)> {
+) -> Result<(Vec<ParameterBinding>, Vec<Vec<ParameterPipeBinding>>)> {
     let mut parameters = Vec::new();
     let mut parameter_pipes = Vec::new();
 
@@ -1155,7 +1171,8 @@ fn collect_parameter_bindings(
 
         let mut retained_attrs = Vec::new();
         let mut parameter_binding: Option<ParameterBinding> = None;
-        let mut parameter_pipe: Option<ParameterPipeBinding> = None;
+        let mut parameter_pipe_bindings = Vec::new();
+        let mut parameter_pipe_attr_count = 0usize;
 
         for attr in attrs.drain(..) {
             match parse_parameter_extractor(&attr)? {
@@ -1169,14 +1186,15 @@ fn collect_parameter_bindings(
                     parameter_binding = Some(binding);
                 }
                 None => match parse_parameter_pipe(&attr)? {
-                    Some(pipe) => {
-                        if parameter_pipe.is_some() {
+                    Some(mut pipes) => {
+                        parameter_pipe_attr_count += 1;
+                        if parameter_pipe_attr_count > 1 {
                             return Err(Error::new(
                                 attr.span(),
                                 "a controller parameter can only use one `#[pipe]` attribute",
                             ));
                         }
-                        parameter_pipe = Some(pipe);
+                        parameter_pipe_bindings.append(&mut pipes);
                     }
                     None => retained_attrs.push(attr),
                 },
@@ -1188,7 +1206,7 @@ fn collect_parameter_bindings(
         if let Some(binding) = parameter_binding {
             parameters.push(binding);
         }
-        parameter_pipes.push(parameter_pipe);
+        parameter_pipes.push(parameter_pipe_bindings);
     }
 
     Ok((parameters, parameter_pipes))
@@ -1216,6 +1234,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
 
         let mut method_route: Option<RouteBinding> = None;
         let mut pipe_bindings = Vec::new();
+        let mut method_pipe_attr_count = 0usize;
         let mut response_bindings = Vec::new();
         let mut guard_bindings = Vec::new();
         let mut role_bindings = Vec::new();
@@ -1246,7 +1265,10 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                                         method_route = Some(binding);
                                     }
                                     None => match parse_pipe_binding(&attr)? {
-                                        Some(mut pipes) => pipe_bindings.append(&mut pipes),
+                                        Some(mut pipes) => {
+                                            method_pipe_attr_count += 1;
+                                            pipe_bindings.append(&mut pipes);
+                                        }
                                         None => match parse_response_binding(&attr)? {
                                             Some(binding) => response_bindings.push(binding),
                                             None => retained_attrs.push(attr),
@@ -1262,7 +1284,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
 
         method.attrs = retained_attrs;
         let (parameters, parameter_pipes) = collect_parameter_bindings(method)?;
-        if pipe_bindings.len() > 1 {
+        if method_pipe_attr_count > 1 {
             return Err(Error::new(
                 method.sig.ident.span(),
                 "a controller method can only use one `#[pipe]` attribute",
@@ -1271,7 +1293,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         let has_controller_metadata = !response_bindings.is_empty()
             || !pipe_bindings.is_empty()
             || !parameters.is_empty()
-            || parameter_pipes.iter().any(|pipe| pipe.is_some())
+            || parameter_pipes.iter().any(|pipes| !pipes.is_empty())
             || !guard_bindings.is_empty()
             || !role_bindings.is_empty()
             || !interceptor_bindings.is_empty()
@@ -1394,16 +1416,20 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
 
     let parameter_pipe_entries = methods
         .iter()
-        .filter(|method| method.parameter_pipes.iter().any(|pipe| pipe.is_some()))
+        .filter(|method| method.parameter_pipes.iter().any(|pipes| !pipes.is_empty()))
         .map(|method| {
             let handler = &method.handler;
             let parameter_pipes = method.parameter_pipes.iter().map(|pipe| {
-                pipe.as_ref()
-                    .map(|binding| {
-                        let pipe = &binding.pipe;
-                        quote!(Some(#pipe))
-                    })
-                    .unwrap_or_else(|| quote!(None))
+                let pipes = pipe.iter().map(|binding| {
+                    let pipe = &binding.pipe;
+                    quote!(#pipe)
+                });
+
+                quote! {
+                    vec![
+                        #(#pipes),*
+                    ]
+                }
             });
 
             quote! {
@@ -1564,7 +1590,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             }
 
             pub fn __nivasa_controller_parameter_pipe_metadata(
-            ) -> Vec<(&'static str, Vec<Option<&'static str>>)> {
+            ) -> Vec<(&'static str, Vec<Vec<&'static str>>)> {
                 vec![
                     #(#parameter_pipe_entries),*
                 ]
@@ -1682,12 +1708,22 @@ pub fn all(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 pub fn pipe(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let pipe = match syn::parse::<Path>(attr) {
-        Ok(pipe) => pipe,
+    let pipes = match syn::punctuated::Punctuated::<Path, Token![,]>::parse_terminated
+        .parse(attr.clone())
+    {
+        Ok(pipes) if !pipes.is_empty() => pipes.into_iter().collect::<Vec<_>>(),
         Err(_) => {
             return Error::new(
                 proc_macro2::Span::call_site(),
-                "`#[pipe]` requires exactly one pipe type",
+                "`#[pipe]` requires at least one pipe type",
+            )
+            .to_compile_error()
+            .into();
+        }
+        Ok(_) => {
+            return Error::new(
+                proc_macro2::Span::call_site(),
+                "`#[pipe]` requires at least one pipe type",
             )
             .to_compile_error()
             .into();
@@ -1699,12 +1735,12 @@ pub fn pipe(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     if let Ok(mut method) = syn::parse::<ImplItemFn>(item.clone()) {
-        method.attrs.insert(0, pipe_marker_attr(&pipe));
+        method.attrs.insert(0, pipe_marker_attr(&pipes));
         return quote!(#method).into();
     }
 
     if let Ok(mut item_struct) = syn::parse::<ItemStruct>(item.clone()) {
-        item_struct.attrs.insert(0, pipe_marker_attr(&pipe));
+        item_struct.attrs.insert(0, pipe_marker_attr(&pipes));
         return quote!(#item_struct).into();
     }
 

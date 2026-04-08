@@ -23,6 +23,6 @@ fn main() {
     );
     assert_eq!(
         UsersController::__nivasa_controller_parameter_pipe_metadata(),
-        Vec::<(&'static str, Vec<Option<&'static str>>)>::new(),
+        Vec::<(&'static str, Vec<Vec<&'static str>>)>::new(),
     );
 }

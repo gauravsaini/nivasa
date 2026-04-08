@@ -25,9 +25,9 @@ fn main() {
         vec![(
             "create",
             vec![
-                Some("nivasa_pipes::TrimPipe"),
-                None,
-                Some("nivasa_pipes::ParseIntPipe::<i32>"),
+                vec!["nivasa_pipes::TrimPipe"],
+                vec![],
+                vec!["nivasa_pipes::ParseIntPipe::<i32>"],
             ],
         )],
     );

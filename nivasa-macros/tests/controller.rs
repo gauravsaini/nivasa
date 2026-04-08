@@ -16,6 +16,9 @@ fn controller_macro_validation() {
     t.pass("tests/trybuild/controller_parameter_pipes_pass.rs");
     t.pass("tests/trybuild/controller_method_pipes_pass.rs");
     t.pass("tests/trybuild/controller_controller_pipes_pass.rs");
+    t.pass("tests/trybuild/controller_parameter_pipe_chaining_pass.rs");
+    t.pass("tests/trybuild/controller_method_pipe_chaining_pass.rs");
+    t.pass("tests/trybuild/controller_controller_pipe_chaining_pass.rs");
     t.pass("tests/trybuild/controller_response_metadata_pass.rs");
     t.compile_fail("tests/trybuild/controller_parameter_extractors_headers_no_route.rs");
     t.compile_fail("tests/trybuild/controller_parameter_extractors_body_namevalue_invalid.rs");
@@ -35,6 +38,7 @@ fn controller_macro_validation() {
     t.compile_fail("tests/trybuild/controller_parameter_pipes_no_route.rs");
     t.compile_fail("tests/trybuild/controller_method_pipes_invalid_target.rs");
     t.compile_fail("tests/trybuild/controller_method_pipes_no_route.rs");
+    t.compile_fail("tests/trybuild/controller_pipe_empty.rs");
     t.compile_fail("tests/trybuild/controller_use_filters_invalid_target.rs");
     t.compile_fail("tests/trybuild/controller_use_filters_no_route.rs");
 }

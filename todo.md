@@ -592,7 +592,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Parse `#[pipe(PipeType)]` on handler methods (applies to all params)
 - [x] Parse `#[pipe(PipeType)]` on individual parameters
 - [x] Parse `#[pipe(PipeType)]` on controller (applies to all handlers)
-- [ ] Support pipe chaining: `#[pipe(Pipe1, Pipe2)]` (left to right)
+- [x] Support pipe chaining: `#[pipe(Pipe1, Pipe2)]` (left to right)
 
 #### 4.1.3 — Built-in Pipes
 - [x] Implement `ValidationPipe` (validate DTO fields, return 400 with error details)

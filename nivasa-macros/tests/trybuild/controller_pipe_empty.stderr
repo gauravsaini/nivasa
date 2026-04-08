@@ -1,0 +1,5 @@
+error: `#[pipe]` requires at least one pipe type
+ --> tests/trybuild/controller_pipe_empty.rs:9:5
+  |
+9 |     #[nivasa_macros::pipe()]
+  |     ^
