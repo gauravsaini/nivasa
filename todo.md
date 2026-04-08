@@ -784,7 +784,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 6.2 — Structured Logging (`tracing` integration)
 
-- [ ] Add `tracing` + `tracing-subscriber` as workspace dependencies
+- [x] Add `tracing` + `tracing-subscriber` as workspace dependencies
 - [ ] Implement `LoggerModule` with configurable log levels
 - [ ] Implement `LoggerService` injectable provider wrapping `tracing`
 - [ ] Support structured JSON logging (for production)
