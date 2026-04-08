@@ -476,7 +476,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test reflector reads metadata set on handler
 
 #### 3.1.5 — Built-in Guards
-- [ ] Implement `AuthGuard` skeleton (JWT validation pattern)
+- [x] Implement `AuthGuard` skeleton (JWT validation pattern)
 - [x] Implement `RolesGuard` (check roles via Reflector + `#[roles(...)]`)
 - [ ] Implement `ThrottlerGuard` (rate limiting — see Phase 3.4)
 

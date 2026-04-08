@@ -165,6 +165,69 @@ pub trait Guard: Send + Sync {
     fn can_activate<'a>(&'a self, context: &'a ExecutionContext) -> GuardFuture<'a>;
 }
 
+/// Skeleton authentication guard.
+///
+/// This is intentionally shallow: it only checks for a bearer token that
+/// looks JWT-shaped (`Bearer <header.payload.signature>`). Real JWT parsing,
+/// signature verification, and claims validation remain future work.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AuthGuard;
+
+impl AuthGuard {
+    /// Create a new auth guard.
+    pub fn new() -> Self {
+        Self
+    }
+
+    fn bearer_token_from_context(context: &ExecutionContext) -> Option<String> {
+        if let Some(request_context) = context.request_context() {
+            if let Some(value) = request_context.custom_data("authorization") {
+                if let Some(token) = value.as_str() {
+                    return Some(token.to_string());
+                }
+            }
+        }
+
+        if let Some(value) = context.custom_data_map().get("authorization") {
+            let value = value.as_ref();
+
+            if let Some(token) = value.downcast_ref::<String>() {
+                return Some(token.clone());
+            }
+
+            if let Some(token) = value.downcast_ref::<&'static str>() {
+                return Some((*token).to_string());
+            }
+        }
+
+        None
+    }
+
+    fn looks_like_jwt_bearer(token: &str) -> bool {
+        let Some(token) = token.trim().strip_prefix("Bearer ") else {
+            return false;
+        };
+
+        let mut segments = token.split('.');
+        let has_three_segments = segments.next().is_some()
+            && segments.next().is_some()
+            && segments.next().is_some()
+            && segments.next().is_none();
+
+        has_three_segments && token.split('.').all(|segment| !segment.trim().is_empty())
+    }
+}
+
+impl Guard for AuthGuard {
+    fn can_activate<'a>(&'a self, context: &'a ExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async move {
+            Ok(Self::bearer_token_from_context(context)
+                .as_deref()
+                .is_some_and(Self::looks_like_jwt_bearer))
+        })
+    }
+}
+
 /// Guard that authorizes requests by comparing required `roles` metadata from
 /// the request context against the roles attached to the current request.
 #[derive(Debug, Default, Clone, Copy)]
@@ -254,7 +317,7 @@ impl Guard for RolesGuard {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExecutionContext, Guard, RolesGuard};
+    use super::{AuthGuard, ExecutionContext, Guard, RolesGuard};
     use nivasa_common::{HttpException, RequestContext};
     use std::{
         future::Future,
@@ -327,6 +390,37 @@ mod tests {
 
         let result = run_ready(RoleGuard.can_activate(&context));
         assert_eq!(result.unwrap(), true);
+    }
+
+    #[test]
+    fn auth_guard_accepts_jwt_shaped_bearer_tokens() {
+        let mut request_context = RequestContext::new();
+        request_context.set_custom_data("authorization", "Bearer header.payload.signature");
+
+        let context = ExecutionContext::new(()).with_request_context(request_context);
+        let guard = AuthGuard::new();
+
+        let result = run_ready(guard.can_activate(&context));
+
+        assert_eq!(result.unwrap(), true);
+    }
+
+    #[test]
+    fn auth_guard_rejects_missing_or_malformed_bearer_tokens() {
+        let mut missing_context = RequestContext::new();
+        missing_context.set_custom_data("authorization", "token-without-bearer-prefix");
+
+        let missing = ExecutionContext::new(()).with_request_context(missing_context);
+        let guard = AuthGuard::new();
+
+        assert_eq!(run_ready(guard.can_activate(&missing)).unwrap(), false);
+
+        let mut malformed_context = RequestContext::new();
+        malformed_context.set_custom_data("authorization", "Bearer not.jwt-shaped");
+
+        let malformed = ExecutionContext::new(()).with_request_context(malformed_context);
+
+        assert_eq!(run_ready(guard.can_activate(&malformed)).unwrap(), false);
     }
 
     #[test]
