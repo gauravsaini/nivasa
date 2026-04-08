@@ -980,7 +980,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ## Phase 8: NestApplication Entry Point (`nivasa` main crate)
 
-- [ ] Implement `NestApplication::create(AppModule)` factory method
+- [x] Implement `NestApplication::create(AppModule)` factory method
 - [ ] Implement `.build() -> Result<App>` — resolve all modules, DI, and routes
 - [ ] Implement `.listen(ServerOptions) -> Result<()>` — start HTTP server
 - [x] Implement `ServerOptions` struct: `port`, `host`, `cors`, `global_prefix`, `versioning`

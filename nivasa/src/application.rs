@@ -167,6 +167,38 @@ pub struct AppBootstrapConfig {
     pub server: ServerOptions,
 }
 
+/// Minimal application shell for the umbrella crate.
+///
+/// This stays intentionally data-only until the wider application bootstrap
+/// surface lands. It preserves the root module and bootstrap configuration
+/// without claiming build, listen, or shutdown behavior yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NestApplication<T> {
+    app_module: T,
+    bootstrap: AppBootstrapConfig,
+}
+
+impl<T> NestApplication<T> {
+    /// Create an application shell from the root module using default bootstrap
+    /// configuration.
+    pub fn create(app_module: T) -> Self {
+        Self {
+            app_module,
+            bootstrap: AppBootstrapConfig::default(),
+        }
+    }
+
+    /// Borrow the root application module.
+    pub fn app_module(&self) -> &T {
+        &self.app_module
+    }
+
+    /// Borrow the current bootstrap configuration.
+    pub fn bootstrap(&self) -> &AppBootstrapConfig {
+        &self.bootstrap
+    }
+}
+
 impl AppBootstrapConfig {
     /// Create bootstrap config from server options.
     pub fn new(server: ServerOptions) -> Self {

@@ -113,6 +113,14 @@ fn crate_root_reexports_bootstrap_config_as_pure_data() {
 }
 
 #[test]
+fn crate_root_reexports_nest_application_factory_as_data_only_shell() {
+    let app = nivasa::NestApplication::create(DemoModule);
+
+    assert_eq!(app.app_module().metadata(), ModuleMetadata::default());
+    assert_eq!(app.bootstrap(), &nivasa::AppBootstrapConfig::default());
+}
+
+#[test]
 fn crate_root_reexports_global_pipe_bootstrap_surface() {
     let builder = nivasa::AppBootstrapConfig::default()
         .use_global_pipe(pipes_crate::TrimPipe::new());
