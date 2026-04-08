@@ -1063,6 +1063,8 @@ name = "nivasa-pipes"
 version = "0.1.0"
 dependencies = [
  "nivasa-common",
+ "nivasa-validation",
+ "serde",
  "serde_json",
  "uuid",
 ]
