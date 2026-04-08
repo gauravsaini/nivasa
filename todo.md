@@ -258,8 +258,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Generate `impl Module for T` with metadata accessor methods
 - [x] Generate provider registration calls for listed providers
 - [x] Generate controller registration calls
-- [ ] Generate import resolution (pull in imported module's exported providers)
-- [ ] Generate export filtering (only exports are visible to importing modules)
+- [x] Implement import resolution at module registry/runtime level (importers see imported modules' exported providers)
+- [x] Implement export filtering at module registry/runtime level (only exports are visible to importing modules)
 - [x] Support `middlewares: [...]` in module config
 
 #### 1.2.3 — Dynamic Modules (NestJS `forRoot` / `forFeature`)
