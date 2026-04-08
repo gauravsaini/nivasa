@@ -869,7 +869,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test `nivasa g module users` creates `users/users_module.rs`
 - [ ] Test `nivasa g resource users` creates module + controller + service + DTOs
 - [ ] Test auto-registration modifies parent module correctly
-- [ ] Test `nivasa info` outputs version information
+- [x] Test `nivasa info` outputs version information
 
 ---
 
