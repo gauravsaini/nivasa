@@ -42,6 +42,7 @@ pub mod prelude {
     pub use nivasa_filters as filters;
     pub use nivasa_filters::{
         ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost,
+        WsArgumentsHost,
     };
     pub use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
     pub use nivasa_http::upload::MultipartLimits;
@@ -102,7 +103,7 @@ pub use nivasa_core::{
 };
 pub use nivasa_filters as filters;
 pub use nivasa_filters::{
-    ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost,
+    ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost, WsArgumentsHost,
 };
 pub use nivasa_guards::{self, ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 pub use nivasa_http::upload::MultipartLimits;

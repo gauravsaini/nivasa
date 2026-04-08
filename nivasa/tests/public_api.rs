@@ -9,6 +9,7 @@ use nivasa::prelude::{
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
     req, res, scxml_handler, session, ArgumentMetadata, ArgumentsHost, ExceptionFilter,
     ExceptionFilterFuture, HttpArgumentsHost, Middleware, NivasaMiddlewareLayer, Pipe, Reflector,
+    WsArgumentsHost,
 };
 use std::future::Future;
 use std::pin::Pin;
@@ -134,6 +135,7 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
     }
     fn _assert_arguments_host_is_in_scope(_: Option<ArgumentsHost>) {}
     fn _assert_http_arguments_host_is_in_scope(_: Option<HttpArgumentsHost>) {}
+    fn _assert_ws_arguments_host_is_in_scope(_: Option<WsArgumentsHost>) {}
     fn _assert_interceptor_context_is_in_scope(_: Option<ExecutionContext>) {}
     fn _assert_interceptor_call_handler_is_in_scope(_: Option<CallHandler<NivasaResponse>>) {}
     fn _assert_interceptor_result_is_in_scope(_: Option<InterceptorResult<NivasaResponse>>) {}
@@ -240,6 +242,7 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
     }
     fn _assert_root_arguments_host_is_in_scope(_: Option<ArgumentsHost>) {}
     fn _assert_root_http_arguments_host_is_in_scope(_: Option<HttpArgumentsHost>) {}
+    fn _assert_root_ws_arguments_host_is_in_scope(_: Option<WsArgumentsHost>) {}
     fn _assert_root_middleware_trait_name_is_in_scope<T: NivasaMiddleware>() {}
     fn _assert_root_middleware_alias_is_in_scope<T: Middleware>() {}
     fn _assert_root_middleware_layer_is_in_scope(_: Option<NivasaMiddlewareLayer<()>>) {}
@@ -248,6 +251,10 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
     fn _assert_root_filters_crate_is_in_scope(_: Option<filters_crate::ArgumentsHost>) {}
     fn _assert_root_filters_http_arguments_host_is_in_scope(
         _: Option<filters_crate::HttpArgumentsHost>,
+    ) {
+    }
+    fn _assert_root_filters_ws_arguments_host_is_in_scope(
+        _: Option<filters_crate::WsArgumentsHost>,
     ) {
     }
     fn _assert_root_filters_exception_filter_trait_is_in_scope<

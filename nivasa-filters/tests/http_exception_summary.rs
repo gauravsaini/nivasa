@@ -1,5 +1,5 @@
 use nivasa_common::{HttpException, RequestContext};
-use nivasa_filters::{http_exception_summary, ArgumentsHost};
+use nivasa_filters::{http_exception_summary, ArgumentsHost, WsArgumentsHost};
 
 #[derive(Debug, PartialEq)]
 struct RequestSnapshot {
@@ -16,6 +16,23 @@ fn arguments_host_exposes_typed_request_data() {
     assert_eq!(
         host.request::<RequestSnapshot>(),
         Some(&RequestSnapshot { path: "/filters" })
+    );
+}
+
+#[test]
+fn ws_arguments_host_alias_exposes_typed_request_data() {
+    let mut request_context = RequestContext::new();
+    request_context.insert_request_data(RequestSnapshot {
+        path: "/filters/ws",
+    });
+
+    let host: WsArgumentsHost = ArgumentsHost::new().with_request_context(request_context);
+
+    assert_eq!(
+        host.request::<RequestSnapshot>(),
+        Some(&RequestSnapshot {
+            path: "/filters/ws"
+        })
     );
 }
 

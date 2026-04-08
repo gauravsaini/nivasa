@@ -57,6 +57,12 @@ impl ArgumentsHost {
 /// HTTP-specific alias for the default arguments host.
 pub type HttpArgumentsHost = ArgumentsHost;
 
+/// WebSocket-specific alias for the default arguments host.
+///
+/// This keeps the transport-specific public API in place before later phases
+/// add WebSocket-only context fields and runtime wiring.
+pub type WsArgumentsHost = ArgumentsHost;
+
 /// Runtime metadata used to order and match exception filters.
 pub trait ExceptionFilterMetadata {
     /// Return the concrete exception type this filter targets, when known.
