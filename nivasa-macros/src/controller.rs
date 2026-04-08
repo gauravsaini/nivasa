@@ -249,6 +249,7 @@ fn expand_controller(
     let name = &input.ident;
     let generics = input.generics.clone();
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let mut controller_pipes = Vec::new();
     let mut controller_guards = Vec::new();
     let mut controller_roles = Vec::new();
     let mut controller_interceptors = Vec::new();
@@ -257,17 +258,20 @@ fn expand_controller(
     let mut retained_attrs = Vec::new();
 
     for attr in input.attrs.drain(..) {
-        match parse_guard_binding(&attr)? {
-            Some(guards) => controller_guards.extend(guards),
-            None => match parse_roles_binding(&attr)? {
-                Some(roles) => controller_roles.extend(roles),
-                None => match parse_interceptor_binding(&attr)? {
-                    Some(interceptors) => controller_interceptors.extend(interceptors),
-                    None => match parse_filter_binding(&attr)? {
-                        Some(filters) => controller_filters.extend(filters),
-                        None => match parse_set_metadata_binding(&attr)? {
-                            Some(metadata) => controller_metadata.extend(metadata),
-                            None => retained_attrs.push(attr),
+        match parse_pipe_binding(&attr)? {
+            Some(pipes) => controller_pipes.extend(pipes),
+            None => match parse_guard_binding(&attr)? {
+                Some(guards) => controller_guards.extend(guards),
+                None => match parse_roles_binding(&attr)? {
+                    Some(roles) => controller_roles.extend(roles),
+                    None => match parse_interceptor_binding(&attr)? {
+                        Some(interceptors) => controller_interceptors.extend(interceptors),
+                        None => match parse_filter_binding(&attr)? {
+                            Some(filters) => controller_filters.extend(filters),
+                            None => match parse_set_metadata_binding(&attr)? {
+                                Some(metadata) => controller_metadata.extend(metadata),
+                                None => retained_attrs.push(attr),
+                            },
                         },
                     },
                 },
@@ -330,6 +334,12 @@ fn expand_controller(
             pub fn __nivasa_controller_guards() -> Vec<&'static str> {
                 vec![
                     #(#controller_guards),*
+                ]
+            }
+
+            pub fn __nivasa_controller_pipes() -> Vec<&'static str> {
+                vec![
+                    #(#controller_pipes),*
                 ]
             }
 
@@ -1693,16 +1703,17 @@ pub fn pipe(attr: TokenStream, item: TokenStream) -> TokenStream {
         return quote!(#method).into();
     }
 
-    if syn::parse::<PatType>(item.clone()).is_err() {
-        return Error::new(
-            proc_macro2::Span::call_site(),
-            "`#[pipe]` only supports controller method parameters and inherent controller methods",
-        )
-        .to_compile_error()
-        .into();
+    if let Ok(mut item_struct) = syn::parse::<ItemStruct>(item.clone()) {
+        item_struct.attrs.insert(0, pipe_marker_attr(&pipe));
+        return quote!(#item_struct).into();
     }
 
-    item
+    Error::new(
+        proc_macro2::Span::call_site(),
+        "`#[pipe]` only supports controller structs, controller method parameters, and inherent controller methods",
+    )
+    .to_compile_error()
+    .into()
 }
 
 pub fn guard(attr: TokenStream, item: TokenStream) -> TokenStream {

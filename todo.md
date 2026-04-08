@@ -591,7 +591,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 4.1.2 — `#[pipe]` Attribute Macro
 - [x] Parse `#[pipe(PipeType)]` on handler methods (applies to all params)
 - [x] Parse `#[pipe(PipeType)]` on individual parameters
-- [ ] Parse `#[pipe(PipeType)]` on controller (applies to all handlers)
+- [x] Parse `#[pipe(PipeType)]` on controller (applies to all handlers)
 - [ ] Support pipe chaining: `#[pipe(Pipe1, Pipe2)]` (left to right)
 
 #### 4.1.3 — Built-in Pipes

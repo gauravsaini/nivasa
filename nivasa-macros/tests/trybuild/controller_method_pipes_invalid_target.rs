@@ -1,4 +1,4 @@
 #[nivasa_macros::pipe(nivasa_pipes::TrimPipe)]
-struct NotAControllerMethod;
+enum NotAControllerMethod {}
 
 fn main() {}
