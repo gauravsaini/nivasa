@@ -8,6 +8,7 @@ fn validation_macro_validation() {
     t.pass("tests/trybuild/validation_is_number_pass.rs");
     t.pass("tests/trybuild/validation_is_int_pass.rs");
     t.pass("tests/trybuild/validation_is_string_pass.rs");
+    t.pass("tests/trybuild/validation_matches_pass.rs");
     t.pass("tests/trybuild/validation_is_uuid_pass.rs");
     t.pass("tests/trybuild/validation_is_url_pass.rs");
     t.pass("tests/trybuild/validation_is_optional_pass.rs");
@@ -19,6 +20,7 @@ fn validation_macro_validation() {
     t.compile_fail("tests/trybuild/validation_is_number_invalid.rs");
     t.compile_fail("tests/trybuild/validation_is_int_invalid.rs");
     t.compile_fail("tests/trybuild/validation_is_string_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_matches_invalid.rs");
     t.compile_fail("tests/trybuild/validation_is_uuid_invalid.rs");
     t.compile_fail("tests/trybuild/validation_is_url_invalid.rs");
     t.compile_fail("tests/trybuild/validation_is_optional_invalid.rs");

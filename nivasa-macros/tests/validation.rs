@@ -74,6 +74,12 @@ struct WebhookForm {
 }
 
 #[derive(Dto)]
+struct SlugForm {
+    #[matches("^[a-z0-9-]+$")]
+    slug: String,
+}
+
+#[derive(Dto)]
 struct OptionalContactForm {
     #[is_optional]
     #[is_email]
@@ -285,6 +291,30 @@ fn dto_validation_rejects_invalid_url_fields() {
     assert_eq!(
         errors.errors()[0].constraints.get("is_url"),
         Some(&"must be a valid URL".to_string())
+    );
+}
+
+#[test]
+fn dto_validation_accepts_regex_matched_fields() {
+    let form = SlugForm {
+        slug: "valid-slug-123".into(),
+    };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_rejects_regex_mismatches() {
+    let form = SlugForm {
+        slug: "Not A Slug".into(),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "slug");
+    assert_eq!(
+        errors.errors()[0].constraints.get("matches"),
+        Some(&"must match the required pattern".to_string())
     );
 }
 

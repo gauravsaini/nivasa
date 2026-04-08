@@ -1,0 +1,5 @@
+error: expected a string field for `#[matches]`
+ --> tests/trybuild/validation_matches_invalid.rs:5:5
+  |
+5 |     #[matches("^[a-z0-9-]+$")]
+  |     ^

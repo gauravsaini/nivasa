@@ -132,6 +132,18 @@ fn build_field_checks(field: &Field) -> Result<Vec<proc_macro2::TokenStream>> {
                     );
                 }
             });
+        } else if attr.path().is_ident("matches") {
+            ensure_matches_type(field_ty, attr)?;
+            let pattern = parse_matches_pattern(attr)?;
+            let pattern_lit = LitStr::new(&pattern, attr.span());
+            checks.push(quote! {
+                if !nivasa_validation::matches_regex(&#field_value_access, #pattern_lit) {
+                    errors.push(
+                        nivasa_validation::ValidationError::new(#field_label)
+                            .with_constraint("matches", "must match the required pattern"),
+                    );
+                }
+            });
         } else if attr.path().is_ident("validate_nested") {
             if is_optional {
                 checks.push(build_nested_validation_check_with_access(
@@ -404,6 +416,17 @@ fn ensure_url_type(ty: &Type, attr: &Attribute) -> Result<()> {
     }
 }
 
+fn ensure_matches_type(ty: &Type, attr: &Attribute) -> Result<()> {
+    if is_string_like_type(ty) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            attr.span(),
+            "expected a string field for `#[matches]`",
+        ))
+    }
+}
+
 fn ensure_number_type(ty: &Type, attr: &Attribute) -> Result<()> {
     if is_number_like_type(ty) {
         Ok(())
@@ -576,4 +599,10 @@ fn parse_max_length(attr: &Attribute) -> Result<usize> {
     value
         .base10_parse::<usize>()
         .map_err(|_| Error::new(attr.span(), "expected `#[max_length(<usize>)]`"))
+}
+
+fn parse_matches_pattern(attr: &Attribute) -> Result<String> {
+    attr.parse_args::<LitStr>()
+        .map(|pattern| pattern.value())
+        .map_err(|_| Error::new(attr.span(), "expected `#[matches(\"<regex>\")]`"))
 }
