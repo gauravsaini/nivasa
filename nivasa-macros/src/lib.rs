@@ -94,6 +94,27 @@ pub fn dto(input: TokenStream) -> TokenStream {
     validation::dto_impl(input)
 }
 
+#[proc_macro_derive(
+    PartialDto,
+    attributes(
+        is_email,
+        is_string,
+        is_number,
+        is_int,
+        is_boolean,
+        is_uuid,
+        is_url,
+        matches,
+        is_optional,
+        validate_nested,
+        min_length,
+        max_length
+    )
+)]
+pub fn partial_dto(input: TokenStream) -> TokenStream {
+    validation::partial_dto_impl(input)
+}
+
 #[proc_macro_attribute]
 pub fn guard(_attr: TokenStream, item: TokenStream) -> TokenStream {
     controller::guard(_attr, item)

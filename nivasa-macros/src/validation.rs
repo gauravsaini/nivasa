@@ -10,13 +10,44 @@ use syn::{
 pub fn dto_impl(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    match expand_dto(&input) {
+    match expand_validation_derive(&input, DeriveMode::Dto) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }
 }
 
-fn expand_dto(input: &DeriveInput) -> Result<proc_macro2::TokenStream> {
+pub fn partial_dto_impl(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+
+    match expand_validation_derive(&input, DeriveMode::PartialDto) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum DeriveMode {
+    Dto,
+    PartialDto,
+}
+
+impl DeriveMode {
+    fn derive_name(self) -> &'static str {
+        match self {
+            DeriveMode::Dto => "Dto",
+            DeriveMode::PartialDto => "PartialDto",
+        }
+    }
+
+    fn requires_option_fields(self) -> bool {
+        matches!(self, DeriveMode::PartialDto)
+    }
+}
+
+fn expand_validation_derive(
+    input: &DeriveInput,
+    mode: DeriveMode,
+) -> Result<proc_macro2::TokenStream> {
     let name = &input.ident;
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
@@ -27,14 +58,17 @@ fn expand_dto(input: &DeriveInput) -> Result<proc_macro2::TokenStream> {
             Fields::Unnamed(_) | Fields::Unit => {
                 return Err(Error::new(
                     input.span(),
-                    "`#[derive(Dto)]` only supports structs with named fields",
+                    format!(
+                        "`#[derive({})]` only supports structs with named fields",
+                        mode.derive_name()
+                    ),
                 ));
             }
         },
         _ => {
             return Err(Error::new(
                 input.span(),
-                "`#[derive(Dto)]` only supports structs",
+                format!("`#[derive({})]` only supports structs", mode.derive_name()),
             ));
         }
     };
@@ -42,7 +76,7 @@ fn expand_dto(input: &DeriveInput) -> Result<proc_macro2::TokenStream> {
     let mut field_checks = Vec::new();
 
     for field in fields {
-        field_checks.extend(build_field_checks(field)?);
+        field_checks.extend(build_field_checks(field, mode)?);
     }
 
     Ok(quote! {
@@ -60,7 +94,7 @@ fn expand_dto(input: &DeriveInput) -> Result<proc_macro2::TokenStream> {
     })
 }
 
-fn build_field_checks(field: &Field) -> Result<Vec<proc_macro2::TokenStream>> {
+fn build_field_checks(field: &Field, mode: DeriveMode) -> Result<Vec<proc_macro2::TokenStream>> {
     let field_name = field
         .ident
         .as_ref()
@@ -74,13 +108,18 @@ fn build_field_checks(field: &Field) -> Result<Vec<proc_macro2::TokenStream>> {
         .attrs
         .iter()
         .find(|attr| attr.path().is_ident("is_optional"));
-    let field_ty = if is_optional {
+    let field_ty = if is_optional || mode.requires_option_fields() {
         option_inner_type(&field.ty).ok_or_else(|| {
             Error::new(
                 optional_attr
                     .map(|attr| attr.span())
                     .unwrap_or_else(|| field.span()),
-                "expected an `Option<T>` field for `#[is_optional]`",
+                match mode {
+                    DeriveMode::Dto => "expected an `Option<T>` field for `#[is_optional]`",
+                    DeriveMode::PartialDto => {
+                        "expected an `Option<T>` field for `#[derive(PartialDto)]`"
+                    }
+                },
             )
         })?
     } else {
@@ -193,7 +232,7 @@ fn build_field_checks(field: &Field) -> Result<Vec<proc_macro2::TokenStream>> {
         return Ok(Vec::new());
     }
 
-    let field_scope = if is_optional {
+    let field_scope = if is_optional || mode.requires_option_fields() {
         quote! {
             if let Some(#field_value_ident) = &self.#field_name {
                 #(#checks)*

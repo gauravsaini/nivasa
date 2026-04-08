@@ -1,4 +1,4 @@
-use nivasa_macros::Dto;
+use nivasa_macros::{Dto, PartialDto};
 use nivasa_validation::Validate;
 
 #[derive(Dto)]
@@ -84,6 +84,20 @@ struct OptionalContactForm {
     #[is_optional]
     #[is_email]
     email: Option<String>,
+}
+
+#[derive(PartialDto)]
+struct PartialContactForm {
+    #[is_email]
+    email: Option<String>,
+    #[min_length(6)]
+    password: Option<String>,
+}
+
+#[derive(PartialDto)]
+struct PartialAccountForm {
+    #[validate_nested]
+    contact: Option<ContactDetails>,
 }
 
 #[test]
@@ -338,4 +352,60 @@ fn dto_validation_validates_optional_fields_when_present() {
         errors.errors()[0].constraints.get("is_email"),
         Some(&"must be a valid email".to_string())
     );
+}
+
+#[test]
+fn partial_dto_validation_accepts_absent_fields() {
+    let form = PartialContactForm {
+        email: None,
+        password: None,
+    };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn partial_dto_validation_accepts_present_valid_fields() {
+    let form = PartialContactForm {
+        email: Some("alice@example.com".into()),
+        password: Some("secret1".into()),
+    };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn partial_dto_validation_collects_present_invalid_fields() {
+    let form = PartialContactForm {
+        email: Some("not-an-email".into()),
+        password: Some("123".into()),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 2);
+    assert_eq!(errors.errors()[0].field, "email");
+    assert_eq!(
+        errors.errors()[0].constraints.get("is_email"),
+        Some(&"must be a valid email".to_string())
+    );
+    assert_eq!(errors.errors()[1].field, "password");
+    assert_eq!(
+        errors.errors()[1].constraints.get("min_length"),
+        Some(&"must be at least 6 characters".to_string())
+    );
+}
+
+#[test]
+fn partial_dto_validation_propagates_nested_errors() {
+    let form = PartialAccountForm {
+        contact: Some(ContactDetails {
+            email: "not-an-email".into(),
+            password: "123".into(),
+        }),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 2);
+    assert_eq!(errors.errors()[0].field, "contact.email");
+    assert_eq!(errors.errors()[1].field, "contact.password");
 }
