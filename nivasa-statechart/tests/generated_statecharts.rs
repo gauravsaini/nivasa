@@ -314,6 +314,49 @@ fn application_shutdown_path_reaches_shutdown_complete() {
 }
 
 #[test]
+fn application_error_transitions_short_circuit_to_bootstrap_failed() {
+    for (initial, event, from) in [
+        (
+            NivasaApplicationState::ResolvingModules,
+            NivasaApplicationEvent::ErrorModuleCircularDependency,
+            "ResolvingModules",
+        ),
+        (
+            NivasaApplicationState::InitializingModules,
+            NivasaApplicationEvent::ErrorModuleInitFailed,
+            "InitializingModules",
+        ),
+        (
+            NivasaApplicationState::RegisteringRoutes,
+            NivasaApplicationEvent::ErrorRouteConflict,
+            "RegisteringRoutes",
+        ),
+    ] {
+        let (mut engine, tracer) = traced_engine::<NivasaApplicationStatechart>(initial);
+        let event_name = format!("{event:?}");
+
+        drive_and_assert_trace(
+            &mut engine,
+            &tracer,
+            &[(
+                event,
+                NivasaApplicationState::BootstrapFailed,
+            )],
+        );
+
+        assert_eq!(engine.current_state(), NivasaApplicationState::BootstrapFailed);
+        assert_eq!(
+            *tracer.transitions.lock().unwrap(),
+            vec![(
+                from.to_string(),
+                event_name,
+                "BootstrapFailed".to_string(),
+            )],
+        );
+    }
+}
+
+#[test]
 fn module_happy_path_reaches_destroyed() {
     let (mut engine, tracer) = traced_engine::<NivasaModuleStatechart>(
         NivasaModuleState::Unloaded,
@@ -362,6 +405,49 @@ fn module_happy_path_reaches_destroyed() {
 }
 
 #[test]
+fn module_error_transitions_short_circuit_to_load_failed() {
+    for (initial, event, from) in [
+        (
+            NivasaModuleState::ResolvingImports,
+            NivasaModuleEvent::ErrorImportMissing,
+            "ResolvingImports",
+        ),
+        (
+            NivasaModuleState::ResolvingDependencies,
+            NivasaModuleEvent::ErrorDiCircular,
+            "ResolvingDependencies",
+        ),
+        (
+            NivasaModuleState::ResolvingDependencies,
+            NivasaModuleEvent::ErrorDiMissingProvider,
+            "ResolvingDependencies",
+        ),
+    ] {
+        let (mut engine, tracer) = traced_engine::<NivasaModuleStatechart>(initial);
+        let event_name = format!("{event:?}");
+
+        drive_and_assert_trace(
+            &mut engine,
+            &tracer,
+            &[(
+                event,
+                NivasaModuleState::LoadFailed,
+            )],
+        );
+
+        assert_eq!(engine.current_state(), NivasaModuleState::LoadFailed);
+        assert_eq!(
+            *tracer.transitions.lock().unwrap(),
+            vec![(
+                from.to_string(),
+                event_name,
+                "LoadFailed".to_string(),
+            )],
+        );
+    }
+}
+
+#[test]
 fn module_load_failure_short_circuits_to_failed() {
     let (mut engine, tracer) = traced_engine::<NivasaModuleStatechart>(
         NivasaModuleState::Unloaded,
@@ -402,6 +488,49 @@ fn module_container_state_enters_its_initial_child() {
         ]
     );
     assert_valid_trace(&engine, &tracer, &[]);
+}
+
+#[test]
+fn provider_error_transitions_short_circuit_to_resolution_failed() {
+    for (initial, event, from) in [
+        (
+            NivasaProviderState::Resolving,
+            NivasaProviderEvent::ErrorDependencyMissing,
+            "Resolving",
+        ),
+        (
+            NivasaProviderState::Resolving,
+            NivasaProviderEvent::ErrorDependencyCircular,
+            "Resolving",
+        ),
+        (
+            NivasaProviderState::Constructing,
+            NivasaProviderEvent::ErrorConstruction,
+            "Constructing",
+        ),
+    ] {
+        let (mut engine, tracer) = traced_engine::<NivasaProviderStatechart>(initial);
+        let event_name = format!("{event:?}");
+
+        drive_and_assert_trace(
+            &mut engine,
+            &tracer,
+            &[(
+                event,
+                NivasaProviderState::ResolutionFailed,
+            )],
+        );
+
+        assert_eq!(engine.current_state(), NivasaProviderState::ResolutionFailed);
+        assert_eq!(
+            *tracer.transitions.lock().unwrap(),
+            vec![(
+                from.to_string(),
+                event_name,
+                "ResolutionFailed".to_string(),
+            )],
+        );
+    }
 }
 
 #[test]
