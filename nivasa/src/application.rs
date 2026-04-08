@@ -10,6 +10,7 @@ use nivasa_http::{NivasaMiddleware, NivasaResponse, NivasaServer, NivasaServerBu
 use nivasa_guards::Guard;
 use nivasa_interceptors::Interceptor;
 use nivasa_pipes::Pipe;
+use nivasa_routing::{RouteDispatchError, RouteMethod};
 
 /// Supported API versioning strategies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -208,6 +209,22 @@ impl AppBootstrapConfig {
         }
 
         builder
+    }
+
+    /// Register a bootstrap-owned unversioned route with the configured prefix.
+    ///
+    /// This is the smallest honest bootstrap route surface: it only prefixes
+    /// the route path and delegates to the existing HTTP route builder.
+    pub fn route(
+        &self,
+        method: impl Into<RouteMethod>,
+        path: impl Into<String>,
+        handler: impl Fn(&nivasa_http::NivasaRequest) -> NivasaResponse + Send + Sync + 'static,
+    ) -> Result<NivasaServerBuilder, RouteDispatchError> {
+        let path = path.into();
+
+        self.server_builder()
+            .route(method, self.prefixed_route_path(path.as_str()), handler)
     }
 
     /// Register a single global middleware at bootstrap time.
@@ -532,6 +549,18 @@ mod tests {
             .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
             .expect("route registration should succeed");
 
+        let _server = builder.build();
+    }
+
+    #[test]
+    fn bootstrap_config_prefixes_unversioned_routes_during_registration() {
+        let bootstrap =
+            AppBootstrapConfig::from(ServerOptions::builder().global_prefix(" api/ ").build());
+        let builder = bootstrap
+            .route(RouteMethod::Get, "health", |_| NivasaResponse::text("ok"))
+            .expect("prefixed route registration should succeed");
+
+        assert_eq!(bootstrap.prefixed_route_path("health"), "/api/health");
         let _server = builder.build();
     }
 

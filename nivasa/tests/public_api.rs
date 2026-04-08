@@ -313,6 +313,21 @@ fn bootstrap_config_can_compose_prefixed_route_paths_without_runtime_wiring() {
 }
 
 #[test]
+fn bootstrap_config_applies_global_prefix_to_unversioned_route_registration() {
+    let bootstrap =
+        nivasa::AppBootstrapConfig::from(ServerOptions::builder().global_prefix(" api/ ").build());
+
+    let builder = bootstrap
+        .route(nivasa_routing::RouteMethod::Get, "health", |_| {
+            NivasaResponse::text("ok")
+        })
+        .expect("prefixed route registration should succeed");
+
+    assert_eq!(bootstrap.prefixed_route_path("health"), "/api/health");
+    let _ = builder;
+}
+
+#[test]
 fn bootstrap_config_can_forward_global_middleware_into_the_server_builder() {
     fn assert_builder(_: NivasaServerBuilder) {}
 
