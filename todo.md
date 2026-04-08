@@ -1041,8 +1041,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 10.1 — Testing
 - [ ] Achieve >90% code coverage across all crates
 - [x] Add in-process request lifecycle integration coverage (middleware → guard → interceptor → handler → Done)
-- [ ] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
-- [ ] Write integration tests: module composition (nested modules, imports/exports)
+- [x] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
+- [x] Write integration tests: module composition (nested modules, imports/exports)
 - [x] Write integration tests: error handling pipeline (exception → filter → response)
 - [ ] Write integration tests: authentication flow (login → JWT → protected route)
 - [x] Write integration tests: validation flow (invalid DTO → ValidationPipe → 400 response)
