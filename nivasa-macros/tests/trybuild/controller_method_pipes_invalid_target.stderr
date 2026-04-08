@@ -1,5 +1,5 @@
 error: `#[pipe]` only supports controller method parameters and inherent controller methods
- --> tests/trybuild/controller_parameter_pipes_invalid_target.rs:1:1
+ --> tests/trybuild/controller_method_pipes_invalid_target.rs:1:1
   |
 1 | #[nivasa_macros::pipe(nivasa_pipes::TrimPipe)]
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

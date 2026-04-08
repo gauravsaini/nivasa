@@ -589,7 +589,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support DI in pipe structs
 
 #### 4.1.2 — `#[pipe]` Attribute Macro
-- [ ] Parse `#[pipe(PipeType)]` on handler methods (applies to all params)
+- [x] Parse `#[pipe(PipeType)]` on handler methods (applies to all params)
 - [x] Parse `#[pipe(PipeType)]` on individual parameters
 - [ ] Parse `#[pipe(PipeType)]` on controller (applies to all handlers)
 - [ ] Support pipe chaining: `#[pipe(Pipe1, Pipe2)]` (left to right)

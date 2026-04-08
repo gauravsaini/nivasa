@@ -17,6 +17,7 @@ const GUARD_MARKER_PREFIX: &str = "nivasa-guard:";
 const ROLES_MARKER_PREFIX: &str = "nivasa-roles:";
 const INTERCEPTOR_MARKER_PREFIX: &str = "nivasa-interceptor:";
 const FILTER_MARKER_PREFIX: &str = "nivasa-filter:";
+const PIPE_MARKER_PREFIX: &str = "nivasa-pipe:";
 const SET_METADATA_MARKER_PREFIX: &str = "nivasa-set-metadata:";
 
 #[derive(Debug, Default, Clone)]
@@ -46,6 +47,7 @@ struct ParameterPipeBinding {
 struct ControllerMethodBinding {
     route: RouteBinding,
     handler: Ident,
+    pipes: Vec<String>,
     parameters: Vec<ParameterBinding>,
     parameter_pipes: Vec<Option<ParameterPipeBinding>>,
     guards: Vec<String>,
@@ -412,6 +414,17 @@ fn filter_marker_attr(filters: &[Path]) -> Attribute {
     parse_quote!(#[doc = #marker])
 }
 
+fn pipe_marker_attr(pipe: &Path) -> Attribute {
+    let marker = LitStr::new(
+        &format!(
+            "{PIPE_MARKER_PREFIX} {}",
+            pipe.to_token_stream().to_string().replace(' ', "")
+        ),
+        proc_macro2::Span::call_site(),
+    );
+    parse_quote!(#[doc = #marker])
+}
+
 fn attr_path_matches(attr: &Attribute, name: &str) -> bool {
     attr.path().is_ident(name)
         || attr
@@ -642,6 +655,51 @@ fn parse_filter_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
     }
 
     Ok(Some(filters))
+}
+
+fn parse_pipe_binding(attr: &Attribute) -> Result<Option<Vec<String>>> {
+    if attr_path_matches(attr, "pipe") {
+        let pipe: Path = attr
+            .parse_args()
+            .map_err(|_| Error::new(attr.span(), "`#[pipe]` requires exactly one pipe type"))?;
+        let rendered = pipe.to_token_stream().to_string().replace(' ', "");
+
+        if rendered.is_empty() {
+            return Err(Error::new(
+                attr.span(),
+                "`#[pipe]` requires exactly one pipe type",
+            ));
+        }
+
+        return Ok(Some(vec![rendered]));
+    }
+
+    if !attr.path().is_ident("doc") {
+        return Ok(None);
+    }
+
+    let Meta::NameValue(meta) = &attr.meta else {
+        return Ok(None);
+    };
+
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(doc), ..
+    }) = &meta.value
+    else {
+        return Ok(None);
+    };
+
+    let value = doc.value();
+    let Some(rest) = value.trim().strip_prefix(PIPE_MARKER_PREFIX) else {
+        return Ok(None);
+    };
+
+    let rendered = rest.trim().to_owned();
+    if rendered.is_empty() {
+        return Err(Error::new(doc.span(), "invalid controller pipe marker"));
+    }
+
+    Ok(Some(vec![rendered]))
 }
 
 fn parse_set_metadata_binding(attr: &Attribute) -> Result<Option<Vec<MetadataBinding>>> {
@@ -1147,6 +1205,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         };
 
         let mut method_route: Option<RouteBinding> = None;
+        let mut pipe_bindings = Vec::new();
         let mut response_bindings = Vec::new();
         let mut guard_bindings = Vec::new();
         let mut role_bindings = Vec::new();
@@ -1176,9 +1235,12 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                                         }
                                         method_route = Some(binding);
                                     }
-                                    None => match parse_response_binding(&attr)? {
-                                        Some(binding) => response_bindings.push(binding),
-                                        None => retained_attrs.push(attr),
+                                    None => match parse_pipe_binding(&attr)? {
+                                        Some(mut pipes) => pipe_bindings.append(&mut pipes),
+                                        None => match parse_response_binding(&attr)? {
+                                            Some(binding) => response_bindings.push(binding),
+                                            None => retained_attrs.push(attr),
+                                        },
                                     },
                                 },
                             },
@@ -1190,7 +1252,14 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
 
         method.attrs = retained_attrs;
         let (parameters, parameter_pipes) = collect_parameter_bindings(method)?;
+        if pipe_bindings.len() > 1 {
+            return Err(Error::new(
+                method.sig.ident.span(),
+                "a controller method can only use one `#[pipe]` attribute",
+            ));
+        }
         let has_controller_metadata = !response_bindings.is_empty()
+            || !pipe_bindings.is_empty()
             || !parameters.is_empty()
             || parameter_pipes.iter().any(|pipe| pipe.is_some())
             || !guard_bindings.is_empty()
@@ -1245,6 +1314,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             methods.push(ControllerMethodBinding {
                 route: binding,
                 handler: method.sig.ident.clone(),
+                pipes: pipe_bindings,
                 parameters,
                 parameter_pipes,
                 guards: guard_bindings,
@@ -1294,6 +1364,23 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             )
         }
     });
+
+    let pipe_entries = methods
+        .iter()
+        .filter(|method| !method.pipes.is_empty())
+        .map(|method| {
+            let handler = &method.handler;
+            let pipes = method.pipes.iter().map(|pipe| quote!(#pipe));
+
+            quote! {
+                (
+                    stringify!(#handler),
+                    vec![
+                        #(#pipes),*
+                    ]
+                )
+            }
+        });
 
     let parameter_pipe_entries = methods
         .iter()
@@ -1459,6 +1546,13 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                 ]
             }
 
+            pub fn __nivasa_controller_pipe_metadata(
+            ) -> Vec<(&'static str, Vec<&'static str>)> {
+                vec![
+                    #(#pipe_entries),*
+                ]
+            }
+
             pub fn __nivasa_controller_parameter_pipe_metadata(
             ) -> Vec<(&'static str, Vec<Option<&'static str>>)> {
                 vec![
@@ -1578,19 +1672,31 @@ pub fn all(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 pub fn pipe(attr: TokenStream, item: TokenStream) -> TokenStream {
-    if syn::parse::<Path>(attr).is_err() {
-        return Error::new(
-            proc_macro2::Span::call_site(),
-            "`#[pipe]` requires exactly one pipe type",
-        )
-        .to_compile_error()
-        .into();
+    let pipe = match syn::parse::<Path>(attr) {
+        Ok(pipe) => pipe,
+        Err(_) => {
+            return Error::new(
+                proc_macro2::Span::call_site(),
+                "`#[pipe]` requires exactly one pipe type",
+            )
+            .to_compile_error()
+            .into();
+        }
+    };
+
+    if syn::parse::<PatType>(item.clone()).is_ok() {
+        return item;
+    }
+
+    if let Ok(mut method) = syn::parse::<ImplItemFn>(item.clone()) {
+        method.attrs.insert(0, pipe_marker_attr(&pipe));
+        return quote!(#method).into();
     }
 
     if syn::parse::<PatType>(item.clone()).is_err() {
         return Error::new(
             proc_macro2::Span::call_site(),
-            "`#[pipe]` only supports controller method parameters",
+            "`#[pipe]` only supports controller method parameters and inherent controller methods",
         )
         .to_compile_error()
         .into();
