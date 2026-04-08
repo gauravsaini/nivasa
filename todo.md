@@ -586,7 +586,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 4.1.1 — Pipe Trait
 - [x] Define `Pipe` trait: `fn transform(&self, value: Value, metadata: ArgumentMetadata) -> Result<Value, HttpException>`
 - [x] Define `ArgumentMetadata` struct (param name, metatype, data type, index)
-- [ ] Support DI in pipe structs
+- [x] Support DI in pipe structs
 
 #### 4.1.2 — `#[pipe]` Attribute Macro
 - [ ] Parse `#[pipe(PipeType)]` on handler methods (applies to all params)
