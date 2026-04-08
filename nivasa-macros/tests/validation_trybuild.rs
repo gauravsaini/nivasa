@@ -11,6 +11,7 @@ fn validation_macro_validation() {
     t.pass("tests/trybuild/validation_matches_pass.rs");
     t.pass("tests/trybuild/validation_is_uuid_pass.rs");
     t.pass("tests/trybuild/validation_is_url_pass.rs");
+    t.pass("tests/trybuild/validation_is_enum_pass.rs");
     t.pass("tests/trybuild/validation_is_optional_pass.rs");
     t.pass("tests/trybuild/validation_is_not_empty_pass.rs");
     t.pass("tests/trybuild/validation_partial_dto_pass.rs");
@@ -25,6 +26,8 @@ fn validation_macro_validation() {
     t.compile_fail("tests/trybuild/validation_matches_invalid.rs");
     t.compile_fail("tests/trybuild/validation_is_uuid_invalid.rs");
     t.compile_fail("tests/trybuild/validation_is_url_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_is_enum_invalid.rs");
+    t.compile_fail("tests/trybuild/validation_is_enum_malformed.rs");
     t.compile_fail("tests/trybuild/validation_is_optional_invalid.rs");
     t.compile_fail("tests/trybuild/validation_is_not_empty_invalid.rs");
     t.compile_fail("tests/trybuild/validation_partial_dto_invalid.rs");

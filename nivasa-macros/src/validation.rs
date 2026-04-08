@@ -4,7 +4,7 @@ use syn::{
     parse_macro_input,
     spanned::Spanned,
     Attribute, Data, DeriveInput, Error, Field, Fields, GenericArgument, LitInt, LitStr, Meta,
-    PathArguments, Result, Type,
+    PathArguments, Result, Type, TypePath,
 };
 
 pub fn dto_impl(input: TokenStream) -> TokenStream {
@@ -158,6 +158,17 @@ fn build_field_checks(field: &Field, mode: DeriveMode) -> Result<Vec<proc_macro2
                     errors.push(
                         nivasa_validation::ValidationError::new(#field_label)
                             .with_constraint("is_uuid", "must be a valid UUID"),
+                    );
+                }
+            });
+        } else if attr.path().is_ident("is_enum") {
+            ensure_enum_type(field_ty, attr)?;
+            let enum_ty = parse_enum_type(attr)?;
+            checks.push(quote! {
+                if <#enum_ty as ::nivasa_pipes::ParseEnumTarget>::parse(#field_value_access).is_err() {
+                    errors.push(
+                        nivasa_validation::ValidationError::new(#field_label)
+                            .with_constraint("is_enum", "must be a valid enum variant"),
                     );
                 }
             });
@@ -465,6 +476,17 @@ fn ensure_url_type(ty: &Type, attr: &Attribute) -> Result<()> {
     }
 }
 
+fn ensure_enum_type(ty: &Type, attr: &Attribute) -> Result<()> {
+    if is_string_like_type(ty) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            attr.span(),
+            "expected a string field for `#[is_enum]`",
+        ))
+    }
+}
+
 fn ensure_matches_type(ty: &Type, attr: &Attribute) -> Result<()> {
     if is_string_like_type(ty) {
         Ok(())
@@ -675,4 +697,13 @@ fn parse_matches_pattern(attr: &Attribute) -> Result<String> {
     attr.parse_args::<LitStr>()
         .map(|pattern| pattern.value())
         .map_err(|_| Error::new(attr.span(), "expected `#[matches(\"<regex>\")]`"))
+}
+
+fn parse_enum_type(attr: &Attribute) -> Result<TypePath> {
+    if !matches!(&attr.meta, Meta::List(_)) {
+        return Err(Error::new(attr.span(), "expected `#[is_enum(MyEnum)]`"));
+    }
+
+    attr.parse_args::<TypePath>()
+        .map_err(|_| Error::new(attr.span(), "expected `#[is_enum(MyEnum)]`"))
 }

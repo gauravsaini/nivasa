@@ -1,0 +1,5 @@
+error: expected `#[is_enum(MyEnum)]`
+ --> tests/trybuild/validation_is_enum_malformed.rs:5:5
+  |
+5 |     #[is_enum]
+  |     ^

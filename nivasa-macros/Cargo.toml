@@ -20,6 +20,8 @@ uuid = { workspace = true }
 nivasa-core = { path = "../nivasa-core" }
 nivasa-filters = { path = "../nivasa-filters" }
 nivasa-routing = { path = "../nivasa-routing" }
+nivasa-pipes = { path = "../nivasa-pipes" }
 nivasa-validation = { path = "../nivasa-validation" }
 async-trait = { workspace = true }
+serde_json = { workspace = true }
 trybuild = "1"

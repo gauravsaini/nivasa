@@ -1,4 +1,5 @@
 use nivasa_macros::{Dto, PartialDto};
+use nivasa_pipes::ParseEnumTarget;
 use nivasa_validation::Validate;
 
 #[derive(Dto)]
@@ -71,6 +72,35 @@ struct SessionForm {
 struct WebhookForm {
     #[is_url]
     callback_url: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AccessLevel {
+    Admin,
+    Reader,
+}
+
+impl ParseEnumTarget for AccessLevel {
+    fn parse(input: &str) -> Result<Self, String> {
+        match input {
+            "Admin" => Ok(Self::Admin),
+            "Reader" => Ok(Self::Reader),
+            other => Err(format!("unknown access level `{other}`")),
+        }
+    }
+
+    fn into_value(value: Self) -> serde_json::Value {
+        match value {
+            Self::Admin => serde_json::Value::from("Admin"),
+            Self::Reader => serde_json::Value::from("Reader"),
+        }
+    }
+}
+
+#[derive(Dto)]
+struct EnumForm {
+    #[is_enum(AccessLevel)]
+    access_level: String,
 }
 
 #[derive(Dto)]
@@ -320,6 +350,30 @@ fn dto_validation_rejects_invalid_url_fields() {
     assert_eq!(
         errors.errors()[0].constraints.get("is_url"),
         Some(&"must be a valid URL".to_string())
+    );
+}
+
+#[test]
+fn dto_validation_accepts_enum_variants() {
+    let form = EnumForm {
+        access_level: "Reader".into(),
+    };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_rejects_invalid_enum_variants() {
+    let form = EnumForm {
+        access_level: "Guest".into(),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "access_level");
+    assert_eq!(
+        errors.errors()[0].constraints.get("is_enum"),
+        Some(&"must be a valid enum variant".to_string())
     );
 }
 
