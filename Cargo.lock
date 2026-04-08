@@ -1017,6 +1017,7 @@ dependencies = [
  "nivasa-pipes",
  "nivasa-routing",
  "nivasa-statechart",
+ "nivasa-validation",
  "rustls",
  "rustls-pemfile",
  "serde",
