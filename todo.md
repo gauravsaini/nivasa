@@ -624,8 +624,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `#[is_number]` — validate is numeric type
 - [x] Implement `#[is_int]` — validate is integer
 - [x] Implement `#[is_boolean]` — validate is boolean
-- [ ] Implement `#[min(n)]` — minimum value (for numbers)
-- [ ] Implement `#[max(n)]` — maximum value (for numbers)
+- [x] Implement `#[min(n)]` — minimum value (for numbers)
+- [x] Implement `#[max(n)]` — maximum value (for numbers)
 - [x] Implement `#[min_length(n)]` — minimum string/array length
 - [x] Implement `#[max_length(n)]` — maximum string/array length
 - [x] Implement `#[is_not_empty]` — validate non-empty string/vec

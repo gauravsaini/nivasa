@@ -1,0 +1,5 @@
+error: expected a numeric field for `#[max]`
+ --> tests/trybuild/validation_max_invalid.rs:5:5
+  |
+5 |     #[max(5)]
+  |     ^
