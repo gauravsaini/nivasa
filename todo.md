@@ -552,7 +552,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Document how to use existing Tower ecosystem middleware
 
 #### 3.3.5 — Built-in Middleware
-- [ ] Implement `CorsMiddleware` (configurable origins, methods, headers, credentials)
+- [ ] Implement richer transport-side CORS configuration via `CorsOptions` (origins, methods, headers, credentials)
 - [x] Implement `HelmetMiddleware` (security headers: CSP, HSTS, X-Frame-Options, etc.)
 - [x] Implement `CompressionMiddleware` (gzip, deflate, and brotli shipped behind feature flags)
 - [x] Implement `RequestIdMiddleware` (generate/propagate `X-Request-Id` header)
@@ -612,7 +612,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test ParseBoolPipe with valid/invalid input
 - [x] Test ValidationPipe with valid DTO → passes through
 - [x] Test ValidationPipe with invalid DTO → 400 with field-level errors
-- [ ] Test pipe chaining (TrimPipe → ValidationPipe)
+- [ ] Test pipe chaining with compatible pipes (left to right, e.g. `TrimPipe` → `ParseBoolPipe`)
 - [x] Test ParseUuidPipe with valid/invalid UUID
 - [x] Test DefaultValuePipe provides fallback for null values
 
