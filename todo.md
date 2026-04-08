@@ -831,7 +831,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 6.4 — CLI Tool (`nivasa-cli`)
 
 #### 6.4.1 — CLI Core
-- [ ] Add `clap` dependency for argument parsing (derive API)
+- [x] Add `clap` dependency for argument parsing (derive API)
 - [ ] Implement `nivasa new <project-name>` — scaffold new project (includes `statecharts/` directory with default SCXML files)
 - [ ] Implement `nivasa generate module <name>` (alias: `nivasa g module <name>`)
 - [ ] Implement `nivasa generate controller <name>` (alias: `nivasa g controller <name>`)
