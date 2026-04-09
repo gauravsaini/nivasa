@@ -93,3 +93,30 @@ fn openapi_builder_collects_controller_route_and_api_metadata() {
         "bearer"
     );
 }
+
+#[test]
+fn openapi_spec_includes_all_routes_with_correct_methods() {
+    let document = build_openapi_document(
+        "Users API",
+        "1.0.0",
+        [OpenApiControllerMetadata::from_provider::<ManualUsersController>()],
+    );
+
+    let user_by_id = document
+        .paths
+        .get("/users/{id}")
+        .expect("spec must include the GET /users/{id} path");
+    assert_eq!(
+        user_by_id.keys().cloned().collect::<Vec<_>>(),
+        vec!["get".to_string()]
+    );
+
+    let users = document
+        .paths
+        .get("/users")
+        .expect("spec must include the POST /users path");
+    assert_eq!(
+        users.keys().cloned().collect::<Vec<_>>(),
+        vec!["post".to_string()]
+    );
+}

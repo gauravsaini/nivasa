@@ -761,7 +761,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 6.1.3 — ConfigService
 - [x] Implement `ConfigService` as injectable provider
 - [x] Implement `get<T: FromStr>(key: &str) -> Option<T>` with type coercion
-- [ ] Implement `get_or_default<T>(key: &str, default: T) -> T`
+- [x] Implement `get_or_default<T>(key: &str, default: T) -> T`
 - [ ] Implement `get_or_throw(key: &str) -> Result<String, ConfigException>`
 - [ ] Implement namespace support: `get("database.host")`
 - [ ] Implement validation of required config keys at startup
@@ -962,7 +962,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support customizing title, description, version in Swagger UI
 
 #### 7.5.3 — OpenAPI Tests
-- [ ] Test generated spec includes all routes with correct methods
+- [x] Test generated spec includes all routes with correct methods
 - [ ] Test spec includes request/response schemas
 - [x] Test Swagger UI endpoint serves HTML
 - [ ] Test spec validates against OpenAPI 3.0 spec
