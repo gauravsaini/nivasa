@@ -3,8 +3,11 @@
 //! Nivasa framework — websocket.
 //!
 //! This crate currently exposes the bootstrap-facing websocket gateway,
-//! adapter, and lifecycle trait surfaces. Gateway macros, concrete adapters,
-//! rooms, and richer runtime hooks land in later slices.
+//! adapter, lifecycle, and basic room/namespace trait surfaces. Gateway
+//! macros, concrete adapters, and richer runtime hooks land in later slices.
+
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 /// Minimal public trait for websocket gateway types.
 ///
@@ -43,11 +46,167 @@ pub trait OnGatewayDisconnect: Send + Sync + 'static {
     fn on_gateway_disconnect(&self, _client: &Self::Client) {}
 }
 
+/// Minimal in-memory room registry for a single namespace.
+#[derive(Debug, Clone)]
+pub struct RoomRegistry<ClientId> {
+    namespace: String,
+    rooms: HashMap<String, HashSet<ClientId>>,
+}
+
+impl<ClientId> RoomRegistry<ClientId>
+where
+    ClientId: Clone + Eq + Hash,
+{
+    /// Create a room registry for the given namespace path.
+    pub fn new(namespace: impl Into<String>) -> Self {
+        Self {
+            namespace: namespace.into(),
+            rooms: HashMap::new(),
+        }
+    }
+
+    /// Return namespace path associated with this registry.
+    pub fn namespace(&self) -> &str {
+        &self.namespace
+    }
+
+    /// Add client to room. Returns `true` when membership was newly inserted.
+    pub fn join(&mut self, room: impl Into<String>, client: ClientId) -> bool {
+        self.rooms.entry(room.into()).or_default().insert(client)
+    }
+
+    /// Remove client from room. Returns `true` when membership existed.
+    pub fn leave(&mut self, room: &str, client: &ClientId) -> bool {
+        let Some(members) = self.rooms.get_mut(room) else {
+            return false;
+        };
+
+        let removed = members.remove(client);
+        if members.is_empty() {
+            self.rooms.remove(room);
+        }
+
+        removed
+    }
+
+    /// Return `true` when room contains given client.
+    pub fn contains(&self, room: &str, client: &ClientId) -> bool {
+        self.rooms
+            .get(room)
+            .map(|members| members.contains(client))
+            .unwrap_or(false)
+    }
+
+    /// Return members for room in stable order.
+    pub fn members(&self, room: &str) -> Vec<ClientId> {
+        let Some(members) = self.rooms.get(room) else {
+            return Vec::new();
+        };
+
+        members.iter().cloned().collect()
+    }
+
+    /// Return `true` when registry has no active rooms.
+    pub fn is_empty(&self) -> bool {
+        self.rooms.is_empty()
+    }
+
+    /// Return total tracked room count.
+    pub fn room_count(&self) -> usize {
+        self.rooms.len()
+    }
+}
+
+impl<ClientId> Default for RoomRegistry<ClientId>
+where
+    ClientId: Clone + Eq + Hash,
+{
+    fn default() -> Self {
+        Self::new("/")
+    }
+}
+
+/// Minimal in-memory namespace registry for websocket room membership.
+#[derive(Debug, Clone)]
+pub struct NamespaceRegistry<ClientId> {
+    namespaces: HashMap<String, RoomRegistry<ClientId>>,
+}
+
+impl<ClientId> NamespaceRegistry<ClientId>
+where
+    ClientId: Clone + Eq + Hash,
+{
+    /// Create an empty namespace registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add client to a room inside namespace. Returns `true` on new membership.
+    pub fn join(
+        &mut self,
+        namespace: impl Into<String>,
+        room: impl Into<String>,
+        client: ClientId,
+    ) -> bool {
+        let namespace = namespace.into();
+        self.namespaces
+            .entry(namespace.clone())
+            .or_insert_with(|| RoomRegistry::new(namespace))
+            .join(room, client)
+    }
+
+    /// Remove client from room inside namespace. Returns `true` when removed.
+    pub fn leave(&mut self, namespace: &str, room: &str, client: &ClientId) -> bool {
+        let Some(registry) = self.namespaces.get_mut(namespace) else {
+            return false;
+        };
+
+        let removed = registry.leave(room, client);
+        if registry.is_empty() {
+            self.namespaces.remove(namespace);
+        }
+
+        removed
+    }
+
+    /// Return members for a room inside namespace.
+    pub fn members(&self, namespace: &str, room: &str) -> Vec<ClientId> {
+        self.namespaces
+            .get(namespace)
+            .map(|registry| registry.members(room))
+            .unwrap_or_default()
+    }
+
+    /// Return `true` when namespace/room contains client.
+    pub fn contains(&self, namespace: &str, room: &str, client: &ClientId) -> bool {
+        self.namespaces
+            .get(namespace)
+            .map(|registry| registry.contains(room, client))
+            .unwrap_or(false)
+    }
+
+    /// Return `true` when namespace exists.
+    pub fn has_namespace(&self, namespace: &str) -> bool {
+        self.namespaces.contains_key(namespace)
+    }
+}
+
+impl<ClientId> Default for NamespaceRegistry<ClientId>
+where
+    ClientId: Clone + Eq + Hash,
+{
+    fn default() -> Self {
+        Self {
+            namespaces: HashMap::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit, WebSocketAdapter,
-        WebSocketGateway,
+        NamespaceRegistry, OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit,
+        RoomRegistry, WebSocketAdapter, WebSocketGateway,
     };
     use std::sync::{
         atomic::{AtomicBool, Ordering},
@@ -132,5 +291,43 @@ mod tests {
         assert!(gateway.initialized.load(Ordering::SeqCst));
         assert!(gateway.connected.load(Ordering::SeqCst));
         assert!(gateway.disconnected.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn room_registry_tracks_membership_in_single_namespace() {
+        let mut rooms = RoomRegistry::new("/chat");
+
+        assert_eq!(rooms.namespace(), "/chat");
+        assert!(rooms.join("general", "client-1"));
+        assert!(!rooms.join("general", "client-1"));
+        assert!(rooms.join("general", "client-2"));
+        assert!(rooms.contains("general", &"client-1"));
+        assert_eq!(rooms.room_count(), 1);
+
+        let mut members = rooms.members("general");
+        members.sort_unstable();
+        assert_eq!(members, vec!["client-1", "client-2"]);
+
+        assert!(rooms.leave("general", &"client-1"));
+        assert!(!rooms.contains("general", &"client-1"));
+        assert!(rooms.contains("general", &"client-2"));
+    }
+
+    #[test]
+    fn namespace_registry_isolates_room_membership_by_namespace() {
+        let mut namespaces = NamespaceRegistry::new();
+
+        assert!(namespaces.join("/chat", "general", "client-1"));
+        assert!(namespaces.join("/admin", "general", "client-2"));
+        assert!(namespaces.has_namespace("/chat"));
+        assert!(namespaces.has_namespace("/admin"));
+
+        assert!(namespaces.contains("/chat", "general", &"client-1"));
+        assert!(!namespaces.contains("/chat", "general", &"client-2"));
+        assert!(namespaces.contains("/admin", "general", &"client-2"));
+
+        assert!(namespaces.leave("/chat", "general", &"client-1"));
+        assert!(!namespaces.has_namespace("/chat"));
+        assert!(namespaces.has_namespace("/admin"));
     }
 }
