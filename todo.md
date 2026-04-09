@@ -835,12 +835,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `nivasa generate module <name>` (alias: `nivasa g module <name>`)
 - [x] Implement `nivasa generate controller <name>` (alias: `nivasa g controller <name>`)
 - [x] Implement `nivasa generate service <name>` (alias: `nivasa g service <name>`)
-- [ ] Implement `nivasa generate guard <name>`
-- [ ] Implement `nivasa generate interceptor <name>`
-- [ ] Implement `nivasa generate pipe <name>`
-- [ ] Implement `nivasa generate filter <name>`
+- [x] Implement `nivasa generate guard <name>`
+- [x] Implement `nivasa generate interceptor <name>`
+- [x] Implement `nivasa generate pipe <name>`
+- [x] Implement `nivasa generate filter <name>`
 - [ ] Implement `nivasa generate resource <name>` (full CRUD: module + controller + service + DTOs)
-- [ ] Implement `nivasa generate middleware <name>`
+- [x] Implement `nivasa generate middleware <name>`
 - [x] Implement `nivasa info` — print framework version, Rust version, OS info
 - [x] Implement `nivasa statechart validate --all` — validate all SCXML files in project
 - [x] Implement `nivasa statechart visualize` — generate diagrams from SCXML
@@ -852,8 +852,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Create template for module file
 - [x] Create template for controller file (with example GET route)
 - [x] Create template for service file (with injectable annotation)
-- [ ] Create template for guard file
-- [ ] Create template for interceptor/pipe/filter files
+- [x] Create template for guard file
+- [x] Create template for interceptor/pipe/filter files
 - [ ] Create template for resource: module + controller + service + create DTO + update DTO
 - [ ] Use `askama` or string templates for code generation
 

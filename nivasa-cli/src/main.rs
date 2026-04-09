@@ -63,6 +63,31 @@ enum GenerateAction {
         /// Service name
         name: String,
     },
+    /// Generate a guard file
+    Guard {
+        /// Guard name
+        name: String,
+    },
+    /// Generate an interceptor file
+    Interceptor {
+        /// Interceptor name
+        name: String,
+    },
+    /// Generate a pipe file
+    Pipe {
+        /// Pipe name
+        name: String,
+    },
+    /// Generate a filter file
+    Filter {
+        /// Filter name
+        name: String,
+    },
+    /// Generate a middleware file
+    Middleware {
+        /// Middleware name
+        name: String,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -118,6 +143,11 @@ fn run() -> Result<(), String> {
             GenerateAction::Module { name } => generate_module_command(&name),
             GenerateAction::Controller { name } => generate_controller_command(&name),
             GenerateAction::Service { name } => generate_service_command(&name),
+            GenerateAction::Guard { name } => generate_guard_command(&name),
+            GenerateAction::Interceptor { name } => generate_interceptor_command(&name),
+            GenerateAction::Pipe { name } => generate_pipe_command(&name),
+            GenerateAction::Filter { name } => generate_filter_command(&name),
+            GenerateAction::Middleware { name } => generate_middleware_command(&name),
         },
         Commands::Statechart { action } => match action {
             StatechartAction::Validate { all, file } => validate_command(all, file),
@@ -168,6 +198,38 @@ fn generate_controller_command(name: &str) -> Result<(), String> {
 
 fn generate_service_command(name: &str) -> Result<(), String> {
     let path = generate_service(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_guard_command(name: &str) -> Result<(), String> {
+    let path = generate_guard(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_interceptor_command(name: &str) -> Result<(), String> {
+    let path =
+        generate_interceptor(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_pipe_command(name: &str) -> Result<(), String> {
+    let path = generate_pipe(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_filter_command(name: &str) -> Result<(), String> {
+    let path = generate_filter(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_middleware_command(name: &str) -> Result<(), String> {
+    let path =
+        generate_middleware(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
     println!("created {}", path.display());
     Ok(())
 }
@@ -397,6 +459,57 @@ fn generate_service(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
     Ok(file_path)
 }
 
+fn generate_guard(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    generate_named_file(base_dir, name, "guard", |normalized, pascal| {
+        new_guard_template(normalized, pascal)
+    })
+}
+
+fn generate_interceptor(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    generate_named_file(base_dir, name, "interceptor", |normalized, pascal| {
+        new_interceptor_template(normalized, pascal)
+    })
+}
+
+fn generate_pipe(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    generate_named_file(base_dir, name, "pipe", |normalized, pascal| {
+        new_pipe_template(normalized, pascal)
+    })
+}
+
+fn generate_filter(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    generate_named_file(base_dir, name, "filter", |normalized, pascal| {
+        new_filter_template(normalized, pascal)
+    })
+}
+
+fn generate_middleware(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    generate_named_file(base_dir, name, "middleware", |normalized, pascal| {
+        new_middleware_template(normalized, pascal)
+    })
+}
+
+fn generate_named_file(
+    base_dir: &Path,
+    name: &str,
+    suffix: &str,
+    template: impl Fn(&str, &str) -> String,
+) -> Result<PathBuf, String> {
+    let normalized_name = normalize_generator_name(name)?;
+    let target_dir = base_dir.join(&normalized_name);
+    fs::create_dir_all(&target_dir)
+        .map_err(|err| format!("failed to create {suffix} directory: {err}"))?;
+
+    let file_path = target_dir.join(format!("{normalized_name}_{suffix}.rs"));
+    if file_path.exists() {
+        return Err(format!("{suffix} file already exists: {}", file_path.display()));
+    }
+
+    let struct_name = to_pascal_case(&normalized_name);
+    write_project_file(&file_path, &template(&normalized_name, &struct_name))?;
+    Ok(file_path)
+}
+
 fn write_project_file(path: &Path, contents: &str) -> Result<(), String> {
     fs::write(path, contents).map_err(|err| format!("failed to write {}: {err}", path.display()))
 }
@@ -482,6 +595,76 @@ impl {struct_name}Service {{
     )
 }
 
+fn new_guard_template(guard_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[injectable]
+pub struct {struct_name}Guard;
+
+impl {struct_name}Guard {{
+    pub const NAME: &'static str = "{guard_name}";
+}}
+"#
+    )
+}
+
+fn new_interceptor_template(interceptor_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[injectable]
+pub struct {struct_name}Interceptor;
+
+impl {struct_name}Interceptor {{
+    pub const NAME: &'static str = "{interceptor_name}";
+}}
+"#
+    )
+}
+
+fn new_pipe_template(pipe_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[injectable]
+pub struct {struct_name}Pipe;
+
+impl {struct_name}Pipe {{
+    pub const NAME: &'static str = "{pipe_name}";
+}}
+"#
+    )
+}
+
+fn new_filter_template(filter_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[injectable]
+pub struct {struct_name}Filter;
+
+impl {struct_name}Filter {{
+    pub const NAME: &'static str = "{filter_name}";
+}}
+"#
+    )
+}
+
+fn new_middleware_template(middleware_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[injectable]
+pub struct {struct_name}Middleware;
+
+impl {struct_name}Middleware {{
+    pub const NAME: &'static str = "{middleware_name}";
+}}
+"#
+    )
+}
+
 fn normalize_generator_name(name: &str) -> Result<String, String> {
     let normalized = name
         .trim()
@@ -521,10 +704,13 @@ fn to_pascal_case(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        generate_controller, generate_module, generate_service, new_controller_template,
-        new_module_template, new_project_app_module_rs, new_project_cargo_toml,
-        new_project_main_rs, new_service_template, normalize_generator_name,
-        scaffold_new_project, to_pascal_case,
+        generate_controller, generate_filter, generate_guard, generate_interceptor,
+        generate_middleware, generate_module, generate_pipe, generate_service,
+        new_controller_template, new_filter_template, new_guard_template,
+        new_interceptor_template, new_middleware_template, new_module_template,
+        new_project_app_module_rs, new_project_cargo_toml, new_project_main_rs,
+        new_pipe_template, new_service_template, normalize_generator_name, scaffold_new_project,
+        to_pascal_case,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -615,6 +801,69 @@ mod tests {
         assert_eq!(
             fs::read_to_string(&file_path).unwrap(),
             new_service_template("users", "Users")
+        );
+    }
+
+    #[test]
+    fn generate_guard_creates_expected_file() {
+        let root = temp_dir("generate-guard");
+        let file_path = generate_guard(&root, "auth").expect("guard generation should succeed");
+
+        assert_eq!(file_path, root.join("auth/auth_guard.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_guard_template("auth", "Auth")
+        );
+    }
+
+    #[test]
+    fn generate_interceptor_creates_expected_file() {
+        let root = temp_dir("generate-interceptor");
+        let file_path =
+            generate_interceptor(&root, "audit").expect("interceptor generation should succeed");
+
+        assert_eq!(file_path, root.join("audit/audit_interceptor.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_interceptor_template("audit", "Audit")
+        );
+    }
+
+    #[test]
+    fn generate_pipe_creates_expected_file() {
+        let root = temp_dir("generate-pipe");
+        let file_path = generate_pipe(&root, "trim").expect("pipe generation should succeed");
+
+        assert_eq!(file_path, root.join("trim/trim_pipe.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_pipe_template("trim", "Trim")
+        );
+    }
+
+    #[test]
+    fn generate_filter_creates_expected_file() {
+        let root = temp_dir("generate-filter");
+        let file_path =
+            generate_filter(&root, "http").expect("filter generation should succeed");
+
+        assert_eq!(file_path, root.join("http/http_filter.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_filter_template("http", "Http")
+        );
+    }
+
+    #[test]
+    fn generate_middleware_creates_expected_file() {
+        let root = temp_dir("generate-middleware");
+        let file_path = generate_middleware(&root, "auth")
+            .expect("middleware generation should succeed");
+
+        assert_eq!(file_path, root.join("auth/auth_middleware.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_middleware_template("auth", "Auth")
         );
     }
 
