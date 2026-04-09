@@ -892,7 +892,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Define `WebSocketAdapter` trait for pluggable backends
 - [x] Implement default adapter using `tokio-tungstenite`
 - [x] Implement `server.emit("event", data)` — broadcast to all
-- [ ] Implement `server.to("room").emit("event", data)` — emit to room
+- [x] Implement `server.to("room").emit("event", data)` — emit to room
 - [x] Implement `client.emit("event", data)` — emit to specific client
 - [x] Implement `client.join("room")` / `client.leave("room")`
 

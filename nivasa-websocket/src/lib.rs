@@ -181,6 +181,20 @@ pub struct ServerEventHandle<'a, ClientId> {
     registry: &'a mut ServerEventRegistry<ClientId>,
 }
 
+/// Minimal in-memory room-targeted broadcaster for `server.to("room").emit(...)`.
+#[derive(Debug, Clone)]
+pub struct RoomEventRegistry<ClientId> {
+    rooms: NamespaceRegistry<ClientId>,
+    clients: HashMap<ClientId, Vec<(String, String)>>,
+}
+
+/// Room-scoped broadcaster returned by `server.to("room")`.
+#[derive(Debug)]
+pub struct RoomEventHandle<'a, ClientId> {
+    registry: &'a mut RoomEventRegistry<ClientId>,
+    room: String,
+}
+
 impl<ClientId> NamespaceRegistry<ClientId>
 where
     ClientId: Clone + Eq + Hash,
@@ -349,6 +363,61 @@ where
     }
 }
 
+impl<ClientId> RoomEventRegistry<ClientId>
+where
+    ClientId: Clone + Eq + Hash,
+{
+    /// Create an empty room-targeted broadcast registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a connected client.
+    pub fn connect(&mut self, client: ClientId) {
+        self.clients.entry(client).or_default();
+    }
+
+    /// Remove a connected client and all its room memberships.
+    pub fn disconnect(&mut self, client: &ClientId) -> bool {
+        self.clients.remove(client).is_some()
+    }
+
+    /// Add a connected client to a room.
+    pub fn join(&mut self, room: impl Into<String>, client: ClientId) -> bool {
+        self.rooms.join("/", room, client)
+    }
+
+    /// Return a room-scoped broadcast handle.
+    pub fn to(&mut self, room: impl Into<String>) -> RoomEventHandle<'_, ClientId> {
+        RoomEventHandle {
+            registry: self,
+            room: room.into(),
+        }
+    }
+
+    /// Return recorded events for a specific connected client.
+    pub fn events_for(&self, client: &ClientId) -> Vec<(String, String)> {
+        self.clients.get(client).cloned().unwrap_or_default()
+    }
+
+    /// Return members connected to a room.
+    pub fn room_members(&self, room: &str) -> Vec<ClientId> {
+        self.rooms.members("/", room)
+    }
+}
+
+impl<ClientId> Default for RoomEventRegistry<ClientId>
+where
+    ClientId: Clone + Eq + Hash,
+{
+    fn default() -> Self {
+        Self {
+            rooms: NamespaceRegistry::default(),
+            clients: HashMap::new(),
+        }
+    }
+}
+
 impl<'a, ClientId> ClientRoomMembership<'a, ClientId>
 where
     ClientId: Clone + Eq + Hash,
@@ -411,12 +480,34 @@ where
     }
 }
 
+impl<'a, ClientId> RoomEventHandle<'a, ClientId>
+where
+    ClientId: Clone + Eq + Hash,
+{
+    /// Emit one event to clients currently in the scoped room.
+    pub fn emit(&mut self, event: impl Into<String>, data: impl Into<String>) -> usize {
+        let event = event.into();
+        let data = data.into();
+        let members = self.registry.rooms.members("/", &self.room);
+        let mut delivered = 0;
+
+        for client in members {
+            if let Some(inbox) = self.registry.clients.get_mut(&client) {
+                inbox.push((event.clone(), data.clone()));
+                delivered += 1;
+            }
+        }
+
+        delivered
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         ClientEventRegistry, ClientRoomMembership, DefaultWebSocketAdapter, NamespaceRegistry,
-        OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit, RoomRegistry, ServerEventRegistry,
-        WebSocketAdapter, WebSocketGateway,
+        OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit, RoomEventRegistry, RoomRegistry,
+        ServerEventRegistry, WebSocketAdapter, WebSocketGateway,
     };
     use std::sync::{
         atomic::{AtomicBool, Ordering},
@@ -521,6 +612,34 @@ mod tests {
             vec![("notice".to_string(), "hello".to_string())]
         );
         assert_eq!(registry.connected_clients().len(), 3);
+    }
+
+    #[test]
+    fn room_event_registry_broadcasts_only_to_room_members() {
+        let mut registry = RoomEventRegistry::new();
+        registry.connect("client-1");
+        registry.connect("client-2");
+        registry.connect("client-3");
+        registry.join("general", "client-1");
+        registry.join("general", "client-3");
+        registry.join("private", "client-2");
+
+        let delivered = {
+            let mut room = registry.to("general");
+            room.emit("notice", "hello room")
+        };
+
+        assert_eq!(delivered, 2);
+        assert_eq!(
+            registry.events_for(&"client-1"),
+            vec![("notice".to_string(), "hello room".to_string())]
+        );
+        assert_eq!(registry.events_for(&"client-2"), Vec::<(String, String)>::new());
+        assert_eq!(
+            registry.events_for(&"client-3"),
+            vec![("notice".to_string(), "hello room".to_string())]
+        );
+        assert_eq!(registry.room_members("general").len(), 2);
     }
 
     impl OnGatewayInit for DemoLifecycleGateway {
