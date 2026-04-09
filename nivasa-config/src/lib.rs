@@ -174,6 +174,8 @@ impl ConfigModule {
             loaded.extend(load_env_file(path)?);
         }
 
+        loaded.extend(load_process_env());
+
         Ok(loaded)
     }
 }
@@ -212,6 +214,10 @@ fn load_env_file(path: impl AsRef<Path>) -> Result<BTreeMap<String, String>, Con
     }
 
     Ok(loaded)
+}
+
+fn load_process_env() -> BTreeMap<String, String> {
+    std::env::vars().collect()
 }
 
 #[cfg(test)]
@@ -357,24 +363,28 @@ mod tests {
 
     #[test]
     fn load_env_reads_the_first_configured_env_file() {
-        let path = write_temp_env_file("PORT=3000\nHOST=127.0.0.1\n");
+        let path = write_temp_env_file("NIVASA_CONFIG_TEST_PORT=3000\nNIVASA_CONFIG_TEST_HOST=127.0.0.1\n");
         let options = ConfigOptions::new().with_env_file_path(path.to_string_lossy().to_string());
 
         let loaded = ConfigModule::load_env(&options).expect("env file should load");
 
         assert_eq!(
-            loaded,
-            BTreeMap::from([
-                ("HOST".to_string(), "127.0.0.1".to_string()),
-                ("PORT".to_string(), "3000".to_string()),
-            ])
+            loaded.get("NIVASA_CONFIG_TEST_HOST").map(String::as_str),
+            Some("127.0.0.1")
+        );
+        assert_eq!(
+            loaded.get("NIVASA_CONFIG_TEST_PORT").map(String::as_str),
+            Some("3000")
         );
     }
 
     #[test]
     fn load_env_merges_configured_env_files_in_order() {
-        let base_path = write_temp_env_file("HOST=127.0.0.1\nPORT=3000\n");
-        let override_path = write_temp_env_file("PORT=8080\nDEBUG=true\n");
+        let base_path = write_temp_env_file(
+            "NIVASA_CONFIG_TEST_HOST=127.0.0.1\nNIVASA_CONFIG_TEST_PORT=3000\n",
+        );
+        let override_path =
+            write_temp_env_file("NIVASA_CONFIG_TEST_PORT=8080\nNIVASA_CONFIG_TEST_DEBUG=true\n");
         let options = ConfigOptions::new()
             .with_env_file_path(base_path.to_string_lossy().to_string())
             .with_env_file_path(override_path.to_string_lossy().to_string());
@@ -382,13 +392,30 @@ mod tests {
         let loaded = ConfigModule::load_env(&options).expect("env files should load");
 
         assert_eq!(
-            loaded,
-            BTreeMap::from([
-                ("DEBUG".to_string(), "true".to_string()),
-                ("HOST".to_string(), "127.0.0.1".to_string()),
-                ("PORT".to_string(), "8080".to_string()),
-            ])
+            loaded.get("NIVASA_CONFIG_TEST_DEBUG").map(String::as_str),
+            Some("true")
         );
+        assert_eq!(
+            loaded.get("NIVASA_CONFIG_TEST_HOST").map(String::as_str),
+            Some("127.0.0.1")
+        );
+        assert_eq!(
+            loaded.get("NIVASA_CONFIG_TEST_PORT").map(String::as_str),
+            Some("8080")
+        );
+    }
+
+    #[test]
+    fn load_env_prefers_process_env_over_dotenv_values() {
+        let key = "NIVASA_CONFIG_TEST_OVERRIDE";
+        let path = write_temp_env_file("NIVASA_CONFIG_TEST_OVERRIDE=from_file\n");
+        let options = ConfigOptions::new().with_env_file_path(path.to_string_lossy().to_string());
+
+        let loaded = with_env_var(key, "from_process", || {
+            ConfigModule::load_env(&options).expect("env loading should succeed")
+        });
+
+        assert_eq!(loaded.get(key).map(String::as_str), Some("from_process"));
     }
 
     #[test]
@@ -430,5 +457,22 @@ mod tests {
         ));
         fs::write(&path, contents).expect("temp env file should write");
         path
+    }
+
+    fn with_env_var<F, R>(key: &str, value: &str, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let previous = std::env::var(key).ok();
+        std::env::set_var(key, value);
+
+        let result = f();
+
+        match previous {
+            Some(previous) => std::env::set_var(key, previous),
+            None => std::env::remove_var(key),
+        }
+
+        result
     }
 }

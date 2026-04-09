@@ -754,7 +754,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 6.1.2 — Environment Loading
 - [x] Support `.env` file loading via `dotenvy` crate
 - [x] Support multiple env files: `.env`, `.env.local`, `.env.development`, `.env.production`
-- [ ] Support env variable override order: process env > .env.local > .env.{NODE_ENV} > .env
+- [x] Support env variable override order: process env > .env.local > .env.{NODE_ENV} > .env
 - [ ] Support `expand_variables: true` (variable interpolation in .env: `URL=$HOST:$PORT`)
 - [ ] Support custom env file path
 
@@ -957,7 +957,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Serve spec at configurable path (default: `/api/docs/openapi.json`)
 
 #### 7.5.2 — Swagger UI
-- [ ] Bundle Swagger UI static assets (or reference CDN)
+- [x] Bundle Swagger UI static assets (or reference CDN)
 - [ ] Serve Swagger UI at configurable path (default: `/api/docs`)
 - [ ] Support customizing title, description, version in Swagger UI
 
