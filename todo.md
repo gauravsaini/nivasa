@@ -839,7 +839,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `nivasa generate interceptor <name>`
 - [x] Implement `nivasa generate pipe <name>`
 - [x] Implement `nivasa generate filter <name>`
-- [ ] Implement `nivasa generate resource <name>` (full CRUD: module + controller + service + DTOs)
+- [x] Implement `nivasa generate resource <name>` (full CRUD: module + controller + service + DTOs)
 - [x] Implement `nivasa generate middleware <name>`
 - [x] Implement `nivasa info` — print framework version, Rust version, OS info
 - [x] Implement `nivasa statechart validate --all` — validate all SCXML files in project
@@ -854,7 +854,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Create template for service file (with injectable annotation)
 - [x] Create template for guard file
 - [x] Create template for interceptor/pipe/filter files
-- [ ] Create template for resource: module + controller + service + create DTO + update DTO
+- [x] Create template for resource: module + controller + service + create DTO + update DTO
 - [ ] Use `askama` or string templates for code generation
 
 #### 6.4.3 — CLI Auto-Registration
@@ -866,7 +866,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 6.4.4 — CLI Tests
 - [x] Test `nivasa new myapp` creates correct project structure
 - [x] Test `nivasa g module users` creates `users/users_module.rs`
-- [ ] Test `nivasa g resource users` creates module + controller + service + DTOs
+- [x] Test `nivasa g resource users` creates module + controller + service + DTOs
 - [ ] Test auto-registration modifies parent module correctly
 - [x] Test `nivasa info` outputs version information
 

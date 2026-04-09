@@ -88,6 +88,11 @@ enum GenerateAction {
         /// Middleware name
         name: String,
     },
+    /// Generate a resource bundle
+    Resource {
+        /// Resource name
+        name: String,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -148,6 +153,7 @@ fn run() -> Result<(), String> {
             GenerateAction::Pipe { name } => generate_pipe_command(&name),
             GenerateAction::Filter { name } => generate_filter_command(&name),
             GenerateAction::Middleware { name } => generate_middleware_command(&name),
+            GenerateAction::Resource { name } => generate_resource_command(&name),
         },
         Commands::Statechart { action } => match action {
             StatechartAction::Validate { all, file } => validate_command(all, file),
@@ -230,6 +236,12 @@ fn generate_filter_command(name: &str) -> Result<(), String> {
 fn generate_middleware_command(name: &str) -> Result<(), String> {
     let path =
         generate_middleware(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_resource_command(name: &str) -> Result<(), String> {
+    let path = generate_resource(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
     println!("created {}", path.display());
     Ok(())
 }
@@ -489,6 +501,50 @@ fn generate_middleware(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
     })
 }
 
+fn generate_resource(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    let resource_name = normalize_generator_name(name)?;
+    let resource_dir = base_dir.join(&resource_name);
+    let dto_dir = resource_dir.join("dto");
+    fs::create_dir_all(&dto_dir)
+        .map_err(|err| format!("failed to create resource directory: {err}"))?;
+
+    let resource_pascal = to_pascal_case(&resource_name);
+    let files = [
+        (
+            resource_dir.join(format!("{resource_name}_module.rs")),
+            new_module_template(&resource_name, &resource_pascal),
+        ),
+        (
+            resource_dir.join(format!("{resource_name}_controller.rs")),
+            new_controller_template(&resource_name, &resource_pascal),
+        ),
+        (
+            resource_dir.join(format!("{resource_name}_service.rs")),
+            new_service_template(&resource_name, &resource_pascal),
+        ),
+        (
+            dto_dir.join(format!("create_{resource_name}_dto.rs")),
+            new_create_dto_template(&resource_pascal),
+        ),
+        (
+            dto_dir.join(format!("update_{resource_name}_dto.rs")),
+            new_update_dto_template(&resource_pascal),
+        ),
+    ];
+
+    for (path, _) in &files {
+        if path.exists() {
+            return Err(format!("resource file already exists: {}", path.display()));
+        }
+    }
+
+    for (path, contents) in files {
+        write_project_file(&path, &contents)?;
+    }
+
+    Ok(resource_dir)
+}
+
 fn generate_named_file(
     base_dir: &Path,
     name: &str,
@@ -665,6 +721,30 @@ impl {struct_name}Middleware {{
     )
 }
 
+fn new_create_dto_template(resource_pascal: &str) -> String {
+    format!(
+        r#"use serde::Deserialize;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Create{resource_pascal}Dto {{
+    pub name: String,
+}}
+"#
+    )
+}
+
+fn new_update_dto_template(resource_pascal: &str) -> String {
+    format!(
+        r#"use serde::Deserialize;
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Update{resource_pascal}Dto {{
+    pub name: Option<String>,
+}}
+"#
+    )
+}
+
 fn normalize_generator_name(name: &str) -> Result<String, String> {
     let normalized = name
         .trim()
@@ -705,12 +785,12 @@ fn to_pascal_case(name: &str) -> String {
 mod tests {
     use super::{
         generate_controller, generate_filter, generate_guard, generate_interceptor,
-        generate_middleware, generate_module, generate_pipe, generate_service,
+        generate_middleware, generate_module, generate_pipe, generate_resource, generate_service,
         new_controller_template, new_filter_template, new_guard_template,
         new_interceptor_template, new_middleware_template, new_module_template,
         new_project_app_module_rs, new_project_cargo_toml, new_project_main_rs,
-        new_pipe_template, new_service_template, normalize_generator_name, scaffold_new_project,
-        to_pascal_case,
+        new_pipe_template, new_service_template, new_create_dto_template,
+        new_update_dto_template, normalize_generator_name, scaffold_new_project, to_pascal_case,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -864,6 +944,35 @@ mod tests {
         assert_eq!(
             fs::read_to_string(&file_path).unwrap(),
             new_middleware_template("auth", "Auth")
+        );
+    }
+
+    #[test]
+    fn generate_resource_creates_expected_files() {
+        let root = temp_dir("generate-resource");
+        let resource_dir =
+            generate_resource(&root, "users").expect("resource generation should succeed");
+
+        assert_eq!(resource_dir, root.join("users"));
+        assert_eq!(
+            fs::read_to_string(resource_dir.join("users_module.rs")).unwrap(),
+            new_module_template("users", "Users")
+        );
+        assert_eq!(
+            fs::read_to_string(resource_dir.join("users_controller.rs")).unwrap(),
+            new_controller_template("users", "Users")
+        );
+        assert_eq!(
+            fs::read_to_string(resource_dir.join("users_service.rs")).unwrap(),
+            new_service_template("users", "Users")
+        );
+        assert_eq!(
+            fs::read_to_string(resource_dir.join("dto/create_users_dto.rs")).unwrap(),
+            new_create_dto_template("Users")
+        );
+        assert_eq!(
+            fs::read_to_string(resource_dir.join("dto/update_users_dto.rs")).unwrap(),
+            new_update_dto_template("Users")
         );
     }
 
