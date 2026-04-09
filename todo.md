@@ -904,7 +904,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 7.1.5 — WebSocket Tests
 - [x] Test WebSocket connection and handshake
 - [x] Test message subscription and handler invocation
-- [ ] Test broadcast to all connected clients
+- [x] Test broadcast to all connected clients
 - [x] Test room-based messaging
 - [x] Test disconnection cleanup
 
