@@ -831,7 +831,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 6.4.1 — CLI Core
 - [x] Add `clap` dependency for argument parsing (derive API)
-- [ ] Implement `nivasa new <project-name>` — scaffold new project (includes `statecharts/` directory with default SCXML files)
+- [x] Implement `nivasa new <project-name>` — scaffold new project (includes `statecharts/` directory with default SCXML files)
 - [ ] Implement `nivasa generate module <name>` (alias: `nivasa g module <name>`)
 - [ ] Implement `nivasa generate controller <name>` (alias: `nivasa g controller <name>`)
 - [ ] Implement `nivasa generate service <name>` (alias: `nivasa g service <name>`)
@@ -848,7 +848,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `nivasa statechart diff` — show SCXML changes between commits
 
 #### 6.4.2 — Project Scaffolding Templates
-- [ ] Create template for new project: `Cargo.toml`, `main.rs`, `app_module.rs`, `.env`, `.gitignore`
+- [x] Create template for new project: `Cargo.toml`, `main.rs`, `app_module.rs`, `.env`, `.gitignore`
 - [ ] Create template for module file
 - [ ] Create template for controller file (with example GET route)
 - [ ] Create template for service file (with injectable annotation)
@@ -864,7 +864,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Handle file parsing to find insertion point (regex or syn-based)
 
 #### 6.4.4 — CLI Tests
-- [ ] Test `nivasa new myapp` creates correct project structure
+- [x] Test `nivasa new myapp` creates correct project structure
 - [ ] Test `nivasa g module users` creates `users/users_module.rs`
 - [ ] Test `nivasa g resource users` creates module + controller + service + DTOs
 - [ ] Test auto-registration modifies parent module correctly

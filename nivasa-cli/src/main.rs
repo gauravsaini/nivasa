@@ -9,7 +9,13 @@ use statechart::{
     DiagramFormat,
 };
 use std::fs;
+use std::path::Path;
 use std::process::Command;
+
+const DEFAULT_APP_STATECHART: &str = include_str!("../../statecharts/nivasa.application.scxml");
+const DEFAULT_MODULE_STATECHART: &str = include_str!("../../statecharts/nivasa.module.scxml");
+const DEFAULT_PROVIDER_STATECHART: &str = include_str!("../../statecharts/nivasa.provider.scxml");
+const DEFAULT_REQUEST_STATECHART: &str = include_str!("../../statecharts/nivasa.request.scxml");
 
 #[derive(Parser)]
 #[command(name = "nivasa", about = "CLI tool for the Nivasa framework")]
@@ -22,6 +28,11 @@ struct Cli {
 enum Commands {
     /// Display framework info
     Info,
+    /// Scaffold a new Nivasa project
+    New {
+        /// Project directory and crate name
+        project_name: String,
+    },
     /// Statechart operations
     Statechart {
         #[command(subcommand)]
@@ -77,6 +88,7 @@ fn run() -> Result<(), String> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Info => info_command(),
+        Commands::New { project_name } => new_command(&project_name),
         Commands::Statechart { action } => match action {
             StatechartAction::Validate { all, file } => validate_command(all, file),
             StatechartAction::Parity => parity_command(),
@@ -102,6 +114,12 @@ fn info_command() -> Result<(), String> {
     println!("Nivasa Framework v{}", env!("CARGO_PKG_VERSION"));
     println!("Rust {}", rust_version.trim());
     println!("OS {} {}", std::env::consts::OS, std::env::consts::ARCH);
+    Ok(())
+}
+
+fn new_command(project_name: &str) -> Result<(), String> {
+    scaffold_new_project(&std::env::current_dir().map_err(|err| err.to_string())?, project_name)?;
+    println!("created {}", project_name);
     Ok(())
 }
 
@@ -215,4 +233,158 @@ fn inspect_command(host: &str, port: u16) -> Result<(), String> {
     let report = inspect_statechart(host, port)?;
     println!("{report}");
     Ok(())
+}
+
+fn scaffold_new_project(base_dir: &Path, project_name: &str) -> Result<(), String> {
+    let project_name = project_name.trim();
+    if project_name.is_empty() {
+        return Err("project name cannot be empty".to_string());
+    }
+
+    let project_dir = base_dir.join(project_name);
+    if project_dir.exists() {
+        return Err(format!(
+            "project directory already exists: {}",
+            project_dir.display()
+        ));
+    }
+
+    fs::create_dir_all(project_dir.join("src"))
+        .map_err(|err| format!("failed to create src directory: {err}"))?;
+    fs::create_dir_all(project_dir.join("statecharts"))
+        .map_err(|err| format!("failed to create statecharts directory: {err}"))?;
+
+    write_project_file(
+        &project_dir.join("Cargo.toml"),
+        &new_project_cargo_toml(project_name),
+    )?;
+    write_project_file(&project_dir.join(".env"), "PORT=3000\n")?;
+    write_project_file(&project_dir.join(".gitignore"), "/target\n.env.local\n")?;
+    write_project_file(&project_dir.join("src/main.rs"), &new_project_main_rs())?;
+    write_project_file(
+        &project_dir.join("src/app_module.rs"),
+        &new_project_app_module_rs(),
+    )?;
+    write_project_file(
+        &project_dir.join("statecharts/nivasa.application.scxml"),
+        DEFAULT_APP_STATECHART,
+    )?;
+    write_project_file(
+        &project_dir.join("statecharts/nivasa.module.scxml"),
+        DEFAULT_MODULE_STATECHART,
+    )?;
+    write_project_file(
+        &project_dir.join("statecharts/nivasa.provider.scxml"),
+        DEFAULT_PROVIDER_STATECHART,
+    )?;
+    write_project_file(
+        &project_dir.join("statecharts/nivasa.request.scxml"),
+        DEFAULT_REQUEST_STATECHART,
+    )?;
+
+    Ok(())
+}
+
+fn write_project_file(path: &Path, contents: &str) -> Result<(), String> {
+    fs::write(path, contents).map_err(|err| format!("failed to write {}: {err}", path.display()))
+}
+
+fn new_project_cargo_toml(project_name: &str) -> String {
+    format!(
+        r#"[package]
+name = "{project_name}"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nivasa = {{ path = "../nivasa", features = ["config"] }}
+"#
+    )
+}
+
+fn new_project_main_rs() -> String {
+    r#"mod app_module;
+
+use app_module::AppModule;
+use nivasa::prelude::*;
+
+fn main() {
+    let _app = NestApplication::create(AppModule);
+}
+"#
+    .to_string()
+}
+
+fn new_project_app_module_rs() -> String {
+    r#"use nivasa::prelude::*;
+
+#[module({})]
+pub struct AppModule;
+"#
+    .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        new_project_app_module_rs, new_project_cargo_toml, new_project_main_rs,
+        scaffold_new_project,
+    };
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn scaffold_new_project_creates_expected_structure() {
+        let root = temp_dir("new-project");
+        scaffold_new_project(&root, "myapp").expect("project scaffold should succeed");
+
+        let project_dir = root.join("myapp");
+        assert!(project_dir.join("Cargo.toml").is_file());
+        assert!(project_dir.join(".env").is_file());
+        assert!(project_dir.join(".gitignore").is_file());
+        assert!(project_dir.join("src/main.rs").is_file());
+        assert!(project_dir.join("src/app_module.rs").is_file());
+        assert!(project_dir.join("statecharts").is_dir());
+        assert!(project_dir
+            .join("statecharts/nivasa.application.scxml")
+            .is_file());
+        assert!(project_dir.join("statecharts/nivasa.module.scxml").is_file());
+        assert!(project_dir
+            .join("statecharts/nivasa.provider.scxml")
+            .is_file());
+        assert!(project_dir.join("statecharts/nivasa.request.scxml").is_file());
+
+        assert_eq!(
+            fs::read_to_string(project_dir.join("Cargo.toml")).unwrap(),
+            new_project_cargo_toml("myapp")
+        );
+        assert_eq!(
+            fs::read_to_string(project_dir.join("src/main.rs")).unwrap(),
+            new_project_main_rs()
+        );
+        assert_eq!(
+            fs::read_to_string(project_dir.join("src/app_module.rs")).unwrap(),
+            new_project_app_module_rs()
+        );
+    }
+
+    #[test]
+    fn scaffold_new_project_rejects_existing_directory() {
+        let root = temp_dir("new-project-existing");
+        fs::create_dir_all(root.join("myapp")).unwrap();
+
+        let error = scaffold_new_project(&root, "myapp").unwrap_err();
+        assert!(error.contains("project directory already exists"));
+    }
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("nivasa-cli-{prefix}-{nanos}"));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
 }
