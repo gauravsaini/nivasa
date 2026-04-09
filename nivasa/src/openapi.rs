@@ -294,16 +294,39 @@ pub fn build_openapi_document(
 /// This stays pure and does not register routes. It only describes the static
 /// asset shape a runtime can serve later.
 pub fn swagger_ui_assets(spec_url: impl AsRef<str>) -> Vec<SwaggerUiAsset> {
+    swagger_ui_assets_with_metadata(
+        spec_url,
+        "Nivasa API Docs",
+        "OpenAPI documentation",
+        "1.0.0",
+    )
+}
+
+/// Build a deterministic Swagger UI HTML shell with explicit metadata.
+pub fn swagger_ui_assets_with_metadata(
+    spec_url: impl AsRef<str>,
+    title: impl AsRef<str>,
+    description: impl AsRef<str>,
+    version: impl AsRef<str>,
+) -> Vec<SwaggerUiAsset> {
     vec![SwaggerUiAsset {
         path: "/index.html",
         content_type: "text/html; charset=utf-8",
-        body: swagger_ui_index_html(spec_url),
+        body: swagger_ui_index_html(spec_url, title, description, version),
     }]
 }
 
 /// Build the Swagger UI HTML shell for a spec URL.
-pub fn swagger_ui_index_html(spec_url: impl AsRef<str>) -> String {
+pub fn swagger_ui_index_html(
+    spec_url: impl AsRef<str>,
+    title: impl AsRef<str>,
+    description: impl AsRef<str>,
+    version: impl AsRef<str>,
+) -> String {
     let spec_url = normalize_spec_url(spec_url.as_ref());
+    let title = escape_html(title.as_ref());
+    let description = escape_html(description.as_ref());
+    let version = escape_html(version.as_ref());
 
     format!(
         r#"<!doctype html>
@@ -311,10 +334,16 @@ pub fn swagger_ui_index_html(spec_url: impl AsRef<str>) -> String {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nivasa API Docs</title>
+  <meta name="description" content="{description}">
+  <title>{title} v{version}</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui.css">
 </head>
 <body>
+  <header id="swagger-ui-header">
+    <h1>{title}</h1>
+    <p>{description}</p>
+    <span class="swagger-ui-version">v{version}</span>
+  </header>
   <div id="swagger-ui"></div>
   <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
   <script>
@@ -369,4 +398,13 @@ fn normalize_spec_url(spec_url: &str) -> String {
     } else {
         trimmed.to_string()
     }
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
