@@ -941,7 +941,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Define `HealthIndicator` trait for custom health checks
 - [x] Support database health indicator (ping DB connection)
 - [x] Support HTTP health indicator (ping external service)
-- [ ] Test health endpoint returns correct status (up/down)
+- [x] Test health endpoint returns correct status (up/down)
 - [x] Test aggregated health with multiple indicators
 
 ### 7.5 — OpenAPI / Swagger Integration
