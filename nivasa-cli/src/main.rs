@@ -9,7 +9,7 @@ use statechart::{
     DiagramFormat,
 };
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const DEFAULT_APP_STATECHART: &str = include_str!("../../statecharts/nivasa.application.scxml");
@@ -33,10 +33,25 @@ enum Commands {
         /// Project directory and crate name
         project_name: String,
     },
+    /// Generate framework files
+    #[command(visible_alias = "g")]
+    Generate {
+        #[command(subcommand)]
+        action: GenerateAction,
+    },
     /// Statechart operations
     Statechart {
         #[command(subcommand)]
         action: StatechartAction,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum GenerateAction {
+    /// Generate a module file
+    Module {
+        /// Module name
+        name: String,
     },
 }
 
@@ -89,6 +104,9 @@ fn run() -> Result<(), String> {
     match cli.command {
         Commands::Info => info_command(),
         Commands::New { project_name } => new_command(&project_name),
+        Commands::Generate { action } => match action {
+            GenerateAction::Module { name } => generate_module_command(&name),
+        },
         Commands::Statechart { action } => match action {
             StatechartAction::Validate { all, file } => validate_command(all, file),
             StatechartAction::Parity => parity_command(),
@@ -120,6 +138,12 @@ fn info_command() -> Result<(), String> {
 fn new_command(project_name: &str) -> Result<(), String> {
     scaffold_new_project(&std::env::current_dir().map_err(|err| err.to_string())?, project_name)?;
     println!("created {}", project_name);
+    Ok(())
+}
+
+fn generate_module_command(name: &str) -> Result<(), String> {
+    let path = generate_module(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
     Ok(())
 }
 
@@ -285,6 +309,26 @@ fn scaffold_new_project(base_dir: &Path, project_name: &str) -> Result<(), Strin
     Ok(())
 }
 
+fn generate_module(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    let module_name = normalize_generator_name(name)?;
+    let module_dir = base_dir.join(&module_name);
+    fs::create_dir_all(&module_dir)
+        .map_err(|err| format!("failed to create module directory: {err}"))?;
+
+    let file_path = module_dir.join(format!("{module_name}_module.rs"));
+    if file_path.exists() {
+        return Err(format!("module file already exists: {}", file_path.display()));
+    }
+
+    let struct_name = to_pascal_case(&module_name);
+    write_project_file(
+        &file_path,
+        &new_module_template(&module_name, &struct_name),
+    )?;
+
+    Ok(file_path)
+}
+
 fn write_project_file(path: &Path, contents: &str) -> Result<(), String> {
     fs::write(path, contents).map_err(|err| format!("failed to write {}: {err}", path.display()))
 }
@@ -324,11 +368,61 @@ pub struct AppModule;
     .to_string()
 }
 
+fn new_module_template(module_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[module({{}})]
+pub struct {struct_name}Module;
+
+impl {struct_name}Module {{
+    pub const PATH: &'static str = "{module_name}";
+}}
+"#
+    )
+}
+
+fn normalize_generator_name(name: &str) -> Result<String, String> {
+    let normalized = name
+        .trim()
+        .chars()
+        .map(|ch| match ch {
+            'A'..='Z' => ch.to_ascii_lowercase(),
+            'a'..='z' | '0'..='9' => ch,
+            '-' | '_' | ' ' => '_',
+            _ => '_',
+        })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string();
+
+    if normalized.is_empty() {
+        return Err("name cannot be empty".to_string());
+    }
+
+    Ok(normalized)
+}
+
+fn to_pascal_case(name: &str) -> String {
+    name.split('_')
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| {
+            let mut chars = segment.chars();
+            match chars.next() {
+                Some(first) => {
+                    first.to_ascii_uppercase().to_string() + chars.as_str()
+                }
+                None => String::new(),
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        new_project_app_module_rs, new_project_cargo_toml, new_project_main_rs,
-        scaffold_new_project,
+        generate_module, new_module_template, new_project_app_module_rs, new_project_cargo_toml,
+        new_project_main_rs, normalize_generator_name, scaffold_new_project, to_pascal_case,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -376,6 +470,24 @@ mod tests {
 
         let error = scaffold_new_project(&root, "myapp").unwrap_err();
         assert!(error.contains("project directory already exists"));
+    }
+
+    #[test]
+    fn generate_module_creates_expected_file() {
+        let root = temp_dir("generate-module");
+        let file_path = generate_module(&root, "users").expect("module generation should succeed");
+
+        assert_eq!(file_path, root.join("users/users_module.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_module_template("users", "Users")
+        );
+    }
+
+    #[test]
+    fn normalize_generator_name_and_pascal_case_work() {
+        assert_eq!(normalize_generator_name(" User Profile ").unwrap(), "user_profile");
+        assert_eq!(to_pascal_case("user_profile"), "UserProfile");
     }
 
     fn temp_dir(prefix: &str) -> PathBuf {
