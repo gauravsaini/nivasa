@@ -885,7 +885,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 7.1.2 — WebSocket Decorators
 - [x] Implement `#[subscribe_message("event_name")]` — subscribe to named event
-- [ ] Implement `#[message_body]` — extract message payload
+- [x] Implement `#[message_body]` — extract message payload
 - [ ] Implement `#[connected_socket]` — access the WebSocket client handle
 
 #### 7.1.3 — WebSocket Adapter
@@ -942,7 +942,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support database health indicator (ping DB connection)
 - [x] Support HTTP health indicator (ping external service)
 - [ ] Test health endpoint returns correct status (up/down)
-- [ ] Test aggregated health with multiple indicators
+- [x] Test aggregated health with multiple indicators
 
 ### 7.5 — OpenAPI / Swagger Integration
 
