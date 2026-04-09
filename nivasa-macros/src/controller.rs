@@ -59,6 +59,7 @@ struct ControllerMethodBinding {
     api_params: Vec<ApiParamBinding>,
     api_responses: Vec<ApiResponseBinding>,
     api_body: Option<Path>,
+    api_bearer_auth: bool,
     response: Option<ResponseBinding>,
 }
 
@@ -1009,6 +1010,20 @@ fn parse_api_body_binding(attr: &Attribute) -> Result<Option<Path>> {
     Ok(Some(ty))
 }
 
+fn parse_api_bearer_auth_binding(attr: &Attribute) -> Result<Option<()>> {
+    if !attr_path_matches(attr, "api_bearer_auth") {
+        return Ok(None);
+    }
+
+    match &attr.meta {
+        Meta::Path(_) => Ok(Some(())),
+        _ => Err(Error::new(
+            attr.span(),
+            "`#[api_bearer_auth]` does not take arguments",
+        )),
+    }
+}
+
 fn parse_api_operation_binding(attr: &Attribute) -> Result<Option<OperationBinding>> {
     if !attr_path_matches(attr, "api_operation") {
         return Ok(None);
@@ -1489,6 +1504,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         let mut api_param_bindings = Vec::new();
         let mut api_response_bindings = Vec::new();
         let mut api_body_binding: Option<Path> = None;
+        let mut api_bearer_auth_binding = false;
         let mut retained_attrs = Vec::new();
 
         for attr in method.attrs.drain(..) {
@@ -1514,11 +1530,11 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                                     }
                                     None => match parse_api_param_binding(&attr)? {
                                         Some(param) => api_param_bindings.push(param),
-                                        None => match parse_api_response_binding(&attr)? {
-                                            Some(response) => api_response_bindings.push(response),
-                                            None => match parse_api_body_binding(&attr)? {
-                                                Some(body) => {
-                                                    if api_body_binding.is_some() {
+                                    None => match parse_api_response_binding(&attr)? {
+                                        Some(response) => api_response_bindings.push(response),
+                                        None => match parse_api_body_binding(&attr)? {
+                                            Some(body) => {
+                                                if api_body_binding.is_some() {
                                                         return Err(Error::new(
                                                             attr.span(),
                                                             "a controller method can only use one `#[api_body]` attribute",
@@ -1526,24 +1542,35 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                                                     }
                                                     api_body_binding = Some(body);
                                                 }
-                                                None => match parse_route_binding(&attr)? {
-                                                    Some(binding) => {
-                                                        if method_route.is_some() {
+                                                None => match parse_api_bearer_auth_binding(&attr)? {
+                                                    Some(()) => {
+                                                        if api_bearer_auth_binding {
                                                             return Err(Error::new(
                                                                 attr.span(),
-                                                                "a controller method can only use one HTTP method attribute",
+                                                                "a controller method can only use one `#[api_bearer_auth]` attribute",
                                                             ));
                                                         }
-                                                        method_route = Some(binding);
+                                                        api_bearer_auth_binding = true;
                                                     }
-                                                    None => match parse_pipe_binding(&attr)? {
-                                                        Some(mut pipes) => {
-                                                            method_pipe_attr_count += 1;
-                                                            pipe_bindings.append(&mut pipes);
+                                                    None => match parse_route_binding(&attr)? {
+                                                        Some(binding) => {
+                                                            if method_route.is_some() {
+                                                                return Err(Error::new(
+                                                                    attr.span(),
+                                                                    "a controller method can only use one HTTP method attribute",
+                                                                ));
+                                                            }
+                                                            method_route = Some(binding);
                                                         }
-                                                        None => match parse_response_binding(&attr)? {
-                                                            Some(binding) => response_bindings.push(binding),
-                                                            None => retained_attrs.push(attr),
+                                                        None => match parse_pipe_binding(&attr)? {
+                                                            Some(mut pipes) => {
+                                                                method_pipe_attr_count += 1;
+                                                                pipe_bindings.append(&mut pipes);
+                                                            }
+                                                            None => match parse_response_binding(&attr)? {
+                                                                Some(binding) => response_bindings.push(binding),
+                                                                None => retained_attrs.push(attr),
+                                                            },
                                                         },
                                                     },
                                                 },
@@ -1578,7 +1605,8 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             || operation_binding.is_some()
             || !api_param_bindings.is_empty()
             || !api_response_bindings.is_empty()
-            || api_body_binding.is_some();
+            || api_body_binding.is_some()
+            || api_bearer_auth_binding;
         let response = if response_bindings.is_empty() {
             None
         } else {
@@ -1638,6 +1666,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                 api_params: api_param_bindings,
                 api_responses: api_response_bindings,
                 api_body: api_body_binding,
+                api_bearer_auth: api_bearer_auth_binding,
                 response,
             });
         }
@@ -1887,6 +1916,18 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         })
     });
 
+    let api_bearer_auth_entries = methods.iter().filter_map(|method| {
+        if !method.api_bearer_auth {
+            return None;
+        }
+
+        let handler = &method.handler;
+
+        Some(quote! {
+            stringify!(#handler)
+        })
+    });
+
     let operation_entries = methods.iter().map(|method| {
         let handler = &method.handler;
         let summary = method
@@ -2012,6 +2053,12 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             ) -> Vec<(&'static str, &'static str)> {
                 vec![
                     #(#api_body_entries),*
+                ]
+            }
+
+            pub fn __nivasa_controller_api_bearer_auth_metadata() -> Vec<&'static str> {
+                vec![
+                    #(#api_bearer_auth_entries),*
                 ]
             }
 

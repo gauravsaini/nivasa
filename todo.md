@@ -952,7 +952,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `#[api_param(name = "id", description = "User ID")]`
 - [x] Implement `#[api_body(type = CreateUserDto)]`
 - [x] Implement `#[api_response(status = 200, type = User, description = "Success")]`
-- [ ] Implement `#[api_bearer_auth]` for auth documentation
+- [x] Implement `#[api_bearer_auth]` for auth documentation
 - [ ] Auto-generate OpenAPI 3.0 spec from controller/DTO metadata
 - [ ] Serve spec at configurable path (default: `/api/docs/openapi.json`)
 
