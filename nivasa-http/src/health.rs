@@ -43,6 +43,34 @@ pub trait HealthIndicator: Send + Sync {
     async fn check(&self) -> HealthIndicatorResult;
 }
 
+/// Reports a stable disk health payload.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DiskHealthIndicator;
+
+/// Reports a stable memory health payload.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MemoryHealthIndicator;
+
+#[async_trait]
+impl HealthIndicator for DiskHealthIndicator {
+    async fn check(&self) -> HealthIndicatorResult {
+        HealthIndicatorResult::up().with_details(serde_json::json!({
+            "name": "disk",
+            "status": "up",
+        }))
+    }
+}
+
+#[async_trait]
+impl HealthIndicator for MemoryHealthIndicator {
+    async fn check(&self) -> HealthIndicatorResult {
+        HealthIndicatorResult::up().with_details(serde_json::json!({
+            "name": "memory",
+            "status": "up",
+        }))
+    }
+}
+
 /// Aggregate result returned by [`HealthCheckService`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct HealthCheckResult {
@@ -79,7 +107,10 @@ impl HealthCheckService {
 
 #[cfg(test)]
 mod tests {
-    use super::{HealthCheckService, HealthIndicator, HealthIndicatorResult, HealthStatus};
+    use super::{
+        DiskHealthIndicator, HealthCheckService, HealthIndicator, HealthIndicatorResult,
+        HealthStatus, MemoryHealthIndicator,
+    };
     use async_trait::async_trait;
     use serde_json::json;
     use std::sync::Arc;
@@ -130,25 +161,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn disk_indicator_reports_stable_up_payload() {
+        let result = DiskHealthIndicator.check().await;
+
+        assert_eq!(result.status, HealthStatus::Up);
+        assert_eq!(
+            result.details,
+            Some(json!({
+                "name": "disk",
+                "status": "up"
+            }))
+        );
+    }
+
+    #[tokio::test]
+    async fn memory_indicator_reports_stable_up_payload() {
+        let result = MemoryHealthIndicator.check().await;
+
+        assert_eq!(result.status, HealthStatus::Up);
+        assert_eq!(
+            result.details,
+            Some(json!({
+                "name": "memory",
+                "status": "up"
+            }))
+        );
+    }
+
+    #[tokio::test]
     async fn health_check_service_aggregates_status_and_details() {
         let service = HealthCheckService::new(vec![
-            Arc::new(DatabaseIndicator),
+            Arc::new(DiskHealthIndicator),
+            Arc::new(MemoryHealthIndicator),
             Arc::new(FailingIndicator),
         ]);
 
         let result = service.check().await;
 
         assert_eq!(result.status, HealthStatus::Down);
-        assert_eq!(result.details.len(), 2);
+        assert_eq!(result.details.len(), 3);
         assert_eq!(result.details[0].status, HealthStatus::Up);
         assert_eq!(
             result.details[0].details,
             Some(json!({
-                "name": "database",
-                "latency_ms": 12
+                "name": "disk",
+                "status": "up"
             }))
         );
-        assert_eq!(result.details[1].status, HealthStatus::Down);
-        assert_eq!(result.details[1].details, None);
+        assert_eq!(result.details[1].status, HealthStatus::Up);
+        assert_eq!(
+            result.details[1].details,
+            Some(json!({
+                "name": "memory",
+                "status": "up"
+            }))
+        );
+        assert_eq!(result.details[2].status, HealthStatus::Down);
+        assert_eq!(result.details[2].details, None);
     }
 }

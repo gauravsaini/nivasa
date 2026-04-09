@@ -8,7 +8,10 @@ mod server;
 pub mod upload;
 
 pub use http::header::HeaderMap;
-pub use health::{HealthCheckResult, HealthCheckService, HealthIndicator, HealthIndicatorResult, HealthStatus};
+pub use health::{
+    DiskHealthIndicator, HealthCheckResult, HealthCheckService, HealthIndicator,
+    HealthIndicatorResult, HealthStatus, MemoryHealthIndicator,
+};
 pub use server::{CorsOptions, GlobalFilterBinding};
 
 use async_trait::async_trait;
