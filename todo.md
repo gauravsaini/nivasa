@@ -752,7 +752,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Support `validate_config: schema` (validate config at startup)
 
 #### 6.1.2 — Environment Loading
-- [ ] Support `.env` file loading via `dotenvy` crate
+- [x] Support `.env` file loading via `dotenvy` crate
 - [ ] Support multiple env files: `.env`, `.env.local`, `.env.development`, `.env.production`
 - [ ] Support env variable override order: process env > .env.local > .env.{NODE_ENV} > .env
 - [ ] Support `expand_variables: true` (variable interpolation in .env: `URL=$HOST:$PORT`)
@@ -884,7 +884,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement room/namespace support
 
 #### 7.1.2 — WebSocket Decorators
-- [ ] Implement `#[subscribe_message("event_name")]` — subscribe to named event
+- [x] Implement `#[subscribe_message("event_name")]` — subscribe to named event
 - [ ] Implement `#[message_body]` — extract message payload
 - [ ] Implement `#[connected_socket]` — access the WebSocket client handle
 

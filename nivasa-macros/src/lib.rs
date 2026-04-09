@@ -4,6 +4,7 @@ mod injectable;
 mod middleware;
 mod module_macro;
 mod scxml_handler;
+mod subscribe_message;
 mod validation;
 mod websocket_gateway;
 
@@ -177,6 +178,11 @@ pub fn middleware(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn websocket_gateway(attr: TokenStream, item: TokenStream) -> TokenStream {
     websocket_gateway::websocket_gateway(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn subscribe_message(attr: TokenStream, item: TokenStream) -> TokenStream {
+    subscribe_message::subscribe_message(attr, item)
 }
 
 #[proc_macro_attribute]
