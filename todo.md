@@ -877,7 +877,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 7.1 — WebSocket Support (`nivasa-websocket`)
 
 #### 7.1.1 — WebSocket Gateway
-- [ ] Implement `#[websocket_gateway("/ws")]` attribute macro
+- [x] Implement `#[websocket_gateway("/ws")]` attribute macro
 - [ ] Implement `#[websocket_gateway({ path: "/ws", namespace: "/chat" })]`
 - [x] Define `WebSocketGateway` trait
 - [x] Implement connection lifecycle events: `OnGatewayInit`, `OnGatewayConnection`, `OnGatewayDisconnect`
@@ -939,7 +939,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[health_check]` on controller method (typically GET /health)
 - [x] Implement health indicators: `DiskHealthIndicator`, `MemoryHealthIndicator`
 - [x] Define `HealthIndicator` trait for custom health checks
-- [ ] Support database health indicator (ping DB connection)
+- [x] Support database health indicator (ping DB connection)
 - [ ] Support HTTP health indicator (ping external service)
 - [ ] Test health endpoint returns correct status (up/down)
 - [ ] Test aggregated health with multiple indicators

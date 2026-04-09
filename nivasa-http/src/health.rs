@@ -51,6 +51,17 @@ pub struct DiskHealthIndicator;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MemoryHealthIndicator;
 
+/// Probe-backed database health indicator.
+pub struct DatabaseHealthIndicator<P> {
+    probe: P,
+}
+
+impl<P> DatabaseHealthIndicator<P> {
+    pub fn new(probe: P) -> Self {
+        Self { probe }
+    }
+}
+
 #[async_trait]
 impl HealthIndicator for DiskHealthIndicator {
     async fn check(&self) -> HealthIndicatorResult {
@@ -68,6 +79,33 @@ impl HealthIndicator for MemoryHealthIndicator {
             "name": "memory",
             "status": "up",
         }))
+    }
+}
+
+#[async_trait]
+impl<P> HealthIndicator for DatabaseHealthIndicator<P>
+where
+    P: Fn() -> bool + Send + Sync,
+{
+    async fn check(&self) -> HealthIndicatorResult {
+        let status = if (self.probe)() {
+            HealthStatus::Up
+        } else {
+            HealthStatus::Down
+        };
+
+        let details = serde_json::json!({
+            "name": "database",
+            "status": match status {
+                HealthStatus::Up => "up",
+                HealthStatus::Down => "down",
+            },
+        });
+
+        match status {
+            HealthStatus::Up => HealthIndicatorResult::up().with_details(details),
+            HealthStatus::Down => HealthIndicatorResult::down().with_details(details),
+        }
     }
 }
 
@@ -108,8 +146,8 @@ impl HealthCheckService {
 #[cfg(test)]
 mod tests {
     use super::{
-        DiskHealthIndicator, HealthCheckService, HealthIndicator, HealthIndicatorResult,
-        HealthStatus, MemoryHealthIndicator,
+        DatabaseHealthIndicator, DiskHealthIndicator, HealthCheckService, HealthIndicator,
+        HealthIndicatorResult, HealthStatus, MemoryHealthIndicator,
     };
     use async_trait::async_trait;
     use serde_json::json;
@@ -158,6 +196,21 @@ mod tests {
 
         assert_eq!(result.status, HealthStatus::Down);
         assert_eq!(result.details, None);
+    }
+
+    #[tokio::test]
+    async fn database_indicator_uses_probe_result_and_stable_details() {
+        let indicator = DatabaseHealthIndicator::new(|| true);
+        let result = indicator.check().await;
+
+        assert_eq!(result.status, HealthStatus::Up);
+        assert_eq!(
+            result.details,
+            Some(json!({
+                "name": "database",
+                "status": "up"
+            }))
+        );
     }
 
     #[tokio::test]
