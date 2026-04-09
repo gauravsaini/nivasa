@@ -15,6 +15,7 @@
 //! at compile time and runtime.
 
 pub mod application;
+pub mod openapi;
 
 /// The prelude — import everything you need with `use nivasa::prelude::*`.
 pub mod prelude {
