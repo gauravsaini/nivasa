@@ -897,7 +897,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `client.join("room")` / `client.leave("room")`
 
 #### 7.1.4 — WebSocket + Guards/Pipes/Interceptors
-- [ ] Support guards on WebSocket gateway methods
+- [x] Support guards on WebSocket gateway methods
 - [x] Support pipes on message body extraction
 - [ ] Support interceptors on WebSocket handlers
 

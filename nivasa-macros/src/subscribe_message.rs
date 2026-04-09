@@ -80,7 +80,13 @@ fn collect_guard_names(method: &ImplItemFn) -> syn::Result<Vec<LitStr>> {
     let mut guards = Vec::new();
 
     for attr in &method.attrs {
-        if attr.path().is_ident("guard") {
+        if attr
+            .path()
+            .segments
+            .last()
+            .map(|segment| segment.ident == "guard")
+            .unwrap_or(false)
+        {
             let paths = match &attr.meta {
                 Meta::List(_) => {
                     attr.parse_args_with(Punctuated::<Path, Token![,]>::parse_terminated)?
