@@ -4,7 +4,7 @@
 //!
 //! This crate currently exposes the bootstrap-facing `ConfigModule` marker
 //! type. Runtime config loading, `for_root`/`for_feature`, env parsing, and
-//! injectable services land in later slices.
+//! richer config services land in later slices.
 
 use dotenvy::Error as DotenvError;
 use nivasa_core::module::{ConfigurableModule, DynamicModule, ModuleMetadata};
@@ -75,6 +75,40 @@ impl ConfigOptions {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct ConfigOptionsProvider;
 
+/// Thin config service surface for in-crate provider metadata.
+///
+/// This stays intentionally small: it only wraps an in-memory config map and
+/// exposes read-only accessors. Loading, coercion, schema validation, and
+/// startup wiring remain future work.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ConfigService {
+    values: BTreeMap<String, String>,
+}
+
+impl ConfigService {
+    /// Create an empty config service.
+    pub fn new() -> Self {
+        Self {
+            values: BTreeMap::new(),
+        }
+    }
+
+    /// Build a config service from an already-loaded key/value map.
+    pub fn from_values(values: BTreeMap<String, String>) -> Self {
+        Self { values }
+    }
+
+    /// Borrow a raw config value by key.
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.values.get(key).map(|value| value.as_str())
+    }
+
+    /// Borrow all config values as a read-only map.
+    pub fn values(&self) -> &BTreeMap<String, String> {
+        &self.values
+    }
+}
+
 /// Minimal public config module marker for the `nivasa-config` crate.
 ///
 /// This type intentionally stays small until the richer configuration runtime
@@ -114,10 +148,10 @@ impl ConfigModule {
     /// Build the root dynamic config module surface.
     ///
     /// This slice only advertises config-related provider metadata and global
-    /// visibility. Actual env loading and `ConfigService` wiring land later.
+    /// visibility. Actual env loading and richer `ConfigService` wiring land later.
     pub fn for_root(options: ConfigOptions) -> DynamicModule {
         DynamicModule::new(ModuleMetadata::new())
-            .with_providers(vec![TypeId::of::<ConfigOptionsProvider>()])
+            .with_providers(config_provider_types())
             .with_global(options.is_global)
     }
 
@@ -147,9 +181,16 @@ impl ConfigurableModule for ConfigModule {
 
     fn for_feature(options: Self::Options) -> DynamicModule {
         DynamicModule::new(ModuleMetadata::new())
-            .with_providers(vec![TypeId::of::<ConfigOptionsProvider>()])
+            .with_providers(config_provider_types())
             .with_global(options.is_global)
     }
+}
+
+fn config_provider_types() -> Vec<TypeId> {
+    vec![
+        TypeId::of::<ConfigOptionsProvider>(),
+        TypeId::of::<ConfigService>(),
+    ]
 }
 
 fn normalize_env_file_path(path: String) -> String {
@@ -169,9 +210,10 @@ fn load_env_file(path: impl AsRef<Path>) -> Result<BTreeMap<String, String>, Con
 
 #[cfg(test)]
 mod tests {
-    use super::{ConfigLoadError, ConfigModule, ConfigOptions, ConfigOptionsProvider};
+    use super::{
+        config_provider_types, ConfigLoadError, ConfigModule, ConfigOptions, ConfigService,
+    };
     use std::collections::BTreeMap;
-    use std::any::TypeId;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -193,15 +235,9 @@ mod tests {
     fn for_root_registers_config_options_provider_metadata() {
         let module = ConfigModule::for_root(ConfigOptions::new());
 
-        assert_eq!(
-            module.providers,
-            vec![TypeId::of::<ConfigOptionsProvider>()]
-        );
+        assert_eq!(module.providers, config_provider_types());
         assert!(!module.metadata.is_global);
-        assert_eq!(
-            module.merged_metadata().providers,
-            vec![TypeId::of::<ConfigOptionsProvider>()]
-        );
+        assert_eq!(module.merged_metadata().providers, config_provider_types());
     }
 
     #[test]
@@ -217,15 +253,9 @@ mod tests {
             ConfigOptions::new(),
         );
 
-        assert_eq!(
-            module.providers,
-            vec![TypeId::of::<ConfigOptionsProvider>()]
-        );
+        assert_eq!(module.providers, config_provider_types());
         assert!(!module.metadata.is_global);
-        assert_eq!(
-            module.merged_metadata().providers,
-            vec![TypeId::of::<ConfigOptionsProvider>()]
-        );
+        assert_eq!(module.merged_metadata().providers, config_provider_types());
     }
 
     #[test]
@@ -235,6 +265,19 @@ mod tests {
         );
 
         assert!(module.metadata.is_global);
+    }
+
+    #[test]
+    fn config_service_exposes_raw_values_without_coercion() {
+        let service = ConfigService::from_values(BTreeMap::from([
+            ("HOST".to_string(), "127.0.0.1".to_string()),
+            ("PORT".to_string(), "3000".to_string()),
+        ]));
+
+        assert_eq!(service.get("HOST"), Some("127.0.0.1"));
+        assert_eq!(service.get("PORT"), Some("3000"));
+        assert_eq!(service.get("MISSING"), None);
+        assert_eq!(service.values().len(), 2);
     }
 
     #[test]
@@ -265,10 +308,7 @@ mod tests {
         let module = ConfigModule::for_root(options.clone());
 
         assert_eq!(options.env_file_paths, vec![".env", ".env.local"]);
-        assert_eq!(
-            module.merged_metadata().providers,
-            vec![TypeId::of::<ConfigOptionsProvider>()]
-        );
+        assert_eq!(module.merged_metadata().providers, config_provider_types());
     }
 
     #[test]
@@ -279,10 +319,7 @@ mod tests {
         );
 
         assert_eq!(options.env_file_paths, vec![".env", ".env.test"]);
-        assert_eq!(
-            module.merged_metadata().providers,
-            vec![TypeId::of::<ConfigOptionsProvider>()]
-        );
+        assert_eq!(module.merged_metadata().providers, config_provider_types());
     }
 
     #[test]
@@ -298,10 +335,7 @@ mod tests {
         let module = ConfigModule::for_root(options.clone());
 
         assert!(options.ignore_env_file);
-        assert_eq!(
-            module.merged_metadata().providers,
-            vec![TypeId::of::<ConfigOptionsProvider>()]
-        );
+        assert_eq!(module.merged_metadata().providers, config_provider_types());
     }
 
     #[test]
@@ -312,10 +346,7 @@ mod tests {
         );
 
         assert!(options.ignore_env_file);
-        assert_eq!(
-            module.merged_metadata().providers,
-            vec![TypeId::of::<ConfigOptionsProvider>()]
-        );
+        assert_eq!(module.merged_metadata().providers, config_provider_types());
     }
 
     #[test]

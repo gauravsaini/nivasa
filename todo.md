@@ -759,7 +759,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Support custom env file path
 
 #### 6.1.3 — ConfigService
-- [ ] Implement `ConfigService` as injectable provider
+- [x] Implement `ConfigService` as injectable provider
 - [ ] Implement `get<T: FromStr>(key: &str) -> Option<T>` with type coercion
 - [ ] Implement `get_or_default<T>(key: &str, default: T) -> T`
 - [ ] Implement `get_or_throw(key: &str) -> Result<String, ConfigException>`
