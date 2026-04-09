@@ -330,4 +330,30 @@ mod tests {
         assert!(!namespaces.has_namespace("/chat"));
         assert!(namespaces.has_namespace("/admin"));
     }
+
+    #[test]
+    fn disconnection_cleanup_removes_empty_rooms_and_namespaces_only() {
+        let mut namespaces = NamespaceRegistry::new();
+
+        assert!(namespaces.join("/chat", "general", "client-1"));
+        assert!(namespaces.join("/chat", "general", "client-2"));
+        assert!(namespaces.join("/chat", "ops", "client-3"));
+        assert!(namespaces.join("/admin", "general", "client-9"));
+
+        assert!(namespaces.leave("/chat", "general", &"client-1"));
+        assert!(!namespaces.members("/chat", "general").is_empty());
+        assert!(namespaces.has_namespace("/chat"));
+        assert!(namespaces.has_namespace("/admin"));
+
+        assert!(namespaces.leave("/chat", "general", &"client-2"));
+        assert!(namespaces.members("/chat", "general").is_empty());
+        assert!(namespaces.has_namespace("/chat"));
+        assert!(namespaces.contains("/chat", "ops", &"client-3"));
+
+        assert!(namespaces.leave("/chat", "ops", &"client-3"));
+        assert!(!namespaces.has_namespace("/chat"));
+
+        assert!(namespaces.has_namespace("/admin"));
+        assert!(namespaces.contains("/admin", "general", &"client-9"));
+    }
 }
