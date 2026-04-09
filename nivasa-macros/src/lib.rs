@@ -3,8 +3,9 @@ mod filter;
 mod injectable;
 mod middleware;
 mod module_macro;
-mod validation;
 mod scxml_handler;
+mod validation;
+mod websocket_gateway;
 
 use proc_macro::TokenStream;
 
@@ -171,6 +172,11 @@ pub fn use_filters(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn middleware(attr: TokenStream, item: TokenStream) -> TokenStream {
     middleware::middleware(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn websocket_gateway(attr: TokenStream, item: TokenStream) -> TokenStream {
+    websocket_gateway::websocket_gateway(attr, item)
 }
 
 #[proc_macro_attribute]
