@@ -963,7 +963,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 7.5.3 — OpenAPI Tests
 - [x] Test generated spec includes all routes with correct methods
-- [ ] Test spec includes request/response schemas
+- [x] Test spec includes request/response schemas
 - [x] Test Swagger UI endpoint serves HTML
 - [ ] Test spec validates against OpenAPI 3.0 spec
 

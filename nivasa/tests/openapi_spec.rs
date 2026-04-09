@@ -120,3 +120,32 @@ fn openapi_spec_includes_all_routes_with_correct_methods() {
         vec!["post".to_string()]
     );
 }
+
+#[test]
+fn openapi_spec_includes_request_and_response_schemas() {
+    let document = build_openapi_document(
+        "Users API",
+        "1.0.0",
+        [OpenApiControllerMetadata::from_provider::<ManualUsersController>()],
+    );
+
+    let create = &document.paths["/users"]["post"];
+    let request_body = create
+        .request_body
+        .as_ref()
+        .expect("create route must expose request body schema");
+    assert_eq!(
+        request_body.content["application/json"].schema_ref,
+        "#/components/schemas/CreateUserDto"
+    );
+
+    let show = &document.paths["/users/{id}"]["get"];
+    assert_eq!(
+        show.responses["200"].content["application/json"].schema_ref,
+        "#/components/schemas/UserDto"
+    );
+    assert_eq!(
+        create.responses["201"].content["application/json"].schema_ref,
+        "#/components/schemas/UserDto"
+    );
+}
