@@ -834,7 +834,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `nivasa new <project-name>` — scaffold new project (includes `statecharts/` directory with default SCXML files)
 - [x] Implement `nivasa generate module <name>` (alias: `nivasa g module <name>`)
 - [x] Implement `nivasa generate controller <name>` (alias: `nivasa g controller <name>`)
-- [ ] Implement `nivasa generate service <name>` (alias: `nivasa g service <name>`)
+- [x] Implement `nivasa generate service <name>` (alias: `nivasa g service <name>`)
 - [ ] Implement `nivasa generate guard <name>`
 - [ ] Implement `nivasa generate interceptor <name>`
 - [ ] Implement `nivasa generate pipe <name>`
@@ -851,7 +851,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Create template for new project: `Cargo.toml`, `main.rs`, `app_module.rs`, `.env`, `.gitignore`
 - [x] Create template for module file
 - [x] Create template for controller file (with example GET route)
-- [ ] Create template for service file (with injectable annotation)
+- [x] Create template for service file (with injectable annotation)
 - [ ] Create template for guard file
 - [ ] Create template for interceptor/pipe/filter files
 - [ ] Create template for resource: module + controller + service + create DTO + update DTO

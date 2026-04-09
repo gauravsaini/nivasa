@@ -58,6 +58,11 @@ enum GenerateAction {
         /// Controller name
         name: String,
     },
+    /// Generate a service file
+    Service {
+        /// Service name
+        name: String,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -112,6 +117,7 @@ fn run() -> Result<(), String> {
         Commands::Generate { action } => match action {
             GenerateAction::Module { name } => generate_module_command(&name),
             GenerateAction::Controller { name } => generate_controller_command(&name),
+            GenerateAction::Service { name } => generate_service_command(&name),
         },
         Commands::Statechart { action } => match action {
             StatechartAction::Validate { all, file } => validate_command(all, file),
@@ -156,6 +162,12 @@ fn generate_module_command(name: &str) -> Result<(), String> {
 fn generate_controller_command(name: &str) -> Result<(), String> {
     let path =
         generate_controller(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_service_command(name: &str) -> Result<(), String> {
+    let path = generate_service(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
     println!("created {}", path.display());
     Ok(())
 }
@@ -365,6 +377,26 @@ fn generate_controller(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
     Ok(file_path)
 }
 
+fn generate_service(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    let service_name = normalize_generator_name(name)?;
+    let service_dir = base_dir.join(&service_name);
+    fs::create_dir_all(&service_dir)
+        .map_err(|err| format!("failed to create service directory: {err}"))?;
+
+    let file_path = service_dir.join(format!("{service_name}_service.rs"));
+    if file_path.exists() {
+        return Err(format!("service file already exists: {}", file_path.display()));
+    }
+
+    let struct_name = to_pascal_case(&service_name);
+    write_project_file(
+        &file_path,
+        &new_service_template(&service_name, &struct_name),
+    )?;
+
+    Ok(file_path)
+}
+
 fn write_project_file(path: &Path, contents: &str) -> Result<(), String> {
     fs::write(path, contents).map_err(|err| format!("failed to write {}: {err}", path.display()))
 }
@@ -436,6 +468,20 @@ impl {struct_name}Controller {{
     )
 }
 
+fn new_service_template(service_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[injectable]
+pub struct {struct_name}Service;
+
+impl {struct_name}Service {{
+    pub const NAME: &'static str = "{service_name}";
+}}
+"#
+    )
+}
+
 fn normalize_generator_name(name: &str) -> Result<String, String> {
     let normalized = name
         .trim()
@@ -475,9 +521,10 @@ fn to_pascal_case(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        generate_controller, generate_module, new_controller_template, new_module_template,
-        new_project_app_module_rs, new_project_cargo_toml, new_project_main_rs,
-        normalize_generator_name, scaffold_new_project, to_pascal_case,
+        generate_controller, generate_module, generate_service, new_controller_template,
+        new_module_template, new_project_app_module_rs, new_project_cargo_toml,
+        new_project_main_rs, new_service_template, normalize_generator_name,
+        scaffold_new_project, to_pascal_case,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -555,6 +602,19 @@ mod tests {
         assert_eq!(
             fs::read_to_string(&file_path).unwrap(),
             new_controller_template("users", "Users")
+        );
+    }
+
+    #[test]
+    fn generate_service_creates_expected_file() {
+        let root = temp_dir("generate-service");
+        let file_path =
+            generate_service(&root, "users").expect("service generation should succeed");
+
+        assert_eq!(file_path, root.join("users/users_service.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_service_template("users", "Users")
         );
     }
 
