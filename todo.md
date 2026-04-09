@@ -763,7 +763,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `get<T: FromStr>(key: &str) -> Option<T>` with type coercion
 - [x] Implement `get_or_default<T>(key: &str, default: T) -> T`
 - [x] Implement `get_or_throw(key: &str) -> Result<String, ConfigException>`
-- [ ] Implement namespace support: `get("database.host")`
+- [x] Implement namespace support: `get("database.host")`
 - [ ] Implement validation of required config keys at startup
 
 #### 6.1.4 — Type-Safe Config (Config Schema)

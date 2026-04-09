@@ -524,6 +524,21 @@ mod tests {
     }
 
     #[test]
+    fn config_service_supports_dotted_namespace_keys() {
+        let service = ConfigService::from_values(BTreeMap::from([
+            ("database.host".to_string(), "localhost".to_string()),
+            ("database.port".to_string(), "5432".to_string()),
+        ]));
+
+        assert_eq!(service.get_raw("database.host"), Some("localhost"));
+        assert_eq!(service.get::<String>("database.host"), Some("localhost".to_string()));
+        assert_eq!(
+            service.get_or_throw("database.port"),
+            Ok("5432".to_string())
+        );
+    }
+
+    #[test]
     fn config_options_support_one_env_file_path() {
         let options = ConfigOptions::new().with_env_file_path(" .env ");
 
