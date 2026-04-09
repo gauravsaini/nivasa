@@ -85,6 +85,22 @@ impl ConfigOptions {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct ConfigOptionsProvider;
 
+/// Errors raised by read-only config lookups.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigException {
+    MissingKey { key: String },
+}
+
+impl std::fmt::Display for ConfigException {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingKey { key } => write!(f, "missing config key: {key}"),
+        }
+    }
+}
+
+impl std::error::Error for ConfigException {}
+
 /// Thin config service surface for in-crate provider metadata.
 ///
 /// This stays intentionally small: it only wraps an in-memory config map and
@@ -127,6 +143,15 @@ impl ConfigService {
         T: FromStr,
     {
         self.get(key).unwrap_or(default)
+    }
+
+    /// Borrow a raw config value, or return a config error if it is missing.
+    pub fn get_or_throw(&self, key: &str) -> Result<String, ConfigException> {
+        self.get_raw(key)
+            .map(|value| value.to_string())
+            .ok_or_else(|| ConfigException::MissingKey {
+                key: key.to_string(),
+            })
     }
 
     /// Borrow all config values as a read-only map.
@@ -479,6 +504,23 @@ mod tests {
         assert_eq!(service.get_or_default("MISSING", 80), 80);
         assert_eq!(service.get_or_default("BROKEN_PORT", 80), 80);
         assert_eq!(service.get_or_default("FEATURE_ENABLED", false), true);
+    }
+
+    #[test]
+    fn config_service_get_or_throw_returns_owned_values_or_errors() {
+        let service = ConfigService::from_values(BTreeMap::from([
+            ("HOST".to_string(), "127.0.0.1".to_string()),
+            ("PORT".to_string(), "3000".to_string()),
+        ]));
+
+        assert_eq!(service.get_or_throw("HOST"), Ok("127.0.0.1".to_string()));
+        assert_eq!(service.get_or_throw("PORT"), Ok("3000".to_string()));
+        assert_eq!(
+            service.get_or_throw("MISSING"),
+            Err(super::ConfigException::MissingKey {
+                key: "MISSING".to_string(),
+            })
+        );
     }
 
     #[test]

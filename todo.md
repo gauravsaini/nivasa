@@ -762,7 +762,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `ConfigService` as injectable provider
 - [x] Implement `get<T: FromStr>(key: &str) -> Option<T>` with type coercion
 - [x] Implement `get_or_default<T>(key: &str, default: T) -> T`
-- [ ] Implement `get_or_throw(key: &str) -> Result<String, ConfigException>`
+- [x] Implement `get_or_throw(key: &str) -> Result<String, ConfigException>`
 - [ ] Implement namespace support: `get("database.host")`
 - [ ] Implement validation of required config keys at startup
 
@@ -777,7 +777,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test process env variable overrides .env
 - [ ] Test `get::<i32>` type coercion
 - [ ] Test `get::<bool>` type coercion
-- [ ] Test `get_or_throw` with missing key → startup error
+- [x] Test `get_or_throw` with missing key → startup error
 - [ ] Test global config is accessible from any module
 - [ ] Test config schema validation at startup
 
