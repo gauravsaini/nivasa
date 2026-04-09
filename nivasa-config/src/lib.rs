@@ -258,53 +258,63 @@ fn expand_env_value(
     }
 
     let process_env = load_process_env();
+    let bytes = value.as_bytes();
     let mut resolved = String::with_capacity(value.len());
-    let mut chars = value.chars().peekable();
+    let mut index = 0;
 
-    while let Some(ch) = chars.next() {
-        if ch != '$' {
-            resolved.push(ch);
+    while index < bytes.len() {
+        if bytes[index] != b'$' {
+            resolved.push(bytes[index] as char);
+            index += 1;
             continue;
         }
 
-        match chars.peek().copied() {
-            Some('{') => {
-                chars.next();
-                let mut name = String::new();
-                while let Some(next) = chars.next() {
-                    if next == '}' {
-                        break;
-                    }
-                    name.push(next);
-                }
-                resolved.push_str(
-                    lookup_env_value(&name, values, &process_env)
-                        .map(|value| expand_env_value(&value, values, depth + 1))
-                        .unwrap_or_default()
-                        .as_str(),
-                );
-            }
-            Some(next) if is_env_name_start(next) => {
-                let mut name = String::new();
-                name.push(next);
-                chars.next();
-                while let Some(&next) = chars.peek() {
-                    if is_env_name_continue(next) {
-                        name.push(next);
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
-                resolved.push_str(
-                    lookup_env_value(&name, values, &process_env)
-                        .map(|value| expand_env_value(&value, values, depth + 1))
-                        .unwrap_or_default()
-                        .as_str(),
-                );
-            }
-            _ => resolved.push('$'),
+        if index + 1 >= bytes.len() {
+            resolved.push('$');
+            break;
         }
+
+        if bytes[index + 1] == b'{' {
+            let mut end = index + 2;
+            while end < bytes.len() && bytes[end] != b'}' {
+                end += 1;
+            }
+
+            if end >= bytes.len() {
+                resolved.push('$');
+                index += 1;
+                continue;
+            }
+
+            let name = &value[index + 2..end];
+            resolved.push_str(
+                &lookup_env_value(name, values, &process_env)
+                    .map(|value| expand_env_value(&value, values, depth + 1))
+                    .unwrap_or_default(),
+            );
+            index = end + 1;
+            continue;
+        }
+
+        let first = bytes[index + 1] as char;
+        if !is_env_name_start(first) {
+            resolved.push('$');
+            index += 1;
+            continue;
+        }
+
+        let mut end = index + 2;
+        while end < bytes.len() && is_env_name_continue(bytes[end] as char) {
+            end += 1;
+        }
+
+        let name = &value[index + 1..end];
+        resolved.push_str(
+            &lookup_env_value(name, values, &process_env)
+                .map(|value| expand_env_value(&value, values, depth + 1))
+                .unwrap_or_default(),
+        );
+        index = end;
     }
 
     resolved
