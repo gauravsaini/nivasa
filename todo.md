@@ -753,7 +753,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 6.1.2 — Environment Loading
 - [x] Support `.env` file loading via `dotenvy` crate
-- [ ] Support multiple env files: `.env`, `.env.local`, `.env.development`, `.env.production`
+- [x] Support multiple env files: `.env`, `.env.local`, `.env.development`, `.env.production`
 - [ ] Support env variable override order: process env > .env.local > .env.{NODE_ENV} > .env
 - [ ] Support `expand_variables: true` (variable interpolation in .env: `URL=$HOST:$PORT`)
 - [ ] Support custom env file path

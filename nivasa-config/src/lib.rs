@@ -155,20 +155,26 @@ impl ConfigModule {
             .with_global(options.is_global)
     }
 
-    /// Load one configured `.env` file into an in-memory map.
+    /// Load configured `.env` files into an in-memory map.
     ///
-    /// This intentionally does not mutate process env and only uses the first
-    /// configured env path. Multi-file precedence lands in later slices.
+    /// This intentionally does not mutate process env and merges files in the
+    /// configured order. Later files can override earlier keys.
     pub fn load_env(options: &ConfigOptions) -> Result<BTreeMap<String, String>, ConfigLoadError> {
         if options.ignore_env_file {
             return Ok(BTreeMap::new());
         }
 
-        let Some(path) = options.env_file_paths.first() else {
+        if options.env_file_paths.is_empty() {
             return Ok(BTreeMap::new());
-        };
+        }
 
-        load_env_file(path)
+        let mut loaded = BTreeMap::new();
+
+        for path in &options.env_file_paths {
+            loaded.extend(load_env_file(path)?);
+        }
+
+        Ok(loaded)
     }
 }
 
@@ -352,9 +358,7 @@ mod tests {
     #[test]
     fn load_env_reads_the_first_configured_env_file() {
         let path = write_temp_env_file("PORT=3000\nHOST=127.0.0.1\n");
-        let options = ConfigOptions::new()
-            .with_env_file_path(path.to_string_lossy().to_string())
-            .with_env_file_path("ignored.env");
+        let options = ConfigOptions::new().with_env_file_path(path.to_string_lossy().to_string());
 
         let loaded = ConfigModule::load_env(&options).expect("env file should load");
 
@@ -363,6 +367,26 @@ mod tests {
             BTreeMap::from([
                 ("HOST".to_string(), "127.0.0.1".to_string()),
                 ("PORT".to_string(), "3000".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn load_env_merges_configured_env_files_in_order() {
+        let base_path = write_temp_env_file("HOST=127.0.0.1\nPORT=3000\n");
+        let override_path = write_temp_env_file("PORT=8080\nDEBUG=true\n");
+        let options = ConfigOptions::new()
+            .with_env_file_path(base_path.to_string_lossy().to_string())
+            .with_env_file_path(override_path.to_string_lossy().to_string());
+
+        let loaded = ConfigModule::load_env(&options).expect("env files should load");
+
+        assert_eq!(
+            loaded,
+            BTreeMap::from([
+                ("DEBUG".to_string(), "true".to_string()),
+                ("HOST".to_string(), "127.0.0.1".to_string()),
+                ("PORT".to_string(), "8080".to_string()),
             ])
         );
     }
