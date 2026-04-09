@@ -886,7 +886,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 7.1.2 — WebSocket Decorators
 - [x] Implement `#[subscribe_message("event_name")]` — subscribe to named event
 - [x] Implement `#[message_body]` — extract message payload
-- [ ] Implement `#[connected_socket]` — access the WebSocket client handle
+- [x] Implement `#[connected_socket]` — access the WebSocket client handle
 
 #### 7.1.3 — WebSocket Adapter
 - [x] Define `WebSocketAdapter` trait for pluggable backends

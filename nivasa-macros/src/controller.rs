@@ -68,6 +68,7 @@ struct ControllerMethodBinding {
 enum ParameterExtractorKind {
     Body,
     MessageBody,
+    ConnectedSocket,
     Param,
     Query,
     Headers,
@@ -140,6 +141,7 @@ impl ParameterExtractorKind {
         match self {
             ParameterExtractorKind::Body => "body",
             ParameterExtractorKind::MessageBody => "message_body",
+            ParameterExtractorKind::ConnectedSocket => "connected_socket",
             ParameterExtractorKind::Param => "param",
             ParameterExtractorKind::Query => "query",
             ParameterExtractorKind::Headers => "headers",
@@ -179,6 +181,7 @@ impl ParameterExtractorKind {
         matches!(
             self,
             ParameterExtractorKind::Ip
+                | ParameterExtractorKind::ConnectedSocket
                 | ParameterExtractorKind::Session
                 | ParameterExtractorKind::File
                 | ParameterExtractorKind::Files
@@ -1080,6 +1083,8 @@ fn parse_parameter_extractor(attr: &Attribute) -> Result<Option<ParameterBinding
         Some(ParameterExtractorKind::Body)
     } else if attr_path_matches(attr, "message_body") {
         Some(ParameterExtractorKind::MessageBody)
+    } else if attr_path_matches(attr, "connected_socket") {
+        Some(ParameterExtractorKind::ConnectedSocket)
     } else if attr_path_matches(attr, "param") {
         Some(ParameterExtractorKind::Param)
     } else if attr_path_matches(attr, "query") {

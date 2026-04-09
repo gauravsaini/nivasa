@@ -191,6 +191,16 @@ pub fn body(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn message_body(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn connected_socket(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
 pub fn param(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
 }

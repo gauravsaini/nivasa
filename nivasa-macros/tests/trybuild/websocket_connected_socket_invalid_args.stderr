@@ -1,0 +1,5 @@
+error: `#[connected_socket]` does not take arguments
+ --> tests/trybuild/websocket_connected_socket_invalid_args.rs:9:16
+  |
+9 |     fn publish(#[nivasa_macros::connected_socket("client")] client: String) {
+  |                ^
