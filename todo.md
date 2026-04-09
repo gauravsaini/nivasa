@@ -902,7 +902,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Support interceptors on WebSocket handlers
 
 #### 7.1.5 — WebSocket Tests
-- [ ] Test WebSocket connection and handshake
+- [x] Test WebSocket connection and handshake
 - [x] Test message subscription and handler invocation
 - [ ] Test broadcast to all connected clients
 - [x] Test room-based messaging
