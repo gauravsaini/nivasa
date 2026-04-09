@@ -53,6 +53,11 @@ enum GenerateAction {
         /// Module name
         name: String,
     },
+    /// Generate a controller file
+    Controller {
+        /// Controller name
+        name: String,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -106,6 +111,7 @@ fn run() -> Result<(), String> {
         Commands::New { project_name } => new_command(&project_name),
         Commands::Generate { action } => match action {
             GenerateAction::Module { name } => generate_module_command(&name),
+            GenerateAction::Controller { name } => generate_controller_command(&name),
         },
         Commands::Statechart { action } => match action {
             StatechartAction::Validate { all, file } => validate_command(all, file),
@@ -143,6 +149,13 @@ fn new_command(project_name: &str) -> Result<(), String> {
 
 fn generate_module_command(name: &str) -> Result<(), String> {
     let path = generate_module(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_controller_command(name: &str) -> Result<(), String> {
+    let path =
+        generate_controller(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
     println!("created {}", path.display());
     Ok(())
 }
@@ -329,6 +342,29 @@ fn generate_module(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
     Ok(file_path)
 }
 
+fn generate_controller(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    let controller_name = normalize_generator_name(name)?;
+    let controller_dir = base_dir.join(&controller_name);
+    fs::create_dir_all(&controller_dir)
+        .map_err(|err| format!("failed to create controller directory: {err}"))?;
+
+    let file_path = controller_dir.join(format!("{controller_name}_controller.rs"));
+    if file_path.exists() {
+        return Err(format!(
+            "controller file already exists: {}",
+            file_path.display()
+        ));
+    }
+
+    let struct_name = to_pascal_case(&controller_name);
+    write_project_file(
+        &file_path,
+        &new_controller_template(&controller_name, &struct_name),
+    )?;
+
+    Ok(file_path)
+}
+
 fn write_project_file(path: &Path, contents: &str) -> Result<(), String> {
     fs::write(path, contents).map_err(|err| format!("failed to write {}: {err}", path.display()))
 }
@@ -382,6 +418,24 @@ impl {struct_name}Module {{
     )
 }
 
+fn new_controller_template(controller_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[controller("/{controller_name}")]
+pub struct {struct_name}Controller;
+
+#[impl_controller]
+impl {struct_name}Controller {{
+    #[get("/")]
+    pub fn list(&self) -> &'static str {{
+        "{controller_name}"
+    }}
+}}
+"#
+    )
+}
+
 fn normalize_generator_name(name: &str) -> Result<String, String> {
     let normalized = name
         .trim()
@@ -421,8 +475,9 @@ fn to_pascal_case(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        generate_module, new_module_template, new_project_app_module_rs, new_project_cargo_toml,
-        new_project_main_rs, normalize_generator_name, scaffold_new_project, to_pascal_case,
+        generate_controller, generate_module, new_controller_template, new_module_template,
+        new_project_app_module_rs, new_project_cargo_toml, new_project_main_rs,
+        normalize_generator_name, scaffold_new_project, to_pascal_case,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -488,6 +543,19 @@ mod tests {
     fn normalize_generator_name_and_pascal_case_work() {
         assert_eq!(normalize_generator_name(" User Profile ").unwrap(), "user_profile");
         assert_eq!(to_pascal_case("user_profile"), "UserProfile");
+    }
+
+    #[test]
+    fn generate_controller_creates_expected_file() {
+        let root = temp_dir("generate-controller");
+        let file_path =
+            generate_controller(&root, "users").expect("controller generation should succeed");
+
+        assert_eq!(file_path, root.join("users/users_controller.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_controller_template("users", "Users")
+        );
     }
 
     fn temp_dir(prefix: &str) -> PathBuf {
