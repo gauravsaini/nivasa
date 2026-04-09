@@ -9,6 +9,14 @@ pub struct OpenApiDocument {
     pub components: OpenApiComponents,
 }
 
+/// One static asset in the Swagger UI bundle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwaggerUiAsset {
+    pub path: &'static str,
+    pub content_type: &'static str,
+    pub body: String,
+}
+
 /// Top-level OpenAPI info block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenApiInfo {
@@ -281,6 +289,48 @@ pub fn build_openapi_document(
     }
 }
 
+/// Build a deterministic Swagger UI HTML shell backed by CDN assets.
+///
+/// This stays pure and does not register routes. It only describes the static
+/// asset shape a runtime can serve later.
+pub fn swagger_ui_assets(spec_url: impl AsRef<str>) -> Vec<SwaggerUiAsset> {
+    vec![SwaggerUiAsset {
+        path: "/index.html",
+        content_type: "text/html; charset=utf-8",
+        body: swagger_ui_index_html(spec_url),
+    }]
+}
+
+/// Build the Swagger UI HTML shell for a spec URL.
+pub fn swagger_ui_index_html(spec_url: impl AsRef<str>) -> String {
+    let spec_url = normalize_spec_url(spec_url.as_ref());
+
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nivasa API Docs</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui.css">
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
+  <script>
+    window.ui = SwaggerUIBundle({{
+      url: "{spec_url}",
+      dom_id: '#swagger-ui',
+      deepLinking: true,
+      presets: [SwaggerUIBundle.presets.apis],
+      layout: "BaseLayout"
+    }});
+  </script>
+</body>
+</html>"#
+    )
+}
+
 fn normalize_openapi_path(path: &str) -> String {
     let trimmed = path.trim();
     let trimmed = if trimmed.is_empty() { "/" } else { trimmed };
@@ -312,3 +362,11 @@ fn schema_ref(schema_name: &str) -> String {
     format!("#/components/schemas/{schema_name}")
 }
 
+fn normalize_spec_url(spec_url: &str) -> String {
+    let trimmed = spec_url.trim();
+    if trimmed.is_empty() {
+        "/api/docs/openapi.json".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
