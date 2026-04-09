@@ -1,0 +1,5 @@
+error: unknown `#[websocket_gateway]` key `room`; expected `path` or `namespace`
+ --> tests/trybuild/websocket_gateway_invalid_args.rs:3:36
+  |
+3 | #[websocket_gateway({ path: "/ws", room: "/chat" })]
+  |                                    ^^^^
