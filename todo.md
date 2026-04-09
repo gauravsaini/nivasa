@@ -899,7 +899,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 7.1.4 — WebSocket + Guards/Pipes/Interceptors
 - [x] Support guards on WebSocket gateway methods
 - [x] Support pipes on message body extraction
-- [ ] Support interceptors on WebSocket handlers
+- [x] Support interceptors on WebSocket handlers
 
 #### 7.1.5 — WebSocket Tests
 - [x] Test WebSocket connection and handshake
