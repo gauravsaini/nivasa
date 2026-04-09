@@ -8,3 +8,4 @@ license.workspace = true
 
 [dependencies]
 nivasa-common = { path = "../nivasa-common" }
+tokio-tungstenite = "0.27"

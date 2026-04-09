@@ -27,6 +27,22 @@ pub trait WebSocketAdapter: Send + Sync + 'static {}
 
 impl<T> WebSocketAdapter for T where T: Send + Sync + 'static {}
 
+/// Default websocket adapter backed by `tokio-tungstenite`.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct DefaultWebSocketAdapter;
+
+impl DefaultWebSocketAdapter {
+    /// Create default adapter shell.
+    pub const fn new() -> Self {
+        Self
+    }
+
+    /// Return backend role used by this adapter shell.
+    pub fn backend_role(&self) -> tokio_tungstenite::tungstenite::protocol::Role {
+        tokio_tungstenite::tungstenite::protocol::Role::Server
+    }
+}
+
 /// Hook for gateways that want a callback when the websocket runtime starts.
 pub trait OnGatewayInit: Send + Sync + 'static {
     fn on_gateway_init(&self) {}
@@ -252,8 +268,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        ClientRoomMembership, NamespaceRegistry, OnGatewayConnection, OnGatewayDisconnect,
-        OnGatewayInit, RoomRegistry, WebSocketAdapter, WebSocketGateway,
+        ClientRoomMembership, DefaultWebSocketAdapter, NamespaceRegistry, OnGatewayConnection,
+        OnGatewayDisconnect, OnGatewayInit, RoomRegistry, WebSocketAdapter, WebSocketGateway,
     };
     use std::sync::{
         atomic::{AtomicBool, Ordering},
@@ -286,6 +302,17 @@ mod tests {
         fn assert_adapter<T: WebSocketAdapter>() {}
 
         assert_adapter::<DemoAdapter>();
+        assert_adapter::<DefaultWebSocketAdapter>();
+    }
+
+    #[test]
+    fn default_websocket_adapter_reports_tokio_tungstenite_backend_role() {
+        let adapter = DefaultWebSocketAdapter::new();
+
+        assert_eq!(
+            adapter.backend_role(),
+            tokio_tungstenite::tungstenite::protocol::Role::Server
+        );
     }
 
     impl OnGatewayInit for DemoLifecycleGateway {
