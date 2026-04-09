@@ -12,6 +12,7 @@ use std::any::TypeId;
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::str::FromStr;
 
 /// Bootstrap-only options for the config module dynamic surface.
 ///
@@ -108,8 +109,16 @@ impl ConfigService {
     }
 
     /// Borrow a raw config value by key.
-    pub fn get(&self, key: &str) -> Option<&str> {
+    pub fn get_raw(&self, key: &str) -> Option<&str> {
         self.values.get(key).map(|value| value.as_str())
+    }
+
+    /// Borrow and parse a typed config value by key.
+    pub fn get<T>(&self, key: &str) -> Option<T>
+    where
+        T: FromStr,
+    {
+        self.get_raw(key)?.parse().ok()
     }
 
     /// Borrow all config values as a read-only map.
@@ -430,10 +439,24 @@ mod tests {
             ("PORT".to_string(), "3000".to_string()),
         ]));
 
-        assert_eq!(service.get("HOST"), Some("127.0.0.1"));
-        assert_eq!(service.get("PORT"), Some("3000"));
-        assert_eq!(service.get("MISSING"), None);
+        assert_eq!(service.get_raw("HOST"), Some("127.0.0.1"));
+        assert_eq!(service.get_raw("PORT"), Some("3000"));
+        assert_eq!(service.get_raw("MISSING"), None);
         assert_eq!(service.values().len(), 2);
+    }
+
+    #[test]
+    fn config_service_get_coerces_typed_values() {
+        let service = ConfigService::from_values(BTreeMap::from([
+            ("PORT".to_string(), "3000".to_string()),
+            ("FEATURE_ENABLED".to_string(), "true".to_string()),
+            ("BROKEN_PORT".to_string(), "abc".to_string()),
+        ]));
+
+        assert_eq!(service.get::<i32>("PORT"), Some(3000));
+        assert_eq!(service.get::<bool>("FEATURE_ENABLED"), Some(true));
+        assert_eq!(service.get::<i32>("MISSING"), None);
+        assert_eq!(service.get::<i32>("BROKEN_PORT"), None);
     }
 
     #[test]
