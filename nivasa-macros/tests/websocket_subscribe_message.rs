@@ -6,7 +6,9 @@ struct ChatGateway;
 
 impl ChatGateway {
     #[subscribe_message("chat.join")]
-    fn on_join(&self) {}
+    fn on_join(&self, room: String) -> String {
+        format!("joined:{room}")
+    }
 }
 
 #[test]
@@ -15,6 +17,8 @@ fn subscribe_message_macro_emits_handler_metadata() {
         ChatGateway::__nivasa_subscribe_message_metadata_for_on_join(),
         ("on_join", "chat.join")
     );
+    let gateway = ChatGateway;
+    assert_eq!(gateway.on_join("general".to_string()), "joined:general");
 }
 
 #[test]
