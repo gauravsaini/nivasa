@@ -356,4 +356,22 @@ mod tests {
         assert!(namespaces.has_namespace("/admin"));
         assert!(namespaces.contains("/admin", "general", &"client-9"));
     }
+
+    #[test]
+    fn room_membership_targets_only_matching_room_and_namespace() {
+        let mut namespaces = NamespaceRegistry::new();
+
+        assert!(namespaces.join("/chat", "general", "client-1"));
+        assert!(namespaces.join("/chat", "general", "client-2"));
+        assert!(namespaces.join("/chat", "ops", "client-3"));
+        assert!(namespaces.join("/admin", "general", "client-4"));
+
+        let mut recipients = namespaces.members("/chat", "general");
+        recipients.sort_unstable();
+
+        assert_eq!(recipients, vec!["client-1", "client-2"]);
+        assert!(!recipients.contains(&"client-3"));
+        assert!(!recipients.contains(&"client-4"));
+        assert!(namespaces.members("/chat", "missing").is_empty());
+    }
 }

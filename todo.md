@@ -905,7 +905,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test WebSocket connection and handshake
 - [ ] Test message subscription and handler invocation
 - [ ] Test broadcast to all connected clients
-- [ ] Test room-based messaging
+- [x] Test room-based messaging
 - [x] Test disconnection cleanup
 
 ### 7.2 — Event Emitter Module
