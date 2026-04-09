@@ -22,6 +22,9 @@ nivasa-config = { path = "../nivasa-config", optional = true }
 nivasa-validation = { path = "../nivasa-validation", optional = true }
 nivasa-websocket = { path = "../nivasa-websocket", optional = true }
 
+[dev-dependencies]
+openapiv3 = "2.2"
+
 [features]
 default = []
 config = ["dep:nivasa-config"]

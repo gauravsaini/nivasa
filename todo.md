@@ -965,7 +965,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test generated spec includes all routes with correct methods
 - [x] Test spec includes request/response schemas
 - [x] Test Swagger UI endpoint serves HTML
-- [ ] Test spec validates against OpenAPI 3.0 spec
+- [x] Test spec validates against OpenAPI 3.0 spec
 
 ### 7.6 — GraphQL Support (Optional, Deferred)
 
