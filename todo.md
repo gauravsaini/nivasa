@@ -880,7 +880,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `#[websocket_gateway("/ws")]` attribute macro
 - [ ] Implement `#[websocket_gateway({ path: "/ws", namespace: "/chat" })]`
 - [x] Define `WebSocketGateway` trait
-- [ ] Implement connection lifecycle events: `OnGatewayInit`, `OnGatewayConnection`, `OnGatewayDisconnect`
+- [x] Implement connection lifecycle events: `OnGatewayInit`, `OnGatewayConnection`, `OnGatewayDisconnect`
 - [ ] Implement room/namespace support
 
 #### 7.1.2 — WebSocket Decorators
