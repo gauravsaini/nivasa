@@ -891,7 +891,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 7.1.3 — WebSocket Adapter
 - [x] Define `WebSocketAdapter` trait for pluggable backends
 - [x] Implement default adapter using `tokio-tungstenite`
-- [ ] Implement `server.emit("event", data)` — broadcast to all
+- [x] Implement `server.emit("event", data)` — broadcast to all
 - [ ] Implement `server.to("room").emit("event", data)` — emit to room
 - [x] Implement `client.emit("event", data)` — emit to specific client
 - [x] Implement `client.join("room")` / `client.leave("room")`
@@ -959,7 +959,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 7.5.2 — Swagger UI
 - [x] Bundle Swagger UI static assets (or reference CDN)
 - [ ] Serve Swagger UI at configurable path (default: `/api/docs`)
-- [ ] Support customizing title, description, version in Swagger UI
+- [x] Support customizing title, description, version in Swagger UI
 
 #### 7.5.3 — OpenAPI Tests
 - [ ] Test generated spec includes all routes with correct methods

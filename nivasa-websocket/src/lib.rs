@@ -169,6 +169,18 @@ pub struct ClientEventHandle<'a, ClientId> {
     client: ClientId,
 }
 
+/// Minimal in-memory broadcast registry for `server.emit("event", data)`.
+#[derive(Debug, Clone)]
+pub struct ServerEventRegistry<ClientId> {
+    clients: HashMap<ClientId, Vec<(String, String)>>,
+}
+
+/// Server-scoped event broadcaster for connected clients.
+#[derive(Debug)]
+pub struct ServerEventHandle<'a, ClientId> {
+    registry: &'a mut ServerEventRegistry<ClientId>,
+}
+
 impl<ClientId> NamespaceRegistry<ClientId>
 where
     ClientId: Clone + Eq + Hash,
@@ -291,6 +303,52 @@ where
     }
 }
 
+impl<ClientId> ServerEventRegistry<ClientId>
+where
+    ClientId: Clone + Eq + Hash,
+{
+    /// Create an empty server event registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a connected client and return a broadcast handle.
+    pub fn connect(&mut self, client: ClientId) {
+        self.clients.entry(client).or_default();
+    }
+
+    /// Disconnect a client and drop its inbox.
+    pub fn disconnect(&mut self, client: &ClientId) -> bool {
+        self.clients.remove(client).is_some()
+    }
+
+    /// Return a server-scoped broadcast handle.
+    pub fn server(&mut self) -> ServerEventHandle<'_, ClientId> {
+        ServerEventHandle { registry: self }
+    }
+
+    /// Return recorded events for a specific connected client.
+    pub fn events_for(&self, client: &ClientId) -> Vec<(String, String)> {
+        self.clients.get(client).cloned().unwrap_or_default()
+    }
+
+    /// Return all connected client ids.
+    pub fn connected_clients(&self) -> Vec<ClientId> {
+        self.clients.keys().cloned().collect()
+    }
+}
+
+impl<ClientId> Default for ServerEventRegistry<ClientId>
+where
+    ClientId: Clone + Eq + Hash,
+{
+    fn default() -> Self {
+        Self {
+            clients: HashMap::new(),
+        }
+    }
+}
+
 impl<'a, ClientId> ClientRoomMembership<'a, ClientId>
 where
     ClientId: Clone + Eq + Hash,
@@ -334,12 +392,31 @@ where
     }
 }
 
+impl<'a, ClientId> ServerEventHandle<'a, ClientId>
+where
+    ClientId: Clone + Eq + Hash,
+{
+    /// Broadcast one event to every connected client.
+    pub fn emit(&mut self, event: impl Into<String>, data: impl Into<String>) -> usize {
+        let event = event.into();
+        let data = data.into();
+        let mut delivered = 0;
+
+        for inbox in self.registry.clients.values_mut() {
+            inbox.push((event.clone(), data.clone()));
+            delivered += 1;
+        }
+
+        delivered
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         ClientEventRegistry, ClientRoomMembership, DefaultWebSocketAdapter, NamespaceRegistry,
-        OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit, RoomRegistry, WebSocketAdapter,
-        WebSocketGateway,
+        OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit, RoomRegistry, ServerEventRegistry,
+        WebSocketAdapter, WebSocketGateway,
     };
     use std::sync::{
         atomic::{AtomicBool, Ordering},
@@ -416,6 +493,34 @@ mod tests {
             "message".to_string(),
             "other".to_string()
         )));
+    }
+
+    #[test]
+    fn server_event_registry_broadcasts_to_all_connected_clients() {
+        let mut registry = ServerEventRegistry::new();
+        registry.connect("client-1");
+        registry.connect("client-2");
+        registry.connect("client-3");
+
+        let delivered = {
+            let mut server = registry.server();
+            server.emit("notice", "hello")
+        };
+
+        assert_eq!(delivered, 3);
+        assert_eq!(
+            registry.events_for(&"client-1"),
+            vec![("notice".to_string(), "hello".to_string())]
+        );
+        assert_eq!(
+            registry.events_for(&"client-2"),
+            vec![("notice".to_string(), "hello".to_string())]
+        );
+        assert_eq!(
+            registry.events_for(&"client-3"),
+            vec![("notice".to_string(), "hello".to_string())]
+        );
+        assert_eq!(registry.connected_clients().len(), 3);
     }
 
     impl OnGatewayInit for DemoLifecycleGateway {
