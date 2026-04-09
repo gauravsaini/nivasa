@@ -531,6 +531,19 @@ mod tests {
     }
 
     #[test]
+    fn load_env_supports_a_custom_env_file_path() {
+        let path = write_temp_env_file("NIVASA_CONFIG_TEST_CUSTOM=enabled\n");
+        let options = ConfigOptions::new().with_env_file_path(path.to_string_lossy().to_string());
+
+        let loaded = ConfigModule::load_env(&options).expect("custom env path should load");
+
+        assert_eq!(
+            loaded.get("NIVASA_CONFIG_TEST_CUSTOM").map(String::as_str),
+            Some("enabled")
+        );
+    }
+
+    #[test]
     fn config_options_support_multiple_env_file_paths() {
         let options = ConfigOptions::new()
             .with_env_file_paths([" .env ", "", " .env.local ", "   ", ".env.production"]);
@@ -613,6 +626,19 @@ mod tests {
         assert_eq!(
             loaded.get("NIVASA_CONFIG_TEST_PORT").map(String::as_str),
             Some("3000")
+        );
+    }
+
+    #[test]
+    fn load_env_reads_a_dotenv_file() {
+        let path = write_temp_env_file("NIVASA_CONFIG_TEST_NAME=from_dotenv\n");
+        let options = ConfigOptions::new().with_env_file_path(path.to_string_lossy().to_string());
+
+        let loaded = ConfigModule::load_env(&options).expect(".env file should load");
+
+        assert_eq!(
+            loaded.get("NIVASA_CONFIG_TEST_NAME").map(String::as_str),
+            Some("from_dotenv")
         );
     }
 

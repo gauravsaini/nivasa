@@ -756,7 +756,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support multiple env files: `.env`, `.env.local`, `.env.development`, `.env.production`
 - [x] Support env variable override order: process env > .env.local > .env.{NODE_ENV} > .env
 - [x] Support `expand_variables: true` (variable interpolation in .env: `URL=$HOST:$PORT`)
-- [ ] Support custom env file path
+- [x] Support custom env file path
 
 #### 6.1.3 — ConfigService
 - [x] Implement `ConfigService` as injectable provider
@@ -773,8 +773,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Support default values in schema
 
 #### 6.1.5 — Config Tests
-- [ ] Test loading from .env file
-- [ ] Test process env variable overrides .env
+- [x] Test loading from .env file
+- [x] Test process env variable overrides .env
 - [ ] Test `get::<i32>` type coercion
 - [ ] Test `get::<bool>` type coercion
 - [x] Test `get_or_throw` with missing key → startup error
