@@ -1,9 +1,10 @@
 # Examples
 
-Placeholder example applications for the Nivasa framework.
+Example applications for the Nivasa framework.
 
 ## Layout
 
+- `hello-world/`
 - `basic/`
 - `auth/`
 - `websocket/`
