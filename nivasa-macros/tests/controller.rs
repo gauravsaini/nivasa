@@ -16,6 +16,7 @@ fn controller_macro_validation() {
     t.pass("tests/trybuild/controller_api_operation_pass.rs");
     t.pass("tests/trybuild/controller_api_param_pass.rs");
     t.pass("tests/trybuild/controller_api_response_pass.rs");
+    t.pass("tests/trybuild/controller_api_body_pass.rs");
     t.pass("tests/trybuild/controller_parameter_extractors_pass.rs");
     t.pass("tests/trybuild/controller_parameter_pipes_pass.rs");
     t.pass("tests/trybuild/controller_method_pipes_pass.rs");

@@ -58,6 +58,7 @@ struct ControllerMethodBinding {
     operation: Option<OperationBinding>,
     api_params: Vec<ApiParamBinding>,
     api_responses: Vec<ApiResponseBinding>,
+    api_body: Option<Path>,
     response: Option<ResponseBinding>,
 }
 
@@ -984,6 +985,30 @@ fn parse_api_response_binding(attr: &Attribute) -> Result<Option<ApiResponseBind
     }))
 }
 
+fn parse_api_body_binding(attr: &Attribute) -> Result<Option<Path>> {
+    if !attr_path_matches(attr, "api_body") {
+        return Ok(None);
+    }
+
+    let mut ty: Option<Path> = None;
+
+    attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("type") {
+            if ty.is_some() {
+                return Err(meta.error("duplicate `type` entry in `#[api_body]`"));
+            }
+            ty = Some(meta.value()?.parse()?);
+            return Ok(());
+        }
+
+        Err(meta.error("expected `type = ...` in `#[api_body]`"))
+    })?;
+
+    let ty = ty.ok_or_else(|| Error::new(attr.span(), "`#[api_body]` requires a `type` entry"))?;
+
+    Ok(Some(ty))
+}
+
 fn parse_api_operation_binding(attr: &Attribute) -> Result<Option<OperationBinding>> {
     if !attr_path_matches(attr, "api_operation") {
         return Ok(None);
@@ -1463,6 +1488,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         let mut operation_binding: Option<OperationBinding> = None;
         let mut api_param_bindings = Vec::new();
         let mut api_response_bindings = Vec::new();
+        let mut api_body_binding: Option<Path> = None;
         let mut retained_attrs = Vec::new();
 
         for attr in method.attrs.drain(..) {
@@ -1490,24 +1516,35 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                                         Some(param) => api_param_bindings.push(param),
                                         None => match parse_api_response_binding(&attr)? {
                                             Some(response) => api_response_bindings.push(response),
-                                            None => match parse_route_binding(&attr)? {
-                                                Some(binding) => {
-                                                    if method_route.is_some() {
+                                            None => match parse_api_body_binding(&attr)? {
+                                                Some(body) => {
+                                                    if api_body_binding.is_some() {
                                                         return Err(Error::new(
                                                             attr.span(),
-                                                            "a controller method can only use one HTTP method attribute",
+                                                            "a controller method can only use one `#[api_body]` attribute",
                                                         ));
                                                     }
-                                                    method_route = Some(binding);
+                                                    api_body_binding = Some(body);
                                                 }
-                                                None => match parse_pipe_binding(&attr)? {
-                                                    Some(mut pipes) => {
-                                                        method_pipe_attr_count += 1;
-                                                        pipe_bindings.append(&mut pipes);
+                                                None => match parse_route_binding(&attr)? {
+                                                    Some(binding) => {
+                                                        if method_route.is_some() {
+                                                            return Err(Error::new(
+                                                                attr.span(),
+                                                                "a controller method can only use one HTTP method attribute",
+                                                            ));
+                                                        }
+                                                        method_route = Some(binding);
                                                     }
-                                                    None => match parse_response_binding(&attr)? {
-                                                        Some(binding) => response_bindings.push(binding),
-                                                        None => retained_attrs.push(attr),
+                                                    None => match parse_pipe_binding(&attr)? {
+                                                        Some(mut pipes) => {
+                                                            method_pipe_attr_count += 1;
+                                                            pipe_bindings.append(&mut pipes);
+                                                        }
+                                                        None => match parse_response_binding(&attr)? {
+                                                            Some(binding) => response_bindings.push(binding),
+                                                            None => retained_attrs.push(attr),
+                                                        },
                                                     },
                                                 },
                                             },
@@ -1540,7 +1577,8 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             || !metadata_bindings.is_empty()
             || operation_binding.is_some()
             || !api_param_bindings.is_empty()
-            || !api_response_bindings.is_empty();
+            || !api_response_bindings.is_empty()
+            || api_body_binding.is_some();
         let response = if response_bindings.is_empty() {
             None
         } else {
@@ -1599,6 +1637,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                 operation: operation_binding,
                 api_params: api_param_bindings,
                 api_responses: api_response_bindings,
+                api_body: api_body_binding,
                 response,
             });
         }
@@ -1836,6 +1875,18 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         }
     });
 
+    let api_body_entries = methods.iter().filter_map(|method| {
+        let body = method.api_body.as_ref()?;
+        let handler = &method.handler;
+
+        Some(quote! {
+            (
+                stringify!(#handler),
+                stringify!(#body)
+            )
+        })
+    });
+
     let operation_entries = methods.iter().map(|method| {
         let handler = &method.handler;
         let summary = method
@@ -1954,6 +2005,13 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             ) -> Vec<(&'static str, Vec<(u16, &'static str, &'static str)>)> {
                 vec![
                     #(#api_response_entries),*
+                ]
+            }
+
+            pub fn __nivasa_controller_api_body_metadata(
+            ) -> Vec<(&'static str, &'static str)> {
+                vec![
+                    #(#api_body_entries),*
                 ]
             }
 

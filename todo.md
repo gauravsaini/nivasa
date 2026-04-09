@@ -950,7 +950,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `#[api_tags("Users")]` decorator on controllers
 - [x] Implement `#[api_operation(summary = "Get all users")]` on handlers
 - [x] Implement `#[api_param(name = "id", description = "User ID")]`
-- [ ] Implement `#[api_body(type = CreateUserDto)]`
+- [x] Implement `#[api_body(type = CreateUserDto)]`
 - [x] Implement `#[api_response(status = 200, type = User, description = "Success")]`
 - [ ] Implement `#[api_bearer_auth]` for auth documentation
 - [ ] Auto-generate OpenAPI 3.0 spec from controller/DTO metadata
