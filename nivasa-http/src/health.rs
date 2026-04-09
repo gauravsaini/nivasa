@@ -62,6 +62,17 @@ impl<P> DatabaseHealthIndicator<P> {
     }
 }
 
+/// Probe-backed HTTP health indicator.
+pub struct HttpHealthIndicator<P> {
+    probe: P,
+}
+
+impl<P> HttpHealthIndicator<P> {
+    pub fn new(probe: P) -> Self {
+        Self { probe }
+    }
+}
+
 #[async_trait]
 impl HealthIndicator for DiskHealthIndicator {
     async fn check(&self) -> HealthIndicatorResult {
@@ -96,6 +107,33 @@ where
 
         let details = serde_json::json!({
             "name": "database",
+            "status": match status {
+                HealthStatus::Up => "up",
+                HealthStatus::Down => "down",
+            },
+        });
+
+        match status {
+            HealthStatus::Up => HealthIndicatorResult::up().with_details(details),
+            HealthStatus::Down => HealthIndicatorResult::down().with_details(details),
+        }
+    }
+}
+
+#[async_trait]
+impl<P> HealthIndicator for HttpHealthIndicator<P>
+where
+    P: Fn() -> bool + Send + Sync,
+{
+    async fn check(&self) -> HealthIndicatorResult {
+        let status = if (self.probe)() {
+            HealthStatus::Up
+        } else {
+            HealthStatus::Down
+        };
+
+        let details = serde_json::json!({
+            "name": "http",
             "status": match status {
                 HealthStatus::Up => "up",
                 HealthStatus::Down => "down",
@@ -147,7 +185,7 @@ impl HealthCheckService {
 mod tests {
     use super::{
         DatabaseHealthIndicator, DiskHealthIndicator, HealthCheckService, HealthIndicator,
-        HealthIndicatorResult, HealthStatus, MemoryHealthIndicator,
+        HealthIndicatorResult, HealthStatus, HttpHealthIndicator, MemoryHealthIndicator,
     };
     use async_trait::async_trait;
     use serde_json::json;
@@ -209,6 +247,21 @@ mod tests {
             Some(json!({
                 "name": "database",
                 "status": "up"
+            }))
+        );
+    }
+
+    #[tokio::test]
+    async fn http_indicator_uses_probe_result_and_stable_details() {
+        let indicator = HttpHealthIndicator::new(|| false);
+        let result = indicator.check().await;
+
+        assert_eq!(result.status, HealthStatus::Down);
+        assert_eq!(
+            result.details,
+            Some(json!({
+                "name": "http",
+                "status": "down"
             }))
         );
     }

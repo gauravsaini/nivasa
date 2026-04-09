@@ -10,7 +10,8 @@ pub mod upload;
 pub use http::header::HeaderMap;
 pub use health::{
     DatabaseHealthIndicator, DiskHealthIndicator, HealthCheckResult, HealthCheckService,
-    HealthIndicator, HealthIndicatorResult, HealthStatus, MemoryHealthIndicator,
+    HealthIndicator, HealthIndicatorResult, HealthStatus, HttpHealthIndicator,
+    MemoryHealthIndicator,
 };
 pub use server::{CorsOptions, GlobalFilterBinding};
 

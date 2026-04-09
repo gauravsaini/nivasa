@@ -940,7 +940,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement health indicators: `DiskHealthIndicator`, `MemoryHealthIndicator`
 - [x] Define `HealthIndicator` trait for custom health checks
 - [x] Support database health indicator (ping DB connection)
-- [ ] Support HTTP health indicator (ping external service)
+- [x] Support HTTP health indicator (ping external service)
 - [ ] Test health endpoint returns correct status (up/down)
 - [ ] Test aggregated health with multiple indicators
 
