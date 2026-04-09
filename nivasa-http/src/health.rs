@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use serde_json::Value;
+use std::sync::Arc;
 
 /// Health status reported by a custom health indicator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,11 +43,46 @@ pub trait HealthIndicator: Send + Sync {
     async fn check(&self) -> HealthIndicatorResult;
 }
 
+/// Aggregate result returned by [`HealthCheckService`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct HealthCheckResult {
+    pub status: HealthStatus,
+    pub details: Vec<HealthIndicatorResult>,
+}
+
+/// Runs a list of health indicators and aggregates their status.
+#[derive(Clone, Default)]
+pub struct HealthCheckService {
+    indicators: Vec<Arc<dyn HealthIndicator>>,
+}
+
+impl HealthCheckService {
+    pub fn new(indicators: Vec<Arc<dyn HealthIndicator>>) -> Self {
+        Self { indicators }
+    }
+
+    pub async fn check(&self) -> HealthCheckResult {
+        let mut details = Vec::with_capacity(self.indicators.len());
+        let mut status = HealthStatus::Up;
+
+        for indicator in &self.indicators {
+            let result = indicator.check().await;
+            if matches!(result.status, HealthStatus::Down) {
+                status = HealthStatus::Down;
+            }
+            details.push(result);
+        }
+
+        HealthCheckResult { status, details }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{HealthIndicator, HealthIndicatorResult, HealthStatus};
+    use super::{HealthCheckService, HealthIndicator, HealthIndicatorResult, HealthStatus};
     use async_trait::async_trait;
     use serde_json::json;
+    use std::sync::Arc;
 
     struct DatabaseIndicator;
 
@@ -91,5 +127,28 @@ mod tests {
 
         assert_eq!(result.status, HealthStatus::Down);
         assert_eq!(result.details, None);
+    }
+
+    #[tokio::test]
+    async fn health_check_service_aggregates_status_and_details() {
+        let service = HealthCheckService::new(vec![
+            Arc::new(DatabaseIndicator),
+            Arc::new(FailingIndicator),
+        ]);
+
+        let result = service.check().await;
+
+        assert_eq!(result.status, HealthStatus::Down);
+        assert_eq!(result.details.len(), 2);
+        assert_eq!(result.details[0].status, HealthStatus::Up);
+        assert_eq!(
+            result.details[0].details,
+            Some(json!({
+                "name": "database",
+                "latency_ms": 12
+            }))
+        );
+        assert_eq!(result.details[1].status, HealthStatus::Down);
+        assert_eq!(result.details[1].details, None);
     }
 }

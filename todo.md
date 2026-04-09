@@ -935,7 +935,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 7.4 — Health Checks
 
 - [ ] Implement `TerminusModule` (health check module)
-- [ ] Implement `HealthCheckService` with `check()` method
+- [x] Implement `HealthCheckService` with `check()` method
 - [ ] Implement `#[health_check]` on controller method (typically GET /health)
 - [ ] Implement health indicators: `DiskHealthIndicator`, `MemoryHealthIndicator`
 - [x] Define `HealthIndicator` trait for custom health checks
