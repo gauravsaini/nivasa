@@ -18,6 +18,7 @@ use std::any::TypeId;
 pub struct ConfigOptions {
     pub is_global: bool,
     pub env_file_paths: Vec<String>,
+    pub ignore_env_file: bool,
 }
 
 impl ConfigOptions {
@@ -26,6 +27,7 @@ impl ConfigOptions {
         Self {
             is_global: false,
             env_file_paths: Vec::new(),
+            ignore_env_file: false,
         }
     }
 
@@ -56,6 +58,12 @@ impl ConfigOptions {
             .map(normalize_env_file_path)
             .filter(|path| !path.is_empty())
             .collect();
+        self
+    }
+
+    /// Ignore `.env` files and rely on process environment only.
+    pub const fn with_ignore_env_file(mut self, ignore_env_file: bool) -> Self {
+        self.ignore_env_file = ignore_env_file;
         self
     }
 }
@@ -215,6 +223,39 @@ mod tests {
         );
 
         assert_eq!(options.env_file_paths, vec![".env", ".env.test"]);
+        assert_eq!(
+            module.merged_metadata().providers,
+            vec![TypeId::of::<ConfigOptionsProvider>()]
+        );
+    }
+
+    #[test]
+    fn config_options_support_ignore_env_file_flag() {
+        let options = ConfigOptions::new().with_ignore_env_file(true);
+
+        assert!(options.ignore_env_file);
+    }
+
+    #[test]
+    fn for_root_preserves_ignore_env_file_options_surface() {
+        let options = ConfigOptions::new().with_ignore_env_file(true);
+        let module = ConfigModule::for_root(options.clone());
+
+        assert!(options.ignore_env_file);
+        assert_eq!(
+            module.merged_metadata().providers,
+            vec![TypeId::of::<ConfigOptionsProvider>()]
+        );
+    }
+
+    #[test]
+    fn for_feature_preserves_ignore_env_file_options_surface() {
+        let options = ConfigOptions::new().with_ignore_env_file(true);
+        let module = <ConfigModule as nivasa_core::module::ConfigurableModule>::for_feature(
+            options.clone(),
+        );
+
+        assert!(options.ignore_env_file);
         assert_eq!(
             module.merged_metadata().providers,
             vec![TypeId::of::<ConfigOptionsProvider>()]
