@@ -14,10 +14,17 @@ use nivasa_guards::Guard;
 use nivasa_interceptors::Interceptor;
 use nivasa_pipes::Pipe;
 use nivasa_routing::{RouteDispatchError, RouteMethod};
+use crate::openapi::{
+    OpenApiComponents, OpenApiDocument, OpenApiMediaType, OpenApiOperation,
+    OpenApiParameter, OpenApiRequestBody, OpenApiResponse, OpenApiSecurityRequirement,
+};
+use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+
+const DEFAULT_OPENAPI_SPEC_PATH: &str = "/api/docs/openapi.json";
 
 /// Supported API versioning strategies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -172,6 +179,7 @@ impl Default for ServerOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppBootstrapConfig {
     pub server: ServerOptions,
+    openapi_spec_path: String,
 }
 
 /// Minimal application shell for the umbrella crate.
@@ -309,7 +317,10 @@ impl<T> App<T> {
 impl AppBootstrapConfig {
     /// Create bootstrap config from server options.
     pub fn new(server: ServerOptions) -> Self {
-        Self { server }
+        Self {
+            server,
+            openapi_spec_path: DEFAULT_OPENAPI_SPEC_PATH.to_string(),
+        }
     }
 
     /// Expose the global route prefix for bootstrap-time route registration.
@@ -324,6 +335,33 @@ impl AppBootstrapConfig {
     /// existing server configuration boundary.
     pub fn versioning(&self) -> Option<&VersioningOptions> {
         self.server.versioning.as_ref()
+    }
+
+    /// Path where the OpenAPI JSON document is served.
+    pub fn openapi_spec_path(&self) -> &str {
+        &self.openapi_spec_path
+    }
+
+    /// Override OpenAPI JSON path.
+    pub fn with_openapi_spec_path(mut self, path: impl Into<String>) -> Self {
+        let path = path.into().trim().to_string();
+        self.openapi_spec_path = if path.is_empty() {
+            DEFAULT_OPENAPI_SPEC_PATH.to_string()
+        } else if path.starts_with('/') {
+            path
+        } else {
+            format!("/{path}")
+        };
+        self
+    }
+
+    /// Register an OpenAPI JSON endpoint using the configured path.
+    pub fn serve_openapi_spec(
+        &self,
+        document: &OpenApiDocument,
+    ) -> Result<NivasaServerBuilder, RouteDispatchError> {
+        self.server_builder()
+            .openapi_spec_json(self.openapi_spec_path.clone(), openapi_document_to_value(document))
     }
 
     /// Attach versioning configuration at bootstrap time.
@@ -464,6 +502,305 @@ impl Default for AppBootstrapConfig {
 impl From<ServerOptions> for AppBootstrapConfig {
     fn from(server: ServerOptions) -> Self {
         Self::new(server)
+    }
+}
+
+fn openapi_document_to_value(document: &OpenApiDocument) -> Value {
+    Value::Object(Map::from_iter([
+        ("openapi".to_string(), Value::String(document.openapi.clone())),
+        ("info".to_string(), Value::Object(Map::from_iter([
+            (
+                "title".to_string(),
+                Value::String(document.info.title.clone()),
+            ),
+            (
+                "version".to_string(),
+                Value::String(document.info.version.clone()),
+            ),
+        ]))),
+        ("paths".to_string(), Value::Object(openapi_paths_to_value(&document.paths))),
+        (
+            "components".to_string(),
+            Value::Object(openapi_components_to_value(&document.components)),
+        ),
+    ]))
+}
+
+fn openapi_paths_to_value(
+    paths: &std::collections::BTreeMap<String, std::collections::BTreeMap<String, OpenApiOperation>>,
+) -> Map<String, Value> {
+    paths
+        .iter()
+        .map(|(path, operations)| {
+            (
+                path.clone(),
+                Value::Object(
+                    operations
+                        .iter()
+                        .map(|(method, operation)| {
+                            (method.clone(), openapi_operation_to_value(operation))
+                        })
+                        .collect(),
+                ),
+            )
+        })
+        .collect()
+}
+
+fn openapi_operation_to_value(operation: &OpenApiOperation) -> Value {
+    Value::Object(Map::from_iter([
+        (
+            "tags".to_string(),
+            Value::Array(
+                operation
+                    .tags
+                    .iter()
+                    .cloned()
+                    .map(Value::String)
+                    .collect(),
+            ),
+        ),
+        (
+            "summary".to_string(),
+            operation
+                .summary
+                .as_ref()
+                .map(|summary| Value::String(summary.clone()))
+                .unwrap_or(Value::Null),
+        ),
+        (
+            "parameters".to_string(),
+            Value::Array(
+                operation
+                    .parameters
+                    .iter()
+                    .map(openapi_parameter_to_value)
+                    .collect(),
+            ),
+        ),
+        (
+            "requestBody".to_string(),
+            operation
+                .request_body
+                .as_ref()
+                .map(openapi_request_body_to_value)
+                .unwrap_or(Value::Null),
+        ),
+        (
+            "responses".to_string(),
+            Value::Object(
+                operation
+                    .responses
+                    .iter()
+                    .map(|(status, response)| (status.clone(), openapi_response_to_value(response)))
+                    .collect(),
+            ),
+        ),
+        (
+            "security".to_string(),
+            Value::Array(
+                operation
+                    .security
+                    .iter()
+                    .map(openapi_security_requirement_to_value)
+                    .collect(),
+            ),
+        ),
+    ]))
+}
+
+fn openapi_parameter_to_value(parameter: &OpenApiParameter) -> Value {
+    Value::Object(Map::from_iter([
+        ("name".to_string(), Value::String(parameter.name.clone())),
+        ("in".to_string(), Value::String(parameter.location.clone())),
+        (
+            "description".to_string(),
+            Value::String(parameter.description.clone()),
+        ),
+        ("required".to_string(), Value::Bool(parameter.required)),
+        (
+            "schema".to_string(),
+            Value::Object(Map::from_iter([(
+                "type".to_string(),
+                Value::String(parameter.schema.schema_type.clone()),
+            )])),
+        ),
+    ]))
+}
+
+fn openapi_request_body_to_value(request_body: &OpenApiRequestBody) -> Value {
+    Value::Object(Map::from_iter([
+        ("required".to_string(), Value::Bool(request_body.required)),
+        (
+            "content".to_string(),
+            Value::Object(
+                request_body
+                    .content
+                    .iter()
+                    .map(|(content_type, media_type)| {
+                        (content_type.clone(), openapi_media_type_to_value(media_type))
+                    })
+                    .collect(),
+            ),
+        ),
+    ]))
+}
+
+fn openapi_response_to_value(response: &OpenApiResponse) -> Value {
+    Value::Object(Map::from_iter([
+        (
+            "description".to_string(),
+            Value::String(response.description.clone()),
+        ),
+        (
+            "content".to_string(),
+            Value::Object(
+                response
+                    .content
+                    .iter()
+                    .map(|(content_type, media_type)| {
+                        (content_type.clone(), openapi_media_type_to_value(media_type))
+                    })
+                    .collect(),
+            ),
+        ),
+    ]))
+}
+
+fn openapi_media_type_to_value(media_type: &OpenApiMediaType) -> Value {
+    Value::Object(Map::from_iter([(
+        "schema".to_string(),
+        Value::Object(Map::from_iter([(
+            "$ref".to_string(),
+            Value::String(media_type.schema_ref.clone()),
+        )])),
+    )]))
+}
+
+fn openapi_security_requirement_to_value(requirement: &OpenApiSecurityRequirement) -> Value {
+    Value::Object(
+        requirement
+            .iter()
+            .map(|(name, scopes)| {
+                (
+                    name.clone(),
+                    Value::Array(scopes.iter().cloned().map(Value::String).collect()),
+                )
+            })
+            .collect(),
+    )
+}
+
+fn openapi_components_to_value(components: &OpenApiComponents) -> Map<String, Value> {
+    Map::from_iter([
+        (
+            "schemas".to_string(),
+            Value::Object(
+                components
+                    .schemas
+                    .iter()
+                    .map(|(name, schema)| {
+                        (
+                            name.clone(),
+                            Value::Object(Map::from_iter([(
+                                "type".to_string(),
+                                Value::String(schema.schema_type.clone()),
+                            )])),
+                        )
+                    })
+                    .collect(),
+            ),
+        ),
+        (
+            "securitySchemes".to_string(),
+            Value::Object(
+                components
+                    .security_schemes
+                    .iter()
+                    .map(|(name, scheme)| {
+                        (
+                            name.clone(),
+                            Value::Object(Map::from_iter([
+                                (
+                                    "type".to_string(),
+                                    Value::String(scheme.scheme_type.clone()),
+                                ),
+                                (
+                                    "scheme".to_string(),
+                                    Value::String(scheme.scheme.clone()),
+                                ),
+                                (
+                                    "bearerFormat".to_string(),
+                                    scheme
+                                        .bearer_format
+                                        .as_ref()
+                                        .map(|value| Value::String(value.clone()))
+                                        .unwrap_or(Value::Null),
+                                ),
+                            ])),
+                        )
+                    })
+                    .collect(),
+            ),
+        ),
+    ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::openapi::{build_openapi_document, OpenApiControllerMetadata, OpenApiControllerMetadataProvider};
+
+    struct DocsController;
+
+    impl OpenApiControllerMetadataProvider for DocsController {
+        fn routes() -> Vec<(&'static str, String, &'static str)> {
+            vec![("GET", "/docs/:id".to_string(), "show")]
+        }
+
+        fn api_tags() -> Vec<&'static str> {
+            vec!["Docs"]
+        }
+
+        fn api_operation_metadata() -> Vec<(&'static str, Option<&'static str>)> {
+            vec![("show", Some("Show docs"))]
+        }
+
+        fn api_param_metadata() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
+            vec![("show", vec![("id", "Doc ID")])]
+        }
+    }
+
+    #[test]
+    fn openapi_spec_path_defaults_and_overrides() {
+        let bootstrap = AppBootstrapConfig::default();
+        assert_eq!(bootstrap.openapi_spec_path(), DEFAULT_OPENAPI_SPEC_PATH);
+
+        let custom = bootstrap.with_openapi_spec_path("custom/openapi.json");
+        assert_eq!(custom.openapi_spec_path(), "/custom/openapi.json");
+    }
+
+    #[test]
+    fn openapi_document_bridge_preserves_core_shape() {
+        let document = build_openapi_document(
+            "Docs",
+            "1.0.0",
+            [OpenApiControllerMetadata::from_provider::<DocsController>()],
+        );
+
+        let value = openapi_document_to_value(&document);
+
+        assert_eq!(value["openapi"], "3.0.0");
+        assert_eq!(value["info"]["title"], "Docs");
+        assert_eq!(value["paths"]["/docs/{id}"]["get"]["summary"], "Show docs");
+        assert_eq!(
+            value["paths"]["/docs/{id}"]["get"]["parameters"][0]["name"],
+            "id"
+        );
+        assert_eq!(
+            value["paths"]["/docs/{id}"]["get"]["parameters"][0]["schema"]["type"],
+            "string"
+        );
     }
 }
 

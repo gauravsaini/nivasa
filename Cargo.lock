@@ -949,6 +949,7 @@ dependencies = [
  "nivasa-statechart",
  "nivasa-validation",
  "nivasa-websocket",
+ "serde_json",
 ]
 
 [[package]]

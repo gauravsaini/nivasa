@@ -558,6 +558,19 @@ impl NivasaServerBuilder {
         self
     }
 
+    /// Register a GET endpoint that serves a prebuilt OpenAPI document as JSON.
+    pub fn openapi_spec_json(
+        self,
+        path: impl Into<String>,
+        document: Value,
+    ) -> Result<Self, RouteDispatchError> {
+        let document = Arc::new(document);
+
+        self.route(RouteMethod::Get, path, move |_| {
+            NivasaResponse::json(document.as_ref().clone())
+        })
+    }
+
     /// Configure transport-side CORS handling with explicit origins, methods, and headers.
     pub fn cors_options(mut self, cors: CorsOptions) -> Self {
         self.cors = Some(cors);
