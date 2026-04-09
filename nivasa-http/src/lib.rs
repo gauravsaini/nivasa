@@ -2,11 +2,13 @@
 //!
 //! Nivasa framework HTTP primitives.
 
+mod health;
 mod pipeline;
 mod server;
 pub mod upload;
 
 pub use http::header::HeaderMap;
+pub use health::{HealthIndicator, HealthIndicatorResult, HealthStatus};
 pub use server::{CorsOptions, GlobalFilterBinding};
 
 use async_trait::async_trait;

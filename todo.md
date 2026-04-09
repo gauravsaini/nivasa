@@ -938,7 +938,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `HealthCheckService` with `check()` method
 - [ ] Implement `#[health_check]` on controller method (typically GET /health)
 - [ ] Implement health indicators: `DiskHealthIndicator`, `MemoryHealthIndicator`
-- [ ] Define `HealthIndicator` trait for custom health checks
+- [x] Define `HealthIndicator` trait for custom health checks
 - [ ] Support database health indicator (ping DB connection)
 - [ ] Support HTTP health indicator (ping external service)
 - [ ] Test health endpoint returns correct status (up/down)
