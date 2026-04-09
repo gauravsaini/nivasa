@@ -44,6 +44,5 @@ tokio-rustls = { version = "0.26", optional = true }
 nivasa-core = { path = "../nivasa-core" }
 nivasa-macros = { path = "../nivasa-macros" }
 nivasa-validation = { path = "../nivasa-validation" }
-rustls-pemfile = "2"
 tower-http = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt"] }

@@ -878,7 +878,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 7.1.1 — WebSocket Gateway
 - [x] Implement `#[websocket_gateway("/ws")]` attribute macro
-- [ ] Implement `#[websocket_gateway({ path: "/ws", namespace: "/chat" })]`
+- [x] Implement `#[websocket_gateway({ path: "/ws", namespace: "/chat" })]`
 - [x] Define `WebSocketGateway` trait
 - [x] Implement connection lifecycle events: `OnGatewayInit`, `OnGatewayConnection`, `OnGatewayDisconnect`
 - [x] Implement room/namespace support
@@ -1051,7 +1051,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] **SCXML compliance tests:** verify StatechartTracer log exactly matches expected transition sequence for each test scenario
 - [ ] Set up mutation testing (cargo-mutants) for critical paths
 - [x] Run `cargo clippy` with all warnings as errors
-- [ ] Run `cargo deny check` for license/vulnerability issues
+- [x] Run `cargo deny check` for license/vulnerability issues
 - [x] Run `cargo audit` for security advisories
 
 ### 10.2 — Benchmarking
