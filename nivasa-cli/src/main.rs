@@ -9,7 +9,13 @@ use statechart::{
     DiagramFormat,
 };
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+const DEFAULT_APP_STATECHART: &str = include_str!("../../statecharts/nivasa.application.scxml");
+const DEFAULT_MODULE_STATECHART: &str = include_str!("../../statecharts/nivasa.module.scxml");
+const DEFAULT_PROVIDER_STATECHART: &str = include_str!("../../statecharts/nivasa.provider.scxml");
+const DEFAULT_REQUEST_STATECHART: &str = include_str!("../../statecharts/nivasa.request.scxml");
 
 #[derive(Parser)]
 #[command(name = "nivasa", about = "CLI tool for the Nivasa framework")]
@@ -22,10 +28,70 @@ struct Cli {
 enum Commands {
     /// Display framework info
     Info,
+    /// Scaffold a new Nivasa project
+    New {
+        /// Project directory and crate name
+        project_name: String,
+    },
+    /// Generate framework files
+    #[command(visible_alias = "g")]
+    Generate {
+        #[command(subcommand)]
+        action: GenerateAction,
+    },
     /// Statechart operations
     Statechart {
         #[command(subcommand)]
         action: StatechartAction,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum GenerateAction {
+    /// Generate a module file
+    Module {
+        /// Module name
+        name: String,
+    },
+    /// Generate a controller file
+    Controller {
+        /// Controller name
+        name: String,
+    },
+    /// Generate a service file
+    Service {
+        /// Service name
+        name: String,
+    },
+    /// Generate a guard file
+    Guard {
+        /// Guard name
+        name: String,
+    },
+    /// Generate an interceptor file
+    Interceptor {
+        /// Interceptor name
+        name: String,
+    },
+    /// Generate a pipe file
+    Pipe {
+        /// Pipe name
+        name: String,
+    },
+    /// Generate a filter file
+    Filter {
+        /// Filter name
+        name: String,
+    },
+    /// Generate a middleware file
+    Middleware {
+        /// Middleware name
+        name: String,
+    },
+    /// Generate a resource bundle
+    Resource {
+        /// Resource name
+        name: String,
     },
 }
 
@@ -77,6 +143,18 @@ fn run() -> Result<(), String> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Info => info_command(),
+        Commands::New { project_name } => new_command(&project_name),
+        Commands::Generate { action } => match action {
+            GenerateAction::Module { name } => generate_module_command(&name),
+            GenerateAction::Controller { name } => generate_controller_command(&name),
+            GenerateAction::Service { name } => generate_service_command(&name),
+            GenerateAction::Guard { name } => generate_guard_command(&name),
+            GenerateAction::Interceptor { name } => generate_interceptor_command(&name),
+            GenerateAction::Pipe { name } => generate_pipe_command(&name),
+            GenerateAction::Filter { name } => generate_filter_command(&name),
+            GenerateAction::Middleware { name } => generate_middleware_command(&name),
+            GenerateAction::Resource { name } => generate_resource_command(&name),
+        },
         Commands::Statechart { action } => match action {
             StatechartAction::Validate { all, file } => validate_command(all, file),
             StatechartAction::Parity => parity_command(),
@@ -102,6 +180,69 @@ fn info_command() -> Result<(), String> {
     println!("Nivasa Framework v{}", env!("CARGO_PKG_VERSION"));
     println!("Rust {}", rust_version.trim());
     println!("OS {} {}", std::env::consts::OS, std::env::consts::ARCH);
+    Ok(())
+}
+
+fn new_command(project_name: &str) -> Result<(), String> {
+    scaffold_new_project(&std::env::current_dir().map_err(|err| err.to_string())?, project_name)?;
+    println!("created {}", project_name);
+    Ok(())
+}
+
+fn generate_module_command(name: &str) -> Result<(), String> {
+    let path = generate_module(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_controller_command(name: &str) -> Result<(), String> {
+    let path =
+        generate_controller(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_service_command(name: &str) -> Result<(), String> {
+    let path = generate_service(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_guard_command(name: &str) -> Result<(), String> {
+    let path = generate_guard(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_interceptor_command(name: &str) -> Result<(), String> {
+    let path =
+        generate_interceptor(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_pipe_command(name: &str) -> Result<(), String> {
+    let path = generate_pipe(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_filter_command(name: &str) -> Result<(), String> {
+    let path = generate_filter(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_middleware_command(name: &str) -> Result<(), String> {
+    let path =
+        generate_middleware(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
+    Ok(())
+}
+
+fn generate_resource_command(name: &str) -> Result<(), String> {
+    let path = generate_resource(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    println!("created {}", path.display());
     Ok(())
 }
 
@@ -215,4 +356,633 @@ fn inspect_command(host: &str, port: u16) -> Result<(), String> {
     let report = inspect_statechart(host, port)?;
     println!("{report}");
     Ok(())
+}
+
+fn scaffold_new_project(base_dir: &Path, project_name: &str) -> Result<(), String> {
+    let project_name = project_name.trim();
+    if project_name.is_empty() {
+        return Err("project name cannot be empty".to_string());
+    }
+
+    let project_dir = base_dir.join(project_name);
+    if project_dir.exists() {
+        return Err(format!(
+            "project directory already exists: {}",
+            project_dir.display()
+        ));
+    }
+
+    fs::create_dir_all(project_dir.join("src"))
+        .map_err(|err| format!("failed to create src directory: {err}"))?;
+    fs::create_dir_all(project_dir.join("statecharts"))
+        .map_err(|err| format!("failed to create statecharts directory: {err}"))?;
+
+    write_project_file(
+        &project_dir.join("Cargo.toml"),
+        &new_project_cargo_toml(project_name),
+    )?;
+    write_project_file(&project_dir.join(".env"), "PORT=3000\n")?;
+    write_project_file(&project_dir.join(".gitignore"), "/target\n.env.local\n")?;
+    write_project_file(&project_dir.join("src/main.rs"), &new_project_main_rs())?;
+    write_project_file(
+        &project_dir.join("src/app_module.rs"),
+        &new_project_app_module_rs(),
+    )?;
+    write_project_file(
+        &project_dir.join("statecharts/nivasa.application.scxml"),
+        DEFAULT_APP_STATECHART,
+    )?;
+    write_project_file(
+        &project_dir.join("statecharts/nivasa.module.scxml"),
+        DEFAULT_MODULE_STATECHART,
+    )?;
+    write_project_file(
+        &project_dir.join("statecharts/nivasa.provider.scxml"),
+        DEFAULT_PROVIDER_STATECHART,
+    )?;
+    write_project_file(
+        &project_dir.join("statecharts/nivasa.request.scxml"),
+        DEFAULT_REQUEST_STATECHART,
+    )?;
+
+    Ok(())
+}
+
+fn generate_module(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    let module_name = normalize_generator_name(name)?;
+    let module_dir = base_dir.join(&module_name);
+    fs::create_dir_all(&module_dir)
+        .map_err(|err| format!("failed to create module directory: {err}"))?;
+
+    let file_path = module_dir.join(format!("{module_name}_module.rs"));
+    if file_path.exists() {
+        return Err(format!("module file already exists: {}", file_path.display()));
+    }
+
+    let struct_name = to_pascal_case(&module_name);
+    write_project_file(
+        &file_path,
+        &new_module_template(&module_name, &struct_name),
+    )?;
+
+    Ok(file_path)
+}
+
+fn generate_controller(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    let controller_name = normalize_generator_name(name)?;
+    let controller_dir = base_dir.join(&controller_name);
+    fs::create_dir_all(&controller_dir)
+        .map_err(|err| format!("failed to create controller directory: {err}"))?;
+
+    let file_path = controller_dir.join(format!("{controller_name}_controller.rs"));
+    if file_path.exists() {
+        return Err(format!(
+            "controller file already exists: {}",
+            file_path.display()
+        ));
+    }
+
+    let struct_name = to_pascal_case(&controller_name);
+    write_project_file(
+        &file_path,
+        &new_controller_template(&controller_name, &struct_name),
+    )?;
+
+    Ok(file_path)
+}
+
+fn generate_service(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    let service_name = normalize_generator_name(name)?;
+    let service_dir = base_dir.join(&service_name);
+    fs::create_dir_all(&service_dir)
+        .map_err(|err| format!("failed to create service directory: {err}"))?;
+
+    let file_path = service_dir.join(format!("{service_name}_service.rs"));
+    if file_path.exists() {
+        return Err(format!("service file already exists: {}", file_path.display()));
+    }
+
+    let struct_name = to_pascal_case(&service_name);
+    write_project_file(
+        &file_path,
+        &new_service_template(&service_name, &struct_name),
+    )?;
+
+    Ok(file_path)
+}
+
+fn generate_guard(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    generate_named_file(base_dir, name, "guard", |normalized, pascal| {
+        new_guard_template(normalized, pascal)
+    })
+}
+
+fn generate_interceptor(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    generate_named_file(base_dir, name, "interceptor", |normalized, pascal| {
+        new_interceptor_template(normalized, pascal)
+    })
+}
+
+fn generate_pipe(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    generate_named_file(base_dir, name, "pipe", |normalized, pascal| {
+        new_pipe_template(normalized, pascal)
+    })
+}
+
+fn generate_filter(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    generate_named_file(base_dir, name, "filter", |normalized, pascal| {
+        new_filter_template(normalized, pascal)
+    })
+}
+
+fn generate_middleware(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    generate_named_file(base_dir, name, "middleware", |normalized, pascal| {
+        new_middleware_template(normalized, pascal)
+    })
+}
+
+fn generate_resource(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    let resource_name = normalize_generator_name(name)?;
+    let resource_dir = base_dir.join(&resource_name);
+    let dto_dir = resource_dir.join("dto");
+    fs::create_dir_all(&dto_dir)
+        .map_err(|err| format!("failed to create resource directory: {err}"))?;
+
+    let resource_pascal = to_pascal_case(&resource_name);
+    let files = [
+        (
+            resource_dir.join(format!("{resource_name}_module.rs")),
+            new_module_template(&resource_name, &resource_pascal),
+        ),
+        (
+            resource_dir.join(format!("{resource_name}_controller.rs")),
+            new_controller_template(&resource_name, &resource_pascal),
+        ),
+        (
+            resource_dir.join(format!("{resource_name}_service.rs")),
+            new_service_template(&resource_name, &resource_pascal),
+        ),
+        (
+            dto_dir.join(format!("create_{resource_name}_dto.rs")),
+            new_create_dto_template(&resource_pascal),
+        ),
+        (
+            dto_dir.join(format!("update_{resource_name}_dto.rs")),
+            new_update_dto_template(&resource_pascal),
+        ),
+    ];
+
+    for (path, _) in &files {
+        if path.exists() {
+            return Err(format!("resource file already exists: {}", path.display()));
+        }
+    }
+
+    for (path, contents) in files {
+        write_project_file(&path, &contents)?;
+    }
+
+    Ok(resource_dir)
+}
+
+fn generate_named_file(
+    base_dir: &Path,
+    name: &str,
+    suffix: &str,
+    template: impl Fn(&str, &str) -> String,
+) -> Result<PathBuf, String> {
+    let normalized_name = normalize_generator_name(name)?;
+    let target_dir = base_dir.join(&normalized_name);
+    fs::create_dir_all(&target_dir)
+        .map_err(|err| format!("failed to create {suffix} directory: {err}"))?;
+
+    let file_path = target_dir.join(format!("{normalized_name}_{suffix}.rs"));
+    if file_path.exists() {
+        return Err(format!("{suffix} file already exists: {}", file_path.display()));
+    }
+
+    let struct_name = to_pascal_case(&normalized_name);
+    write_project_file(&file_path, &template(&normalized_name, &struct_name))?;
+    Ok(file_path)
+}
+
+fn write_project_file(path: &Path, contents: &str) -> Result<(), String> {
+    fs::write(path, contents).map_err(|err| format!("failed to write {}: {err}", path.display()))
+}
+
+fn new_project_cargo_toml(project_name: &str) -> String {
+    format!(
+        r#"[package]
+name = "{project_name}"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nivasa = {{ path = "../nivasa", features = ["config"] }}
+"#
+    )
+}
+
+fn new_project_main_rs() -> String {
+    r#"mod app_module;
+
+use app_module::AppModule;
+use nivasa::prelude::*;
+
+fn main() {
+    let _app = NestApplication::create(AppModule);
+}
+"#
+    .to_string()
+}
+
+fn new_project_app_module_rs() -> String {
+    r#"use nivasa::prelude::*;
+
+#[module({})]
+pub struct AppModule;
+"#
+    .to_string()
+}
+
+fn new_module_template(module_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[module({{}})]
+pub struct {struct_name}Module;
+
+impl {struct_name}Module {{
+    pub const PATH: &'static str = "{module_name}";
+}}
+"#
+    )
+}
+
+fn new_controller_template(controller_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[controller("/{controller_name}")]
+pub struct {struct_name}Controller;
+
+#[impl_controller]
+impl {struct_name}Controller {{
+    #[get("/")]
+    pub fn list(&self) -> &'static str {{
+        "{controller_name}"
+    }}
+}}
+"#
+    )
+}
+
+fn new_service_template(service_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[injectable]
+pub struct {struct_name}Service;
+
+impl {struct_name}Service {{
+    pub const NAME: &'static str = "{service_name}";
+}}
+"#
+    )
+}
+
+fn new_guard_template(guard_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[injectable]
+pub struct {struct_name}Guard;
+
+impl {struct_name}Guard {{
+    pub const NAME: &'static str = "{guard_name}";
+}}
+"#
+    )
+}
+
+fn new_interceptor_template(interceptor_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[injectable]
+pub struct {struct_name}Interceptor;
+
+impl {struct_name}Interceptor {{
+    pub const NAME: &'static str = "{interceptor_name}";
+}}
+"#
+    )
+}
+
+fn new_pipe_template(pipe_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[injectable]
+pub struct {struct_name}Pipe;
+
+impl {struct_name}Pipe {{
+    pub const NAME: &'static str = "{pipe_name}";
+}}
+"#
+    )
+}
+
+fn new_filter_template(filter_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[injectable]
+pub struct {struct_name}Filter;
+
+impl {struct_name}Filter {{
+    pub const NAME: &'static str = "{filter_name}";
+}}
+"#
+    )
+}
+
+fn new_middleware_template(middleware_name: &str, struct_name: &str) -> String {
+    format!(
+        r#"use nivasa::prelude::*;
+
+#[injectable]
+pub struct {struct_name}Middleware;
+
+impl {struct_name}Middleware {{
+    pub const NAME: &'static str = "{middleware_name}";
+}}
+"#
+    )
+}
+
+fn new_create_dto_template(resource_pascal: &str) -> String {
+    format!(
+        r#"use serde::Deserialize;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Create{resource_pascal}Dto {{
+    pub name: String,
+}}
+"#
+    )
+}
+
+fn new_update_dto_template(resource_pascal: &str) -> String {
+    format!(
+        r#"use serde::Deserialize;
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Update{resource_pascal}Dto {{
+    pub name: Option<String>,
+}}
+"#
+    )
+}
+
+fn normalize_generator_name(name: &str) -> Result<String, String> {
+    let normalized = name
+        .trim()
+        .chars()
+        .map(|ch| match ch {
+            'A'..='Z' => ch.to_ascii_lowercase(),
+            'a'..='z' | '0'..='9' => ch,
+            '-' | '_' | ' ' => '_',
+            _ => '_',
+        })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string();
+
+    if normalized.is_empty() {
+        return Err("name cannot be empty".to_string());
+    }
+
+    Ok(normalized)
+}
+
+fn to_pascal_case(name: &str) -> String {
+    name.split('_')
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| {
+            let mut chars = segment.chars();
+            match chars.next() {
+                Some(first) => {
+                    first.to_ascii_uppercase().to_string() + chars.as_str()
+                }
+                None => String::new(),
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        generate_controller, generate_filter, generate_guard, generate_interceptor,
+        generate_middleware, generate_module, generate_pipe, generate_resource, generate_service,
+        new_controller_template, new_filter_template, new_guard_template,
+        new_interceptor_template, new_middleware_template, new_module_template,
+        new_project_app_module_rs, new_project_cargo_toml, new_project_main_rs,
+        new_pipe_template, new_service_template, new_create_dto_template,
+        new_update_dto_template, normalize_generator_name, scaffold_new_project, to_pascal_case,
+    };
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn scaffold_new_project_creates_expected_structure() {
+        let root = temp_dir("new-project");
+        scaffold_new_project(&root, "myapp").expect("project scaffold should succeed");
+
+        let project_dir = root.join("myapp");
+        assert!(project_dir.join("Cargo.toml").is_file());
+        assert!(project_dir.join(".env").is_file());
+        assert!(project_dir.join(".gitignore").is_file());
+        assert!(project_dir.join("src/main.rs").is_file());
+        assert!(project_dir.join("src/app_module.rs").is_file());
+        assert!(project_dir.join("statecharts").is_dir());
+        assert!(project_dir
+            .join("statecharts/nivasa.application.scxml")
+            .is_file());
+        assert!(project_dir.join("statecharts/nivasa.module.scxml").is_file());
+        assert!(project_dir
+            .join("statecharts/nivasa.provider.scxml")
+            .is_file());
+        assert!(project_dir.join("statecharts/nivasa.request.scxml").is_file());
+
+        assert_eq!(
+            fs::read_to_string(project_dir.join("Cargo.toml")).unwrap(),
+            new_project_cargo_toml("myapp")
+        );
+        assert_eq!(
+            fs::read_to_string(project_dir.join("src/main.rs")).unwrap(),
+            new_project_main_rs()
+        );
+        assert_eq!(
+            fs::read_to_string(project_dir.join("src/app_module.rs")).unwrap(),
+            new_project_app_module_rs()
+        );
+    }
+
+    #[test]
+    fn scaffold_new_project_rejects_existing_directory() {
+        let root = temp_dir("new-project-existing");
+        fs::create_dir_all(root.join("myapp")).unwrap();
+
+        let error = scaffold_new_project(&root, "myapp").unwrap_err();
+        assert!(error.contains("project directory already exists"));
+    }
+
+    #[test]
+    fn generate_module_creates_expected_file() {
+        let root = temp_dir("generate-module");
+        let file_path = generate_module(&root, "users").expect("module generation should succeed");
+
+        assert_eq!(file_path, root.join("users/users_module.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_module_template("users", "Users")
+        );
+    }
+
+    #[test]
+    fn normalize_generator_name_and_pascal_case_work() {
+        assert_eq!(normalize_generator_name(" User Profile ").unwrap(), "user_profile");
+        assert_eq!(to_pascal_case("user_profile"), "UserProfile");
+    }
+
+    #[test]
+    fn generate_controller_creates_expected_file() {
+        let root = temp_dir("generate-controller");
+        let file_path =
+            generate_controller(&root, "users").expect("controller generation should succeed");
+
+        assert_eq!(file_path, root.join("users/users_controller.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_controller_template("users", "Users")
+        );
+    }
+
+    #[test]
+    fn generate_service_creates_expected_file() {
+        let root = temp_dir("generate-service");
+        let file_path =
+            generate_service(&root, "users").expect("service generation should succeed");
+
+        assert_eq!(file_path, root.join("users/users_service.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_service_template("users", "Users")
+        );
+    }
+
+    #[test]
+    fn generate_guard_creates_expected_file() {
+        let root = temp_dir("generate-guard");
+        let file_path = generate_guard(&root, "auth").expect("guard generation should succeed");
+
+        assert_eq!(file_path, root.join("auth/auth_guard.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_guard_template("auth", "Auth")
+        );
+    }
+
+    #[test]
+    fn generate_interceptor_creates_expected_file() {
+        let root = temp_dir("generate-interceptor");
+        let file_path =
+            generate_interceptor(&root, "audit").expect("interceptor generation should succeed");
+
+        assert_eq!(file_path, root.join("audit/audit_interceptor.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_interceptor_template("audit", "Audit")
+        );
+    }
+
+    #[test]
+    fn generate_pipe_creates_expected_file() {
+        let root = temp_dir("generate-pipe");
+        let file_path = generate_pipe(&root, "trim").expect("pipe generation should succeed");
+
+        assert_eq!(file_path, root.join("trim/trim_pipe.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_pipe_template("trim", "Trim")
+        );
+    }
+
+    #[test]
+    fn generate_filter_creates_expected_file() {
+        let root = temp_dir("generate-filter");
+        let file_path =
+            generate_filter(&root, "http").expect("filter generation should succeed");
+
+        assert_eq!(file_path, root.join("http/http_filter.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_filter_template("http", "Http")
+        );
+    }
+
+    #[test]
+    fn generate_middleware_creates_expected_file() {
+        let root = temp_dir("generate-middleware");
+        let file_path = generate_middleware(&root, "auth")
+            .expect("middleware generation should succeed");
+
+        assert_eq!(file_path, root.join("auth/auth_middleware.rs"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            new_middleware_template("auth", "Auth")
+        );
+    }
+
+    #[test]
+    fn generate_resource_creates_expected_files() {
+        let root = temp_dir("generate-resource");
+        let resource_dir =
+            generate_resource(&root, "users").expect("resource generation should succeed");
+
+        assert_eq!(resource_dir, root.join("users"));
+        assert_eq!(
+            fs::read_to_string(resource_dir.join("users_module.rs")).unwrap(),
+            new_module_template("users", "Users")
+        );
+        assert_eq!(
+            fs::read_to_string(resource_dir.join("users_controller.rs")).unwrap(),
+            new_controller_template("users", "Users")
+        );
+        assert_eq!(
+            fs::read_to_string(resource_dir.join("users_service.rs")).unwrap(),
+            new_service_template("users", "Users")
+        );
+        assert_eq!(
+            fs::read_to_string(resource_dir.join("dto/create_users_dto.rs")).unwrap(),
+            new_create_dto_template("Users")
+        );
+        assert_eq!(
+            fs::read_to_string(resource_dir.join("dto/update_users_dto.rs")).unwrap(),
+            new_update_dto_template("Users")
+        );
+    }
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("nivasa-cli-{prefix}-{nanos}"));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
 }

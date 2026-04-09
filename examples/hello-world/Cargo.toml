@@ -1,0 +1,12 @@
+[package]
+name = "nivasa-example-hello-world"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nivasa = { path = "../../nivasa" }
+nivasa-core = { path = "../../nivasa-core" }
+nivasa-routing = { path = "../../nivasa-routing" }
+async-trait = "0.1"
+
+[workspace]

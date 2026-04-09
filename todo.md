@@ -831,16 +831,16 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 6.4.1 — CLI Core
 - [x] Add `clap` dependency for argument parsing (derive API)
-- [ ] Implement `nivasa new <project-name>` — scaffold new project (includes `statecharts/` directory with default SCXML files)
-- [ ] Implement `nivasa generate module <name>` (alias: `nivasa g module <name>`)
-- [ ] Implement `nivasa generate controller <name>` (alias: `nivasa g controller <name>`)
-- [ ] Implement `nivasa generate service <name>` (alias: `nivasa g service <name>`)
-- [ ] Implement `nivasa generate guard <name>`
-- [ ] Implement `nivasa generate interceptor <name>`
-- [ ] Implement `nivasa generate pipe <name>`
-- [ ] Implement `nivasa generate filter <name>`
-- [ ] Implement `nivasa generate resource <name>` (full CRUD: module + controller + service + DTOs)
-- [ ] Implement `nivasa generate middleware <name>`
+- [x] Implement `nivasa new <project-name>` — scaffold new project (includes `statecharts/` directory with default SCXML files)
+- [x] Implement `nivasa generate module <name>` (alias: `nivasa g module <name>`)
+- [x] Implement `nivasa generate controller <name>` (alias: `nivasa g controller <name>`)
+- [x] Implement `nivasa generate service <name>` (alias: `nivasa g service <name>`)
+- [x] Implement `nivasa generate guard <name>`
+- [x] Implement `nivasa generate interceptor <name>`
+- [x] Implement `nivasa generate pipe <name>`
+- [x] Implement `nivasa generate filter <name>`
+- [x] Implement `nivasa generate resource <name>` (full CRUD: module + controller + service + DTOs)
+- [x] Implement `nivasa generate middleware <name>`
 - [x] Implement `nivasa info` — print framework version, Rust version, OS info
 - [x] Implement `nivasa statechart validate --all` — validate all SCXML files in project
 - [x] Implement `nivasa statechart visualize` — generate diagrams from SCXML
@@ -848,14 +848,14 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `nivasa statechart diff` — show SCXML changes between commits
 
 #### 6.4.2 — Project Scaffolding Templates
-- [ ] Create template for new project: `Cargo.toml`, `main.rs`, `app_module.rs`, `.env`, `.gitignore`
-- [ ] Create template for module file
-- [ ] Create template for controller file (with example GET route)
-- [ ] Create template for service file (with injectable annotation)
-- [ ] Create template for guard file
-- [ ] Create template for interceptor/pipe/filter files
-- [ ] Create template for resource: module + controller + service + create DTO + update DTO
-- [ ] Use `askama` or string templates for code generation
+- [x] Create template for new project: `Cargo.toml`, `main.rs`, `app_module.rs`, `.env`, `.gitignore`
+- [x] Create template for module file
+- [x] Create template for controller file (with example GET route)
+- [x] Create template for service file (with injectable annotation)
+- [x] Create template for guard file
+- [x] Create template for interceptor/pipe/filter files
+- [x] Create template for resource: module + controller + service + create DTO + update DTO
+- [x] Use `askama` or string templates for code generation
 
 #### 6.4.3 — CLI Auto-Registration
 - [ ] After generating a module, auto-add import to parent module's `imports` list
@@ -864,9 +864,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Handle file parsing to find insertion point (regex or syn-based)
 
 #### 6.4.4 — CLI Tests
-- [ ] Test `nivasa new myapp` creates correct project structure
-- [ ] Test `nivasa g module users` creates `users/users_module.rs`
-- [ ] Test `nivasa g resource users` creates module + controller + service + DTOs
+- [x] Test `nivasa new myapp` creates correct project structure
+- [x] Test `nivasa g module users` creates `users/users_module.rs`
+- [x] Test `nivasa g resource users` creates module + controller + service + DTOs
 - [ ] Test auto-registration modifies parent module correctly
 - [x] Test `nivasa info` outputs version information
 
@@ -899,7 +899,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 7.1.4 — WebSocket + Guards/Pipes/Interceptors
 - [x] Support guards on WebSocket gateway methods
 - [x] Support pipes on message body extraction
-- [ ] Support interceptors on WebSocket handlers
+- [x] Support interceptors on WebSocket handlers
 
 #### 7.1.5 — WebSocket Tests
 - [x] Test WebSocket connection and handshake
@@ -1002,7 +1002,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ## Phase 9: Examples & Documentation
 
 ### 9.1 — Example Applications
-- [ ] Create `examples/hello-world/` — minimal app with one GET route
+- [x] Create `examples/hello-world/` — minimal app with one GET route
 - [ ] Create `examples/crud-rest-api/` — full CRUD with DTOs, validation, error handling
 - [ ] Create `examples/auth-jwt/` — JWT authentication with guards, roles, protected routes
 - [ ] Create `examples/websocket-chat/` — real-time chat using WebSocket gateway
