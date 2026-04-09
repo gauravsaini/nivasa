@@ -132,6 +132,14 @@ pub struct NamespaceRegistry<ClientId> {
     namespaces: HashMap<String, RoomRegistry<ClientId>>,
 }
 
+/// Minimal client-scoped helper for room membership in one namespace.
+#[derive(Debug)]
+pub struct ClientRoomMembership<'a, ClientId> {
+    registry: &'a mut NamespaceRegistry<ClientId>,
+    namespace: String,
+    client: ClientId,
+}
+
 impl<ClientId> NamespaceRegistry<ClientId>
 where
     ClientId: Clone + Eq + Hash,
@@ -139,6 +147,19 @@ where
     /// Create an empty namespace registry.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Return a client-scoped room membership helper for one namespace.
+    pub fn client(
+        &mut self,
+        namespace: impl Into<String>,
+        client: ClientId,
+    ) -> ClientRoomMembership<'_, ClientId> {
+        ClientRoomMembership {
+            registry: self,
+            namespace: namespace.into(),
+            client,
+        }
     }
 
     /// Add client to a room inside namespace. Returns `true` on new membership.
@@ -202,11 +223,37 @@ where
     }
 }
 
+impl<'a, ClientId> ClientRoomMembership<'a, ClientId>
+where
+    ClientId: Clone + Eq + Hash,
+{
+    /// Add the scoped client to a room in the scoped namespace.
+    pub fn join(&mut self, room: impl Into<String>) -> bool {
+        self.registry
+            .join(self.namespace.clone(), room, self.client.clone())
+    }
+
+    /// Remove the scoped client from a room in the scoped namespace.
+    pub fn leave(&mut self, room: &str) -> bool {
+        self.registry.leave(&self.namespace, room, &self.client)
+    }
+
+    /// Return scoped namespace path.
+    pub fn namespace(&self) -> &str {
+        &self.namespace
+    }
+
+    /// Return scoped client identifier.
+    pub fn client(&self) -> &ClientId {
+        &self.client
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        NamespaceRegistry, OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit,
-        RoomRegistry, WebSocketAdapter, WebSocketGateway,
+        ClientRoomMembership, NamespaceRegistry, OnGatewayConnection, OnGatewayDisconnect,
+        OnGatewayInit, RoomRegistry, WebSocketAdapter, WebSocketGateway,
     };
     use std::sync::{
         atomic::{AtomicBool, Ordering},
@@ -373,5 +420,49 @@ mod tests {
         assert!(!recipients.contains(&"client-3"));
         assert!(!recipients.contains(&"client-4"));
         assert!(namespaces.members("/chat", "missing").is_empty());
+    }
+
+    #[test]
+    fn client_room_membership_helper_joins_and_leaves_rooms() {
+        let mut namespaces = NamespaceRegistry::new();
+
+        {
+            let mut client = namespaces.client("/chat", "client-1");
+            assert_eq!(client.namespace(), "/chat");
+            assert_eq!(client.client(), &"client-1");
+            assert!(client.join("general"));
+            assert!(!client.join("general"));
+            assert!(client.leave("general"));
+            assert!(!client.leave("general"));
+        }
+
+        assert!(!namespaces.has_namespace("/chat"));
+    }
+
+    #[test]
+    fn client_room_membership_helper_targets_only_its_namespace_and_client() {
+        let mut namespaces = NamespaceRegistry::new();
+        namespaces.join("/admin", "general", "client-9");
+
+        {
+            let mut client = namespaces.client("/chat", "client-1");
+            assert!(client.join("general"));
+            assert!(client.join("ops"));
+        }
+
+        assert!(namespaces.contains("/chat", "general", &"client-1"));
+        assert!(namespaces.contains("/chat", "ops", &"client-1"));
+        assert!(!namespaces.contains("/chat", "general", &"client-9"));
+        assert!(namespaces.contains("/admin", "general", &"client-9"));
+    }
+
+    #[test]
+    fn client_room_membership_helper_type_is_publicly_constructible_from_registry() {
+        fn assert_helper_type<T>(_value: &T) {}
+
+        let mut namespaces = NamespaceRegistry::new();
+        let client: ClientRoomMembership<'_, &'static str> =
+            namespaces.client("/chat", "client-1");
+        assert_helper_type(&client);
     }
 }
