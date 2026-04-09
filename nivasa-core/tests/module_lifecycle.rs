@@ -12,6 +12,7 @@ struct LifecycleService;
 
 #[injectable]
 struct MissingDependencyService {
+    #[allow(dead_code)]
     missing: Arc<NeverRegisteredService>,
 }
 
@@ -68,6 +69,7 @@ impl Module for BrokenModule {
         &self,
         container: &DependencyContainer,
     ) -> Result<(), nivasa_core::di::error::DiError> {
+        let _ = &self;
         container
             .register_injectable::<MissingDependencyService>(
                 MissingDependencyService::__NIVASA_INJECTABLE_SCOPE,

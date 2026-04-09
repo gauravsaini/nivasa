@@ -12,6 +12,7 @@ use crate::types::*;
 use std::collections::HashSet;
 
 /// A validation error with context.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ValidationError {
     pub rule: ValidationRule,
@@ -20,6 +21,7 @@ pub struct ValidationError {
 }
 
 /// Categories of validation rules.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValidationRule {
     /// State is not reachable from the initial state.
@@ -39,12 +41,14 @@ pub enum ValidationRule {
 }
 
 /// Result of validating an SCXML document.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct ValidationResult {
     pub errors: Vec<ValidationError>,
     pub warnings: Vec<ValidationError>,
 }
 
+#[allow(dead_code)]
 impl ValidationResult {
     pub fn is_valid(&self) -> bool {
         self.errors.is_empty()

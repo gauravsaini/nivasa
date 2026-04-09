@@ -62,7 +62,7 @@ fn http_exception_summary_maps_to_the_standard_three_field_shape(
     }
 
     let json: serde_json::Value = serde_json::from_slice(&response.body().as_bytes())?;
-    if json["statusCode"] != serde_json::Value::from(422) {
+    if json["statusCode"].as_i64() != Some(422) {
         return Err("unexpected summary statusCode".into());
     }
     if json["message"] != "Validation failed" {

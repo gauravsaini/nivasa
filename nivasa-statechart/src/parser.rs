@@ -11,6 +11,7 @@ use std::path::Path;
 use thiserror::Error;
 
 /// Errors that can occur during SCXML parsing.
+#[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum ParseError {
     #[error("XML parsing error: {0}")]
@@ -32,6 +33,7 @@ pub enum ParseError {
 }
 
 /// A parsed SCXML document.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ScxmlDocument {
     /// Metadata from the `<scxml>` root element.
@@ -46,6 +48,7 @@ pub struct ScxmlDocument {
     pub raw_source: String,
 }
 
+#[allow(dead_code)]
 impl ScxmlDocument {
     /// Parse an SCXML document from a file path.
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, ParseError> {
@@ -54,6 +57,7 @@ impl ScxmlDocument {
     }
 
     /// Parse an SCXML document from a string.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(source: &str) -> Result<Self, ParseError> {
         let mut reader = Reader::from_str(source);
         reader.config_mut().trim_text(true);

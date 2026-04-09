@@ -1242,9 +1242,7 @@ pub fn parse_api_version_accept(value: &str) -> Option<String> {
         let media_type = candidate.split(';').next()?.trim();
         let (_, subtype) = media_type.split_once('/')?;
         let (_, version) = subtype.rsplit_once(".v")?;
-        let version = version
-            .split(|ch| matches!(ch, '+' | ';' | '-' | '/'))
-            .next()?;
+        let version = version.split(['+', ';', '-', '/']).next()?;
 
         normalize_version_token(version)
     })

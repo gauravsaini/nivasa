@@ -108,6 +108,7 @@ pub enum EventType {
 }
 
 /// An SCXML event.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
     /// Hierarchical event name (dot-separated, e.g., "error.module.circular").
@@ -123,6 +124,7 @@ pub struct Event {
     pub invoke_id: Option<String>,
 }
 
+#[allow(dead_code)]
 impl Event {
     /// Create a new internal event with the given name.
     pub fn internal(name: impl Into<String>) -> Self {

@@ -294,22 +294,18 @@ impl RolesGuard {
         if let Some(request_context) = context.request_context() {
             if let Some(values) = request_context.handler_metadata("roles") {
                 let roles = values.as_array()?;
-                return Some(
-                    roles
-                        .iter()
-                        .map(|role| role.as_str().map(|role| role.to_string()))
-                        .collect::<Option<Vec<_>>>()?,
-                );
+                return roles
+                    .iter()
+                    .map(|role| role.as_str().map(|role| role.to_string()))
+                    .collect::<Option<Vec<_>>>();
             }
 
             if let Some(values) = request_context.class_metadata("roles") {
                 let roles = values.as_array()?;
-                return Some(
-                    roles
-                        .iter()
-                        .map(|role| role.as_str().map(|role| role.to_string()))
-                        .collect::<Option<Vec<_>>>()?,
-                );
+                return roles
+                    .iter()
+                    .map(|role| role.as_str().map(|role| role.to_string()))
+                    .collect::<Option<Vec<_>>>();
             }
         }
 
@@ -321,12 +317,10 @@ impl RolesGuard {
         if let Some(request_context) = context.request_context() {
             if let Some(values) = request_context.custom_data("roles") {
                 let roles = values.as_array()?;
-                return Some(
-                    roles
-                        .iter()
-                        .map(|role| role.as_str().map(|role| role.to_string()))
-                        .collect::<Option<Vec<_>>>()?,
-                );
+                return roles
+                    .iter()
+                    .map(|role| role.as_str().map(|role| role.to_string()))
+                    .collect::<Option<Vec<_>>>();
             }
         }
 
@@ -429,7 +423,7 @@ mod tests {
             );
 
         let result = run_ready(RoleGuard.can_activate(&context));
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
     }
 
     #[test]
@@ -442,7 +436,7 @@ mod tests {
 
         let result = run_ready(guard.can_activate(&context));
 
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
     }
 
     #[test]
@@ -453,14 +447,14 @@ mod tests {
         let missing = ExecutionContext::new(()).with_request_context(missing_context);
         let guard = AuthGuard::new();
 
-        assert_eq!(run_ready(guard.can_activate(&missing)).unwrap(), false);
+        assert!(!run_ready(guard.can_activate(&missing)).unwrap());
 
         let mut malformed_context = RequestContext::new();
         malformed_context.set_custom_data("authorization", "Bearer not.jwt-shaped");
 
         let malformed = ExecutionContext::new(()).with_request_context(malformed_context);
 
-        assert_eq!(run_ready(guard.can_activate(&malformed)).unwrap(), false);
+        assert!(!run_ready(guard.can_activate(&malformed)).unwrap());
     }
 
     #[test]
@@ -469,7 +463,7 @@ mod tests {
 
         assert_eq!(guard.limit(), 10);
         assert_eq!(guard.ttl(), Duration::from_secs(60));
-        assert_eq!(run_ready(guard.can_activate(&ExecutionContext::new(()))).unwrap(), true);
+        assert!(run_ready(guard.can_activate(&ExecutionContext::new(()))).unwrap());
     }
 
     #[test]
@@ -478,8 +472,8 @@ mod tests {
         let zero_ttl = ThrottlerGuard::new(10, Duration::from_secs(0));
         let context = ExecutionContext::new(());
 
-        assert_eq!(run_ready(zero_limit.can_activate(&context)).unwrap(), false);
-        assert_eq!(run_ready(zero_ttl.can_activate(&context)).unwrap(), false);
+        assert!(!run_ready(zero_limit.can_activate(&context)).unwrap());
+        assert!(!run_ready(zero_ttl.can_activate(&context)).unwrap());
     }
 
     #[test]
@@ -495,7 +489,7 @@ mod tests {
         let guard = RolesGuard::new();
         let result = run_ready(guard.can_activate(&context));
 
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
     }
 
     #[test]
@@ -509,7 +503,7 @@ mod tests {
         let guard = RolesGuard::new();
         let result = run_ready(guard.can_activate(&context));
 
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
     }
 
     fn run_ready<F: Future>(future: F) -> F::Output {

@@ -150,6 +150,6 @@ async fn validation_pipe_rejects_invalid_dto_with_field_level_details(
 
     drop(client);
     let _ = shutdown_tx.send(());
-    let _ = timeout(Duration::from_secs(2), server_task).await??;
+    timeout(Duration::from_secs(2), server_task).await??;
     Ok(())
 }

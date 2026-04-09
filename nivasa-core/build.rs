@@ -19,15 +19,15 @@ fn main() {
         println!("cargo:rerun-if-changed={}", scxml_path.display());
 
         let scxml_content = fs::read_to_string(&scxml_path)
-            .expect(&format!("Could not read SCXML file: {}", src));
+            .unwrap_or_else(|_| panic!("Could not read SCXML file: {}", src));
 
         let scxml = ScxmlDocument::from_str(&scxml_content)
-            .expect(&format!("Could not parse SCXML file: {}", src));
+            .unwrap_or_else(|_| panic!("Could not parse SCXML file: {}", src));
 
         let rust_code = nivasa_statechart::codegen::generate_rust(&scxml);
-        
+
         let dest_path = Path::new(&out_dir).join(dest);
         fs::write(dest_path, rust_code)
-            .expect(&format!("Could not write generated code to: {}", dest));
+            .unwrap_or_else(|_| panic!("Could not write generated code to: {}", dest));
     }
 }

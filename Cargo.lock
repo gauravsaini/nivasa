@@ -962,6 +962,7 @@ name = "nivasa-config"
 version = "0.1.0"
 dependencies = [
  "nivasa-common",
+ "nivasa-core",
 ]
 
 [[package]]

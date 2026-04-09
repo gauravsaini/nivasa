@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn test_exception_cause_chaining_keeps_serialization_shape() {
-        let inner = std::io::Error::new(std::io::ErrorKind::Other, "disk failed");
+        let inner = std::io::Error::other("disk failed");
         let ex = HttpException::internal_server_error("Something broke").with_cause(inner);
 
         assert_eq!(ex.to_string(), "500 Internal Server Error: Something broke");

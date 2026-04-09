@@ -22,6 +22,7 @@ struct AppController;
 
 #[impl_controller]
 impl AppController {
+    #[allow(dead_code)]
     #[nivasa_macros::get("/health")]
     fn health(&self) {}
 }
@@ -41,7 +42,16 @@ struct AppModule;
 
 #[test]
 fn module_macro_exposes_registration_metadata_helpers() {
+    let _ = (
+        OwnerGuard,
+        AuditGuard,
+        OwnerRole,
+        AuditorRole,
+        AuditInterceptor,
+        TraceInterceptor,
+    );
     let module = AppModule;
+    let _controller = AppController;
     let metadata = module.metadata();
     let controller_registrations = module.controller_registrations();
 
@@ -97,4 +107,5 @@ fn module_macro_exposes_registration_metadata_helpers() {
         controller_registrations[0].middlewares,
         vec![TypeId::of::<LoggingMiddleware>()]
     );
+    let _ = _controller;
 }

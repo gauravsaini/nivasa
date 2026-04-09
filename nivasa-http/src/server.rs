@@ -122,23 +122,12 @@ struct RouteMiddlewareBinding {
 }
 
 /// Configuration for transport-level CORS handling.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CorsOptions {
     allowed_origins: Option<Vec<String>>,
     allowed_methods: Option<Vec<Method>>,
     allowed_headers: Option<Vec<String>>,
     allow_credentials: bool,
-}
-
-impl Default for CorsOptions {
-    fn default() -> Self {
-        Self {
-            allowed_origins: None,
-            allowed_methods: None,
-            allowed_headers: None,
-            allow_credentials: false,
-        }
-    }
 }
 
 impl CorsOptions {
@@ -627,6 +616,7 @@ impl NivasaServerBuilder {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn serve_connection<S>(
     stream: S,
     routes: RouteDispatchRegistry<RouteHandlerBinding>,
@@ -710,6 +700,7 @@ async fn serve_connection<S>(
     let _ = builder.serve_connection(io, service).await;
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_request(
     request: hyper::Request<Incoming>,
     routes: RouteDispatchRegistry<RouteHandlerBinding>,

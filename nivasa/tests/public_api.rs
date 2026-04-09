@@ -7,10 +7,11 @@ use nivasa::prelude::*;
 use nivasa::prelude::{
     all, body, controller, custom_param, delete, file, files, get, head, header, headers,
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
-    req, res, scxml_handler, session, ArgumentMetadata, ArgumentsHost, ExceptionFilter,
-    ExceptionFilterFuture, HttpArgumentsHost, Middleware, NivasaMiddlewareLayer, Pipe, Reflector,
-    WsArgumentsHost,
+    req, res, scxml_handler, session, App, AppBuildError, AppRoute, ArgumentMetadata,
+    ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost, Middleware,
+    NivasaMiddlewareLayer, Pipe, Reflector, WsArgumentsHost,
 };
+use std::any::TypeId;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -116,8 +117,33 @@ fn crate_root_reexports_bootstrap_config_as_pure_data() {
 fn crate_root_reexports_nest_application_factory_as_data_only_shell() {
     let app = nivasa::NestApplication::create(DemoModule);
 
-    assert_eq!(app.app_module().metadata(), ModuleMetadata::default());
+    assert_eq!(
+        app.app_module().metadata(),
+        ModuleMetadata::default().with_controllers(vec![TypeId::of::<DemoController>()])
+    );
     assert_eq!(app.bootstrap(), &nivasa::AppBootstrapConfig::default());
+}
+
+#[test]
+fn crate_root_reexports_nest_application_build_as_runtime_shell() {
+    fn _assert_app_type_is_in_scope(_: Option<App<DemoModule>>) {}
+    fn _assert_app_build_error_is_in_scope(_: Option<AppBuildError>) {}
+    fn _assert_app_route_type_is_in_scope(_: Option<AppRoute>) {}
+
+    let app = nivasa::NestApplication::create(DemoModule)
+        .build()
+        .expect("build should assemble the root module shell");
+
+    assert_eq!(
+        app.module_metadata(),
+        &ModuleMetadata::default().with_controllers(vec![TypeId::of::<DemoController>()])
+    );
+    assert_eq!(app.bootstrap(), &nivasa::AppBootstrapConfig::default());
+    assert_eq!(app.controller_registrations().len(), 1);
+    assert_eq!(app.routes().len(), 1);
+    assert_eq!(app.routes()[0].method, nivasa_routing::RouteMethod::Get);
+    assert_eq!(app.routes()[0].path, "/health");
+    assert_eq!(app.routes()[0].handler, "health");
 }
 
 #[test]
@@ -283,7 +309,7 @@ struct DemoModule;
 
 impl Module for DemoModule {
     fn metadata(&self) -> ModuleMetadata {
-        ModuleMetadata::default()
+        ModuleMetadata::default().with_controllers(vec![TypeId::of::<DemoController>()])
     }
 
     fn configure<'life0, 'life1, 'async_trait>(
@@ -296,6 +322,14 @@ impl Module for DemoModule {
         Self: 'async_trait,
     {
         Box::pin(async { Ok(()) })
+    }
+
+    fn controller_registrations(&self) -> Vec<ModuleControllerRegistration> {
+        vec![ModuleControllerRegistration::new(
+            TypeId::of::<DemoController>(),
+            vec![ControllerRouteRegistration::new("GET", "health", "health")],
+            Vec::new(),
+        )]
     }
 }
 

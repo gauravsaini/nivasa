@@ -2,8 +2,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
     parse::{Parse, ParseStream},
-    parse_macro_input,
-    parse_quote,
+    parse_macro_input, parse_quote,
     spanned::Spanned,
     Error, Field, Fields, GenericArgument, Generics, Ident, ItemStruct, LitStr, PathArguments,
     Result, Token, Type,

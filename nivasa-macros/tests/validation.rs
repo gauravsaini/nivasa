@@ -11,6 +11,7 @@ struct SignupForm {
 }
 
 #[derive(Dto)]
+#[allow(dead_code)]
 struct ProfileForm {
     #[is_string]
     display_name: String,
@@ -37,12 +38,14 @@ struct ContactListForm {
 }
 
 #[derive(Dto)]
+#[allow(dead_code)]
 struct FeatureFlags {
     #[is_boolean]
     enabled: bool,
 }
 
 #[derive(Dto)]
+#[allow(dead_code)]
 struct UsageStats {
     #[is_number]
     retry_count: u32,
@@ -51,6 +54,7 @@ struct UsageStats {
 }
 
 #[derive(Dto)]
+#[allow(dead_code)]
 struct IntMetrics {
     #[is_int]
     retry_count: i32,
@@ -202,6 +206,7 @@ struct GroupedParentForm {
     child: GroupedChildForm,
 }
 
+#[allow(clippy::ptr_arg)]
 fn uses_example_domain(value: &String) -> bool {
     value.ends_with("@example.com")
 }

@@ -8,20 +8,15 @@ use crate::di::lifecycle::{NivasaProviderEvent, NivasaProviderState, NivasaProvi
 use nivasa_statechart::StatechartEngine;
 
 /// Lifespan scope of a provider instance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ProviderScope {
     /// A single instance is created and shared across the entire application lifecycle.
+    #[default]
     Singleton,
     /// A new instance is created for every incoming request.
     Scoped,
     /// A new instance is created every time it is injected or resolved.
     Transient,
-}
-
-impl Default for ProviderScope {
-    fn default() -> Self {
-        ProviderScope::Singleton
-    }
 }
 
 /// Metadata describing a registered provider.

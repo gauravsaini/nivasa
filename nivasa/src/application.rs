@@ -5,12 +5,19 @@
 //! configuration without pulling transport details into the main crate yet.
 
 use nivasa_common::HttpException;
+use nivasa_core::{
+    module::ModuleControllerRegistration, DependencyContainer, DiError, Module, ModuleMetadata,
+};
 use nivasa_filters::{ExceptionFilter, ExceptionFilterMetadata};
 use nivasa_http::{NivasaMiddleware, NivasaResponse, NivasaServer, NivasaServerBuilder};
 use nivasa_guards::Guard;
 use nivasa_interceptors::Interceptor;
 use nivasa_pipes::Pipe;
 use nivasa_routing::{RouteDispatchError, RouteMethod};
+use std::collections::HashSet;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 /// Supported API versioning strategies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -178,6 +185,50 @@ pub struct NestApplication<T> {
     bootstrap: AppBootstrapConfig,
 }
 
+/// A built application shell that has resolved bootstrap-owned metadata.
+pub struct App<T> {
+    app_module: T,
+    bootstrap: AppBootstrapConfig,
+    container: DependencyContainer,
+    module_metadata: ModuleMetadata,
+    controller_registrations: Vec<ModuleControllerRegistration>,
+    routes: Vec<AppRoute>,
+}
+
+/// One route resolved during the synchronous application build step.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppRoute {
+    pub method: RouteMethod,
+    pub path: String,
+    pub handler: &'static str,
+}
+
+/// Errors raised while assembling the minimal application shell.
+#[derive(Debug)]
+pub enum AppBuildError {
+    DependencyInjection(DiError),
+    DuplicateRoute { method: String, path: String },
+}
+
+impl std::fmt::Display for AppBuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DependencyInjection(error) => write!(f, "{error}"),
+            Self::DuplicateRoute { method, path } => {
+                write!(f, "duplicate route `{method} {path}` while building app")
+            }
+        }
+    }
+}
+
+impl std::error::Error for AppBuildError {}
+
+impl From<DiError> for AppBuildError {
+    fn from(value: DiError) -> Self {
+        Self::DependencyInjection(value)
+    }
+}
+
 impl<T> NestApplication<T> {
     /// Create an application shell from the root module using default bootstrap
     /// configuration.
@@ -196,6 +247,62 @@ impl<T> NestApplication<T> {
     /// Borrow the current bootstrap configuration.
     pub fn bootstrap(&self) -> &AppBootstrapConfig {
         &self.bootstrap
+    }
+}
+
+impl<T: Module> NestApplication<T> {
+    /// Build an application shell by resolving the root module's metadata,
+    /// dependency container registrations, and controller route metadata.
+    pub fn build(self) -> Result<App<T>, AppBuildError> {
+        let module_metadata = self.app_module.metadata();
+        let controller_registrations = self.app_module.controller_registrations();
+        let container = DependencyContainer::new();
+
+        block_on(self.app_module.configure(&container))?;
+        block_on(container.initialize())?;
+
+        let routes = resolve_routes(&self.bootstrap, &controller_registrations)?;
+
+        Ok(App {
+            app_module: self.app_module,
+            bootstrap: self.bootstrap,
+            container,
+            module_metadata,
+            controller_registrations,
+            routes,
+        })
+    }
+}
+
+impl<T> App<T> {
+    /// Borrow the root application module stored in the built app.
+    pub fn app_module(&self) -> &T {
+        &self.app_module
+    }
+
+    /// Borrow the bootstrap configuration captured during build.
+    pub fn bootstrap(&self) -> &AppBootstrapConfig {
+        &self.bootstrap
+    }
+
+    /// Borrow the initialized dependency container.
+    pub fn container(&self) -> &DependencyContainer {
+        &self.container
+    }
+
+    /// Borrow the root module metadata captured during build.
+    pub fn module_metadata(&self) -> &ModuleMetadata {
+        &self.module_metadata
+    }
+
+    /// Borrow the root module controller registrations captured during build.
+    pub fn controller_registrations(&self) -> &[ModuleControllerRegistration] {
+        &self.controller_registrations
+    }
+
+    /// Borrow the resolved route metadata captured during build.
+    pub fn routes(&self) -> &[AppRoute] {
+        &self.routes
     }
 }
 
@@ -481,6 +588,75 @@ fn normalize_version_token(version: &str) -> String {
 
     format!("v{}", stripped)
 }
+
+fn resolve_routes(
+    bootstrap: &AppBootstrapConfig,
+    controller_registrations: &[ModuleControllerRegistration],
+) -> Result<Vec<AppRoute>, AppBuildError> {
+    let mut seen = HashSet::new();
+    let mut routes = Vec::new();
+
+    for controller in controller_registrations {
+        for route in &controller.routes {
+            let method = RouteMethod::from(route.method);
+            let path = bootstrap.prefixed_route_path(route.path.as_str());
+
+            if !seen.insert((method.clone(), path.clone())) {
+                return Err(AppBuildError::DuplicateRoute {
+                    method: route.method.to_string(),
+                    path,
+                });
+            }
+
+            routes.push(AppRoute {
+                method,
+                path,
+                handler: route.handler,
+            });
+        }
+    }
+
+    Ok(routes)
+}
+
+fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    let waker = noop_waker();
+    let mut context = Context::from_waker(&waker);
+    let mut future = Pin::from(Box::new(future));
+
+    loop {
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(value) => return value,
+            Poll::Pending => std::thread::yield_now(),
+        }
+    }
+}
+
+fn noop_waker() -> Waker {
+    // Build is intentionally synchronous, so a noop waker is sufficient for
+    // the immediate-future DI work exercised by the current app shell.
+    unsafe { Waker::from_raw(noop_raw_waker()) }
+}
+
+fn noop_raw_waker() -> RawWaker {
+    RawWaker::new(std::ptr::null(), &NOOP_WAKER_VTABLE)
+}
+
+unsafe fn noop_clone(_: *const ()) -> RawWaker {
+    noop_raw_waker()
+}
+
+unsafe fn noop_wake(_: *const ()) {}
+
+unsafe fn noop_wake_by_ref(_: *const ()) {}
+
+unsafe fn noop_drop(_: *const ()) {}
+
+static NOOP_WAKER_VTABLE: RawWakerVTable =
+    RawWakerVTable::new(noop_clone, noop_wake, noop_wake_by_ref, noop_drop);
 
 #[cfg(test)]
 mod tests {

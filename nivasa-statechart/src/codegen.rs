@@ -10,6 +10,7 @@
 use crate::parser::ScxmlDocument;
 use crate::types::*;
 
+#[allow(dead_code)]
 /// Generate Rust source code from a parsed SCXML document.
 pub fn generate_rust(doc: &ScxmlDocument) -> String {
     generate_rust_with_spec_path(doc, "nivasa_statechart")
@@ -265,6 +266,15 @@ fn generate_enter_initial_state_fn(chart_name: &str, doc: &ScxmlDocument) -> Str
         }
     }
 
+    if cases.is_empty() {
+        return format!(
+            "pub fn {}_enter_initial_state(state: {}) -> {} {{\n    state\n}}\n",
+            chart_name.to_snake_case(),
+            state_type,
+            state_type
+        );
+    }
+
     let mut out = format!(
         "pub fn {}_enter_initial_state(state: {}) -> {} {{\n\
              match state {{\n",
@@ -351,7 +361,7 @@ trait CaseConvert {
 
 impl CaseConvert for str {
     fn to_pascal_case(&self) -> String {
-        self.split(|c: char| c == '_' || c == '.' || c == '-' || c == ' ')
+        self.split(['_', '.', '-', ' '])
             .filter(|s| !s.is_empty())
             .map(|s| {
                 let mut chars = s.chars();
@@ -367,7 +377,7 @@ impl CaseConvert for str {
 
     fn to_snake_case(&self) -> String {
         let mut result = String::new();
-        let s = self.replace('.', "_").replace('-', "_");
+        let s = self.replace(['.', '-'], "_");
         for (i, c) in s.chars().enumerate() {
             if c.is_uppercase() && i > 0 {
                 result.push('_');

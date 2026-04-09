@@ -166,7 +166,7 @@ fn post_route_registration_supports_json_and_query_extraction() {
 
     assert!(routes.resolve_match("POST", request.path()).is_some());
     assert_eq!(request.query_typed::<u32>("page").unwrap(), 2);
-    assert_eq!(request.query_typed::<bool>("active").unwrap(), true);
+    assert!(request.query_typed::<bool>("active").unwrap());
     assert_eq!(
         request.header_typed::<String>("x-request-id").unwrap(),
         "abc123"
@@ -238,6 +238,7 @@ struct VersionedReportsController;
 
 #[impl_controller]
 impl VersionedReportsController {
+    #[allow(dead_code)]
     #[nivasa_macros::get("/summary")]
     #[nivasa_macros::http_code(204)]
     #[nivasa_macros::header("x-controller-version", "v1")]
@@ -668,9 +669,9 @@ fn controller_req_runtime_exposes_raw_request_only_after_route_matching() {
     );
 }
 
-async fn evaluate_controller_guard<'a, G: Guard>(
+async fn evaluate_controller_guard<G: Guard>(
     pipeline: &mut RequestPipeline,
-    guard: &'a G,
+    guard: &G,
     handler: &'static str,
     controller_guards: &[&'static str],
     handler_guard_metadata: &[(&'static str, Vec<&'static str>)],
@@ -1019,10 +1020,7 @@ async fn controller_guard_resolves_from_dependency_container() {
     );
     assert_eq!(response.body(), &Body::text("guarded"));
 
-    assert_eq!(
-        container.resolve::<InjectableGuard>().await.unwrap().allowance.allowed,
-        true
-    );
+    assert!(container.resolve::<InjectableGuard>().await.unwrap().allowance.allowed);
 }
 
 #[tokio::test]
