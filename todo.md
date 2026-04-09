@@ -568,7 +568,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 3.4 — Rate Limiting / Throttling
 
 - [ ] Implement `ThrottlerModule` (configurable: TTL, limit per window)
-- [ ] Implement `ThrottlerGuard` (apply via `#[guard(ThrottlerGuard)]`)
+- [x] Implement `ThrottlerGuard` (apply via `#[guard(ThrottlerGuard)]`)
 - [ ] Implement in-memory store (default)
 - [ ] Define `ThrottlerStorage` trait for pluggable backends (Redis, etc.)
 - [ ] Implement `#[throttle(limit = 10, ttl = 60)]` per-route override
