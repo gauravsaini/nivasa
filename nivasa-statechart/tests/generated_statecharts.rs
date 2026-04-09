@@ -769,6 +769,34 @@ fn request_handler_error_short_circuits_to_done() {
 }
 
 #[test]
+fn request_handler_stage_interceptor_error_short_circuits_to_done() {
+    let (mut engine, tracer) = traced_engine::<NivasaRequestStatechart>(
+        NivasaRequestState::HandlerExecution,
+    );
+
+    drive_and_assert_trace(
+        &mut engine,
+        &tracer,
+        &[
+            (
+                NivasaRequestEvent::ErrorInterceptor,
+                NivasaRequestState::ErrorHandling,
+            ),
+            (
+                NivasaRequestEvent::FilterHandled,
+                NivasaRequestState::SendingResponse,
+            ),
+            (
+                NivasaRequestEvent::ErrorSend,
+                NivasaRequestState::Done,
+            ),
+        ],
+    );
+
+    assert!(engine.is_in_final_state());
+}
+
+#[test]
 fn tracer_receives_generated_request_transitions() {
     let (mut engine, tracer) = traced_engine::<NivasaRequestStatechart>(
         NivasaRequestState::Received,

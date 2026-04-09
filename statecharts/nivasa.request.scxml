@@ -77,6 +77,7 @@
       <log expr="'Invoking controller handler method'"/>
     </onentry>
     <transition event="handler.complete" target="interceptor_post"/>
+    <transition event="error.interceptor" target="error_handling"/>
     <transition event="error.handler" target="error_handling"/>
   </state>
 
