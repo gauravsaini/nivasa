@@ -1,0 +1,5 @@
+error: `#[api_response]` description cannot be empty
+  --> tests/trybuild/controller_api_response_invalid.rs:11:76
+   |
+11 |     #[nivasa_macros::api_response(status = 200, type = User, description = "")]
+   |                                                                            ^^
