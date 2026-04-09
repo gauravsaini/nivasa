@@ -6,8 +6,11 @@
 //! type. Runtime config loading, `for_root`/`for_feature`, env parsing, and
 //! injectable services land in later slices.
 
+use dotenvy::Error as DotenvError;
 use nivasa_core::module::{ConfigurableModule, DynamicModule, ModuleMetadata};
+use std::collections::BTreeMap;
 use std::any::TypeId;
+use std::path::Path;
 
 /// Bootstrap-only options for the config module dynamic surface.
 ///
@@ -80,6 +83,28 @@ pub struct ConfigOptionsProvider;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct ConfigModule;
 
+/// Errors raised while loading `.env` config sources.
+#[derive(Debug)]
+pub enum ConfigLoadError {
+    EnvFile(DotenvError),
+}
+
+impl std::fmt::Display for ConfigLoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EnvFile(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for ConfigLoadError {}
+
+impl From<DotenvError> for ConfigLoadError {
+    fn from(value: DotenvError) -> Self {
+        Self::EnvFile(value)
+    }
+}
+
 impl ConfigModule {
     /// Create a new `ConfigModule` marker.
     pub const fn new() -> Self {
@@ -94,6 +119,22 @@ impl ConfigModule {
         DynamicModule::new(ModuleMetadata::new())
             .with_providers(vec![TypeId::of::<ConfigOptionsProvider>()])
             .with_global(options.is_global)
+    }
+
+    /// Load one configured `.env` file into an in-memory map.
+    ///
+    /// This intentionally does not mutate process env and only uses the first
+    /// configured env path. Multi-file precedence lands in later slices.
+    pub fn load_env(options: &ConfigOptions) -> Result<BTreeMap<String, String>, ConfigLoadError> {
+        if options.ignore_env_file {
+            return Ok(BTreeMap::new());
+        }
+
+        let Some(path) = options.env_file_paths.first() else {
+            return Ok(BTreeMap::new());
+        };
+
+        load_env_file(path)
     }
 }
 
@@ -115,10 +156,25 @@ fn normalize_env_file_path(path: String) -> String {
     path.trim().to_string()
 }
 
+fn load_env_file(path: impl AsRef<Path>) -> Result<BTreeMap<String, String>, ConfigLoadError> {
+    let mut loaded = BTreeMap::new();
+
+    for entry in dotenvy::from_path_iter(path)? {
+        let (key, value) = entry?;
+        loaded.insert(key, value);
+    }
+
+    Ok(loaded)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ConfigModule, ConfigOptions, ConfigOptionsProvider};
+    use super::{ConfigLoadError, ConfigModule, ConfigOptions, ConfigOptionsProvider};
+    use std::collections::BTreeMap;
     use std::any::TypeId;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn config_module_is_constructible() {
@@ -260,5 +316,64 @@ mod tests {
             module.merged_metadata().providers,
             vec![TypeId::of::<ConfigOptionsProvider>()]
         );
+    }
+
+    #[test]
+    fn load_env_reads_the_first_configured_env_file() {
+        let path = write_temp_env_file("PORT=3000\nHOST=127.0.0.1\n");
+        let options = ConfigOptions::new()
+            .with_env_file_path(path.to_string_lossy().to_string())
+            .with_env_file_path("ignored.env");
+
+        let loaded = ConfigModule::load_env(&options).expect("env file should load");
+
+        assert_eq!(
+            loaded,
+            BTreeMap::from([
+                ("HOST".to_string(), "127.0.0.1".to_string()),
+                ("PORT".to_string(), "3000".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn load_env_respects_ignore_env_file_option() {
+        let path = write_temp_env_file("PORT=3000\n");
+        let options = ConfigOptions::new()
+            .with_env_file_path(path.to_string_lossy().to_string())
+            .with_ignore_env_file(true);
+
+        let loaded = ConfigModule::load_env(&options).expect("ignored env files should no-op");
+
+        assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn load_env_returns_empty_when_no_env_file_is_configured() {
+        let loaded = ConfigModule::load_env(&ConfigOptions::new()).expect("missing path should no-op");
+
+        assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn config_load_error_wraps_dotenv_failures() {
+        let options = ConfigOptions::new().with_env_file_path("/definitely/missing/.env");
+
+        let error = ConfigModule::load_env(&options).expect_err("missing file should error");
+
+        assert!(matches!(error, ConfigLoadError::EnvFile(_)));
+    }
+
+    fn write_temp_env_file(contents: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after unix epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "nivasa-config-{unique}-{}.env",
+            std::process::id()
+        ));
+        fs::write(&path, contents).expect("temp env file should write");
+        path
     }
 }

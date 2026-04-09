@@ -7,5 +7,6 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+dotenvy = "0.15"
 nivasa-common = { path = "../nivasa-common" }
 nivasa-core = { path = "../nivasa-core" }
