@@ -12,11 +12,11 @@ use nivasa_filters::{ExceptionFilter, ExceptionFilterMetadata};
 use nivasa_http::{NivasaMiddleware, NivasaResponse, NivasaServer, NivasaServerBuilder};
 use nivasa_guards::Guard;
 use nivasa_interceptors::Interceptor;
-use nivasa_pipes::Pipe;
 use nivasa_routing::{RouteDispatchError, RouteMethod};
+use nivasa_pipes::Pipe;
 use crate::openapi::{
-    OpenApiComponents, OpenApiDocument, OpenApiMediaType, OpenApiOperation,
-    OpenApiParameter, OpenApiRequestBody, OpenApiResponse, OpenApiSecurityRequirement,
+    OpenApiComponents, OpenApiDocument, OpenApiMediaType, OpenApiOperation, OpenApiParameter,
+    OpenApiRequestBody, OpenApiResponse, OpenApiSecurityRequirement, swagger_ui_index_html,
 };
 use serde_json::{Map, Value};
 use std::collections::HashSet;
@@ -25,6 +25,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 const DEFAULT_OPENAPI_SPEC_PATH: &str = "/api/docs/openapi.json";
+const DEFAULT_SWAGGER_UI_PATH: &str = "/api/docs";
 
 /// Supported API versioning strategies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -180,6 +181,7 @@ impl Default for ServerOptions {
 pub struct AppBootstrapConfig {
     pub server: ServerOptions,
     openapi_spec_path: String,
+    swagger_ui_path: String,
 }
 
 /// Minimal application shell for the umbrella crate.
@@ -320,6 +322,7 @@ impl AppBootstrapConfig {
         Self {
             server,
             openapi_spec_path: DEFAULT_OPENAPI_SPEC_PATH.to_string(),
+            swagger_ui_path: DEFAULT_SWAGGER_UI_PATH.to_string(),
         }
     }
 
@@ -342,6 +345,11 @@ impl AppBootstrapConfig {
         &self.openapi_spec_path
     }
 
+    /// Path where the Swagger UI shell is served.
+    pub fn swagger_ui_path(&self) -> &str {
+        &self.swagger_ui_path
+    }
+
     /// Override OpenAPI JSON path.
     pub fn with_openapi_spec_path(mut self, path: impl Into<String>) -> Self {
         let path = path.into().trim().to_string();
@@ -355,6 +363,17 @@ impl AppBootstrapConfig {
         self
     }
 
+    /// Override Swagger UI mount path.
+    pub fn with_swagger_ui_path(mut self, path: impl Into<String>) -> Self {
+        let path = normalize_swagger_ui_path(path.into());
+        self.swagger_ui_path = if path.is_empty() {
+            DEFAULT_SWAGGER_UI_PATH.to_string()
+        } else {
+            path
+        };
+        self
+    }
+
     /// Register an OpenAPI JSON endpoint using the configured path.
     pub fn serve_openapi_spec(
         &self,
@@ -362,6 +381,21 @@ impl AppBootstrapConfig {
     ) -> Result<NivasaServerBuilder, RouteDispatchError> {
         self.server_builder()
             .openapi_spec_json(self.openapi_spec_path.clone(), openapi_document_to_value(document))
+    }
+
+    /// Register the Swagger UI shell at the configured mount path.
+    pub fn serve_swagger_ui(&self) -> Result<NivasaServerBuilder, RouteDispatchError> {
+        let html = swagger_ui_index_html(
+            self.openapi_spec_path.clone(),
+            "Nivasa API Docs",
+            "OpenAPI documentation",
+            "1.0.0",
+        );
+
+        self.server_builder()
+            .route(RouteMethod::Get, self.swagger_ui_path.clone(), move |_| {
+                NivasaResponse::html(html.clone())
+            })
     }
 
     /// Attach versioning configuration at bootstrap time.
@@ -746,8 +780,20 @@ fn openapi_components_to_value(components: &OpenApiComponents) -> Map<String, Va
     ])
 }
 
+fn normalize_swagger_ui_path(path: String) -> String {
+    let path = path.trim().to_string();
+
+    if path.is_empty() {
+        String::new()
+    } else if path.starts_with('/') {
+        path
+    } else {
+        format!("/{path}")
+    }
+}
+
 #[cfg(test)]
-mod tests {
+mod openapi_tests {
     use super::*;
     use crate::openapi::{build_openapi_document, OpenApiControllerMetadata, OpenApiControllerMetadataProvider};
 
@@ -775,9 +821,25 @@ mod tests {
     fn openapi_spec_path_defaults_and_overrides() {
         let bootstrap = AppBootstrapConfig::default();
         assert_eq!(bootstrap.openapi_spec_path(), DEFAULT_OPENAPI_SPEC_PATH);
+        assert_eq!(bootstrap.swagger_ui_path(), DEFAULT_SWAGGER_UI_PATH);
 
-        let custom = bootstrap.with_openapi_spec_path("custom/openapi.json");
+        let custom = bootstrap
+            .clone()
+            .with_openapi_spec_path("custom/openapi.json");
         assert_eq!(custom.openapi_spec_path(), "/custom/openapi.json");
+
+        let custom_ui = bootstrap.with_swagger_ui_path("custom/docs");
+        assert_eq!(custom_ui.swagger_ui_path(), "/custom/docs");
+    }
+
+    #[test]
+    fn swagger_ui_mount_uses_configured_path_and_openapi_spec() {
+        let bootstrap = AppBootstrapConfig::default()
+            .with_openapi_spec_path("/docs/openapi.json")
+            .with_swagger_ui_path("docs");
+
+        assert_eq!(bootstrap.swagger_ui_path(), "/docs");
+        assert!(bootstrap.serve_swagger_ui().is_ok());
     }
 
     #[test]
@@ -996,7 +1058,7 @@ static NOOP_WAKER_VTABLE: RawWakerVTable =
     RawWakerVTable::new(noop_clone, noop_wake, noop_wake_by_ref, noop_drop);
 
 #[cfg(test)]
-mod tests {
+mod docs_tests {
     use super::*;
     use nivasa_http::{NextMiddleware, NivasaRequest, NivasaResponse};
     use nivasa_routing::RouteMethod;

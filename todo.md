@@ -958,7 +958,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 7.5.2 — Swagger UI
 - [x] Bundle Swagger UI static assets (or reference CDN)
-- [ ] Serve Swagger UI at configurable path (default: `/api/docs`)
+- [x] Serve Swagger UI at configurable path (default: `/api/docs`)
 - [x] Support customizing title, description, version in Swagger UI
 
 #### 7.5.3 — OpenAPI Tests
