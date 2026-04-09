@@ -747,7 +747,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `ConfigModule::for_root(options: ConfigOptions) -> DynamicModule`
 - [x] Implement `ConfigModule::for_feature(options: ConfigOptions) -> DynamicModule`
 - [ ] Support `is_global: true` (register ConfigService globally)
-- [ ] Support `env_file_path: ".env"` option (single or vec of paths)
+- [x] Support `env_file_path: ".env"` option (single or vec of paths)
 - [ ] Support `ignore_env_file: true` (only use process env vars)
 - [ ] Support `validate_config: schema` (validate config at startup)
 
