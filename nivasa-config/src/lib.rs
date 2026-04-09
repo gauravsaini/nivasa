@@ -6,10 +6,11 @@
 //! type. Runtime config loading, `for_root`/`for_feature`, env parsing, and
 //! richer config services land in later slices.
 
-use dotenvy::Error as DotenvError;
 use nivasa_core::module::{ConfigurableModule, DynamicModule, ModuleMetadata};
 use std::collections::BTreeMap;
 use std::any::TypeId;
+use std::fs;
+use std::io;
 use std::path::Path;
 
 /// Bootstrap-only options for the config module dynamic surface.
@@ -22,6 +23,7 @@ pub struct ConfigOptions {
     pub is_global: bool,
     pub env_file_paths: Vec<String>,
     pub ignore_env_file: bool,
+    pub expand_variables: bool,
 }
 
 impl ConfigOptions {
@@ -31,6 +33,7 @@ impl ConfigOptions {
             is_global: false,
             env_file_paths: Vec::new(),
             ignore_env_file: false,
+            expand_variables: false,
         }
     }
 
@@ -67,6 +70,12 @@ impl ConfigOptions {
     /// Ignore `.env` files and rely on process environment only.
     pub const fn with_ignore_env_file(mut self, ignore_env_file: bool) -> Self {
         self.ignore_env_file = ignore_env_file;
+        self
+    }
+
+    /// Enable variable interpolation inside loaded env values.
+    pub const fn with_expand_variables(mut self, expand_variables: bool) -> Self {
+        self.expand_variables = expand_variables;
         self
     }
 }
@@ -120,7 +129,7 @@ pub struct ConfigModule;
 /// Errors raised while loading `.env` config sources.
 #[derive(Debug)]
 pub enum ConfigLoadError {
-    EnvFile(DotenvError),
+    EnvFile(io::Error),
 }
 
 impl std::fmt::Display for ConfigLoadError {
@@ -133,8 +142,8 @@ impl std::fmt::Display for ConfigLoadError {
 
 impl std::error::Error for ConfigLoadError {}
 
-impl From<DotenvError> for ConfigLoadError {
-    fn from(value: DotenvError) -> Self {
+impl From<io::Error> for ConfigLoadError {
+    fn from(value: io::Error) -> Self {
         Self::EnvFile(value)
     }
 }
@@ -158,7 +167,9 @@ impl ConfigModule {
     /// Load configured `.env` files into an in-memory map.
     ///
     /// This intentionally does not mutate process env and merges files in the
-    /// configured order. Later files can override earlier keys.
+    /// configured order. Later files can override earlier keys. If variable
+    /// expansion is enabled, values can reference other keys via `$VAR` or
+    /// `${VAR}` before process env overlay happens.
     pub fn load_env(options: &ConfigOptions) -> Result<BTreeMap<String, String>, ConfigLoadError> {
         if options.ignore_env_file {
             return Ok(BTreeMap::new());
@@ -172,6 +183,10 @@ impl ConfigModule {
 
         for path in &options.env_file_paths {
             loaded.extend(load_env_file(path)?);
+        }
+
+        if options.expand_variables {
+            loaded = expand_env_values(&loaded);
         }
 
         loaded.extend(load_process_env());
@@ -208,9 +223,12 @@ fn normalize_env_file_path(path: String) -> String {
 fn load_env_file(path: impl AsRef<Path>) -> Result<BTreeMap<String, String>, ConfigLoadError> {
     let mut loaded = BTreeMap::new();
 
-    for entry in dotenvy::from_path_iter(path)? {
-        let (key, value) = entry?;
-        loaded.insert(key, value);
+    let contents = fs::read_to_string(path)?;
+
+    for line in contents.lines() {
+        if let Some((key, value)) = parse_env_line(line) {
+            loaded.insert(key, value);
+        }
     }
 
     Ok(loaded)
@@ -218,6 +236,122 @@ fn load_env_file(path: impl AsRef<Path>) -> Result<BTreeMap<String, String>, Con
 
 fn load_process_env() -> BTreeMap<String, String> {
     std::env::vars().collect()
+}
+
+fn expand_env_values(values: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let mut expanded = BTreeMap::new();
+
+    for (key, value) in values {
+        expanded.insert(key.clone(), expand_env_value(value, values, 0));
+    }
+
+    expanded
+}
+
+fn expand_env_value(
+    value: &str,
+    values: &BTreeMap<String, String>,
+    depth: usize,
+) -> String {
+    if depth > 8 {
+        return value.to_string();
+    }
+
+    let process_env = load_process_env();
+    let mut resolved = String::with_capacity(value.len());
+    let mut chars = value.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch != '$' {
+            resolved.push(ch);
+            continue;
+        }
+
+        match chars.peek().copied() {
+            Some('{') => {
+                chars.next();
+                let mut name = String::new();
+                while let Some(next) = chars.next() {
+                    if next == '}' {
+                        break;
+                    }
+                    name.push(next);
+                }
+                resolved.push_str(
+                    lookup_env_value(&name, values, &process_env)
+                        .map(|value| expand_env_value(&value, values, depth + 1))
+                        .unwrap_or_default()
+                        .as_str(),
+                );
+            }
+            Some(next) if is_env_name_start(next) => {
+                let mut name = String::new();
+                name.push(next);
+                chars.next();
+                while let Some(&next) = chars.peek() {
+                    if is_env_name_continue(next) {
+                        name.push(next);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                resolved.push_str(
+                    lookup_env_value(&name, values, &process_env)
+                        .map(|value| expand_env_value(&value, values, depth + 1))
+                        .unwrap_or_default()
+                        .as_str(),
+                );
+            }
+            _ => resolved.push('$'),
+        }
+    }
+
+    resolved
+}
+
+fn lookup_env_value(
+    key: &str,
+    values: &BTreeMap<String, String>,
+    process_env: &BTreeMap<String, String>,
+) -> Option<String> {
+    process_env
+        .get(key)
+        .cloned()
+        .or_else(|| values.get(key).cloned())
+}
+
+fn is_env_name_start(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphabetic()
+}
+
+fn is_env_name_continue(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
+}
+
+fn parse_env_line(line: &str) -> Option<(String, String)> {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with('#') {
+        return None;
+    }
+
+    let line = line.strip_prefix("export ").unwrap_or(line);
+    let (key, value) = line.split_once('=')?;
+    let key = key.trim();
+    if key.is_empty() {
+        return None;
+    }
+
+    let mut value = value.trim().to_string();
+    if value.len() >= 2 {
+        let first = value.chars().next().unwrap();
+        let last = value.chars().last().unwrap();
+        if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+            value = value[1..value.len() - 1].to_string();
+        }
+    }
+
+    Some((key.to_string(), value))
 }
 
 #[cfg(test)]
@@ -342,6 +476,13 @@ mod tests {
     }
 
     #[test]
+    fn config_options_support_expand_variables_flag() {
+        let options = ConfigOptions::new().with_expand_variables(true);
+
+        assert!(options.expand_variables);
+    }
+
+    #[test]
     fn for_root_preserves_ignore_env_file_options_surface() {
         let options = ConfigOptions::new().with_ignore_env_file(true);
         let module = ConfigModule::for_root(options.clone());
@@ -416,6 +557,23 @@ mod tests {
         });
 
         assert_eq!(loaded.get(key).map(String::as_str), Some("from_process"));
+    }
+
+    #[test]
+    fn load_env_expands_variable_references_when_enabled() {
+        let path = write_temp_env_file(
+            "NIVASA_CONFIG_TEST_HOST=localhost\nNIVASA_CONFIG_TEST_PORT=3000\nNIVASA_CONFIG_TEST_URL=http://$NIVASA_CONFIG_TEST_HOST:$NIVASA_CONFIG_TEST_PORT\n",
+        );
+        let options = ConfigOptions::new()
+            .with_env_file_path(path.to_string_lossy().to_string())
+            .with_expand_variables(true);
+
+        let loaded = ConfigModule::load_env(&options).expect("env loading should succeed");
+
+        assert_eq!(
+            loaded.get("NIVASA_CONFIG_TEST_URL").map(String::as_str),
+            Some("http://localhost:3000")
+        );
     }
 
     #[test]
