@@ -68,8 +68,10 @@ impl ConfigurableModule for ConfigModule {
         Self::for_root(options)
     }
 
-    fn for_feature(_options: Self::Options) -> DynamicModule {
+    fn for_feature(options: Self::Options) -> DynamicModule {
         DynamicModule::new(ModuleMetadata::new())
+            .with_providers(vec![TypeId::of::<ConfigOptionsProvider>()])
+            .with_global(options.is_global)
     }
 }
 
@@ -109,6 +111,32 @@ mod tests {
     #[test]
     fn for_root_can_mark_config_module_global() {
         let module = ConfigModule::for_root(ConfigOptions::new().with_global(true));
+
+        assert!(module.metadata.is_global);
+    }
+
+    #[test]
+    fn for_feature_registers_config_options_provider_metadata() {
+        let module = <ConfigModule as nivasa_core::module::ConfigurableModule>::for_feature(
+            ConfigOptions::new(),
+        );
+
+        assert_eq!(
+            module.providers,
+            vec![TypeId::of::<ConfigOptionsProvider>()]
+        );
+        assert!(!module.metadata.is_global);
+        assert_eq!(
+            module.merged_metadata().providers,
+            vec![TypeId::of::<ConfigOptionsProvider>()]
+        );
+    }
+
+    #[test]
+    fn for_feature_can_mark_config_module_global_when_requested() {
+        let module = <ConfigModule as nivasa_core::module::ConfigurableModule>::for_feature(
+            ConfigOptions::new().with_global(true),
+        );
 
         assert!(module.metadata.is_global);
     }
