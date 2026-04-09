@@ -775,10 +775,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 6.1.5 — Config Tests
 - [x] Test loading from .env file
 - [x] Test process env variable overrides .env
-- [ ] Test `get::<i32>` type coercion
-- [ ] Test `get::<bool>` type coercion
+- [x] Test `get::<i32>` type coercion
+- [x] Test `get::<bool>` type coercion
 - [x] Test `get_or_throw` with missing key → startup error
-- [ ] Test global config is accessible from any module
+- [x] Test global config is accessible from any module
 - [ ] Test config schema validation at startup
 
 ### 6.2 — Structured Logging (`tracing` integration)

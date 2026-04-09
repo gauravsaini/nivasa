@@ -201,7 +201,7 @@ impl ConfigModule {
     /// This slice only advertises config-related provider metadata and global
     /// visibility. Actual env loading and richer `ConfigService` wiring land later.
     pub fn for_root(options: ConfigOptions) -> DynamicModule {
-        DynamicModule::new(ModuleMetadata::new())
+        DynamicModule::new(ModuleMetadata::new().with_exports(config_export_types()))
             .with_providers(config_provider_types())
             .with_global(options.is_global)
     }
@@ -245,7 +245,7 @@ impl ConfigurableModule for ConfigModule {
     }
 
     fn for_feature(options: Self::Options) -> DynamicModule {
-        DynamicModule::new(ModuleMetadata::new())
+        DynamicModule::new(ModuleMetadata::new().with_exports(config_export_types()))
             .with_providers(config_provider_types())
             .with_global(options.is_global)
     }
@@ -256,6 +256,10 @@ fn config_provider_types() -> Vec<TypeId> {
         TypeId::of::<ConfigOptionsProvider>(),
         TypeId::of::<ConfigService>(),
     ]
+}
+
+fn config_export_types() -> Vec<TypeId> {
+    vec![TypeId::of::<ConfigService>()]
 }
 
 fn normalize_env_file_path(path: String) -> String {
@@ -409,8 +413,10 @@ fn parse_env_line(line: &str) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::{
-        config_provider_types, ConfigLoadError, ConfigModule, ConfigOptions, ConfigService,
+        config_export_types, config_provider_types, ConfigLoadError, ConfigModule, ConfigOptions,
+        ConfigService,
     };
+    use std::any::TypeId;
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::PathBuf;
@@ -435,7 +441,9 @@ mod tests {
 
         assert_eq!(module.providers, config_provider_types());
         assert!(!module.metadata.is_global);
+        assert_eq!(module.metadata.exports, config_export_types());
         assert_eq!(module.merged_metadata().providers, config_provider_types());
+        assert_eq!(module.merged_metadata().exports, config_export_types());
     }
 
     #[test]
@@ -453,7 +461,9 @@ mod tests {
 
         assert_eq!(module.providers, config_provider_types());
         assert!(!module.metadata.is_global);
+        assert_eq!(module.metadata.exports, config_export_types());
         assert_eq!(module.merged_metadata().providers, config_provider_types());
+        assert_eq!(module.merged_metadata().exports, config_export_types());
     }
 
     #[test]
@@ -580,6 +590,7 @@ mod tests {
 
         assert_eq!(options.env_file_paths, vec![".env", ".env.local"]);
         assert_eq!(module.merged_metadata().providers, config_provider_types());
+        assert_eq!(module.merged_metadata().exports, config_export_types());
     }
 
     #[test]
@@ -591,6 +602,7 @@ mod tests {
 
         assert_eq!(options.env_file_paths, vec![".env", ".env.test"]);
         assert_eq!(module.merged_metadata().providers, config_provider_types());
+        assert_eq!(module.merged_metadata().exports, config_export_types());
     }
 
     #[test]
@@ -614,6 +626,7 @@ mod tests {
 
         assert!(options.ignore_env_file);
         assert_eq!(module.merged_metadata().providers, config_provider_types());
+        assert_eq!(module.merged_metadata().exports, config_export_types());
     }
 
     #[test]
@@ -625,6 +638,49 @@ mod tests {
 
         assert!(options.ignore_env_file);
         assert_eq!(module.merged_metadata().providers, config_provider_types());
+        assert_eq!(module.merged_metadata().exports, config_export_types());
+    }
+
+    struct ConfigConsumerModule;
+
+    impl nivasa_core::module::Module for ConfigConsumerModule {
+        fn metadata(&self) -> nivasa_core::module::ModuleMetadata {
+            nivasa_core::module::ModuleMetadata::new()
+        }
+
+        fn configure<'life0, 'life1, 'async_trait>(
+            &'life0 self,
+            _container: &'life1 nivasa_core::di::DependencyContainer,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<(), nivasa_core::di::error::DiError>,
+                    > + Send
+                    + 'async_trait,
+            >,
+        >
+        where
+            'life0: 'async_trait,
+            'life1: 'async_trait,
+            Self: 'async_trait,
+        {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[test]
+    fn global_config_service_is_visible_to_other_modules() {
+        let mut registry = nivasa_core::module::ModuleRegistry::new();
+        registry.register_dynamic::<ConfigModule>(ConfigModule::for_root(
+            ConfigOptions::new().with_global(true),
+        ));
+        registry.register(&ConfigConsumerModule);
+
+        let visible = registry
+            .visible_exports::<ConfigConsumerModule>()
+            .expect("global config module should resolve exports");
+
+        assert!(visible.contains(&TypeId::of::<ConfigService>()));
     }
 
     #[test]
