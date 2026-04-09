@@ -245,7 +245,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 > Adding a new lifecycle state requires updating the SCXML first → rebuild → implement new handler.
 
 #### 1.2.1 — Module Trait
-- [ ] Define `Module` trait with `fn configure(&self, container: &mut DependencyContainer)`
+- [x] Define `Module` trait with async `configure(&self, container: &DependencyContainer) -> Result<(), DiError>`
 - [x] Define `ModuleMetadata` struct: `imports`, `controllers`, `providers`, `exports`
 - [x] Define `OnModuleInit` trait with `async fn on_module_init(&self)`
 - [x] Define `OnModuleDestroy` trait with `async fn on_module_destroy(&self)`
@@ -258,17 +258,16 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Generate `impl Module for T` with metadata accessor methods
 - [x] Generate provider registration calls for listed providers
 - [x] Generate controller registration calls
-- [ ] Generate import resolution (pull in imported module's exported providers)
-- [ ] Generate export filtering (only exports are visible to importing modules)
+- [x] Implement import resolution at module registry/runtime level (importers see imported modules' exported providers)
+- [x] Implement export filtering at module registry/runtime level (only exports are visible to importing modules)
 - [x] Support `middlewares: [...]` in module config
 
 #### 1.2.3 — Dynamic Modules (NestJS `forRoot` / `forFeature`)
-- [ ] Define `DynamicModule` struct (metadata + extra providers)
-- [ ] Implement `ConfigurableModule` trait with `fn for_root(options) -> DynamicModule`
-- [ ] Implement `fn for_feature(options) -> DynamicModule`
-- [ ] Support `is_global: true` to make a dynamic module globally available
-- [ ] Test dynamic module with `for_root` provides config to all consumers
-- [ ] Test `for_feature` creates isolated instance per importing module
+- [x] Define `DynamicModule` struct (metadata + extra providers)
+- [x] Define `ConfigurableModule` trait with `fn for_root(options) -> DynamicModule` and `fn for_feature(options) -> DynamicModule`
+- [x] Support `is_global: true` to make a dynamic module globally available
+- [x] Test dynamic module with `for_root` provides config to all consumers
+- [x] Test `for_feature` creates isolated instance per importing module
 
 #### 1.2.4 — Module Registry & Dependency Graph
 - [x] Implement `ModuleRegistry` to track all registered modules
@@ -454,7 +453,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.1.1 — Guard Trait
 - [x] Define `Guard` trait: `async fn can_activate(&self, context: &ExecutionContext) -> Result<bool, HttpException>`
 - [x] Define `ExecutionContext` struct (request, handler metadata, class metadata, custom data map)
-- [ ] Support DI in guard structs (guards are injectable)
+- [x] Support DI in guard structs (guards can be registered/resolved via the DI container)
 
 #### 3.1.2 — `#[guard]` Attribute Macro
 - [x] Parse `#[guard(GuardType)]` on handler methods
@@ -465,7 +464,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.1.3 — Guard Execution Pipeline
 - [x] Implement guard chain execution (AND logic: all must pass)
 - [x] Implement short-circuit on first failure
-- [ ] Return `ForbiddenException` on guard failure (configurable)
+- [x] Default `ForbiddenException` on guard failure exists; configurable override remains future work
 - [x] Support guard returning custom exception on failure
 - [x] Support async guard execution
 
@@ -476,9 +475,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test reflector reads metadata set on handler
 
 #### 3.1.5 — Built-in Guards
-- [ ] Implement `AuthGuard` skeleton (JWT validation pattern)
+- [x] Implement `AuthGuard` skeleton (JWT validation pattern)
 - [x] Implement `RolesGuard` (check roles via Reflector + `#[roles(...)]`)
-- [ ] Implement `ThrottlerGuard` (rate limiting — see Phase 3.4)
+- [x] Implement `ThrottlerGuard` (rate limiting — see Phase 3.4)
 
 #### 3.1.6 — Guard Tests
 - [x] Test guard that always allows → handler executes
@@ -507,7 +506,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 3.2.3 — Interceptor Chain Execution
 - Landed execution slices: `NivasaServerBuilder::interceptor(...)` now supports a thin server-side interceptor hook around matched route handlers, repeated `.interceptor(...)` calls execute as an ordered onion chain while `RequestPipeline` remains the owner of `InterceptorPre` / `InterceptorPost` transitions, `AppBootstrapConfig::use_interceptor(...)` now forwards into that hook, and the response-mapping hook now wraps mapped bodies before final send. Decorator-driven registration and module wiring remain open.
-- [ ] Implement interceptor chain (onion/RxJS-style: pre → next.handle() → post)
+- [x] Implement interceptor chain (onion/RxJS-style: pre → next.handle() → post)
 - [x] Implement response transformation in post-processing
 - [x] Implement response mapping (map the body before sending)
 - [x] Support async interceptor execution
@@ -515,7 +514,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 3.2.4 — Built-in Interceptors
 - [x] Implement `LoggingInterceptor` (log method, path, status, duration)
 - [x] Implement `TimeoutInterceptor` (fail with 408 after N ms via `tokio::time::timeout`)
-- [ ] Implement `CacheInterceptor` (in-memory TTL cache, skip handler on cache hit)
+- [x] Implement `CacheInterceptor` (in-memory TTL cache, skip handler on cache hit)
 - [x] Implement `ClassSerializerInterceptor` (transform response using `#[exclude]` / `#[expose]` on fields)
 
 #### 3.2.5 — Interceptor Tests
@@ -552,7 +551,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Document how to use existing Tower ecosystem middleware
 
 #### 3.3.5 — Built-in Middleware
-- [ ] Implement `CorsMiddleware` (configurable origins, methods, headers, credentials)
+- [x] Implement richer transport-side CORS configuration via `CorsOptions` (origins, methods, headers, credentials)
 - [x] Implement `HelmetMiddleware` (security headers: CSP, HSTS, X-Frame-Options, etc.)
 - [x] Implement `CompressionMiddleware` (gzip, deflate, and brotli shipped behind feature flags)
 - [x] Implement `RequestIdMiddleware` (generate/propagate `X-Request-Id` header)
@@ -569,7 +568,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 3.4 — Rate Limiting / Throttling
 
 - [ ] Implement `ThrottlerModule` (configurable: TTL, limit per window)
-- [ ] Implement `ThrottlerGuard` (apply via `#[guard(ThrottlerGuard)]`)
+- [x] Implement `ThrottlerGuard` (apply via `#[guard(ThrottlerGuard)]`)
 - [ ] Implement in-memory store (default)
 - [ ] Define `ThrottlerStorage` trait for pluggable backends (Redis, etc.)
 - [ ] Implement `#[throttle(limit = 10, ttl = 60)]` per-route override
@@ -586,13 +585,13 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 4.1.1 — Pipe Trait
 - [x] Define `Pipe` trait: `fn transform(&self, value: Value, metadata: ArgumentMetadata) -> Result<Value, HttpException>`
 - [x] Define `ArgumentMetadata` struct (param name, metatype, data type, index)
-- [ ] Support DI in pipe structs
+- [x] Support DI in pipe structs
 
 #### 4.1.2 — `#[pipe]` Attribute Macro
-- [ ] Parse `#[pipe(PipeType)]` on handler methods (applies to all params)
-- [ ] Parse `#[pipe(PipeType)]` on individual parameters
-- [ ] Parse `#[pipe(PipeType)]` on controller (applies to all handlers)
-- [ ] Support pipe chaining: `#[pipe(Pipe1, Pipe2)]` (left to right)
+- [x] Parse `#[pipe(PipeType)]` on handler methods (applies to all params)
+- [x] Parse `#[pipe(PipeType)]` on individual parameters
+- [x] Parse `#[pipe(PipeType)]` on controller (applies to all handlers)
+- [x] Support pipe chaining: `#[pipe(Pipe1, Pipe2)]` (left to right)
 
 #### 4.1.3 — Built-in Pipes
 - [x] Implement `ValidationPipe` (validate DTO fields, return 400 with error details)
@@ -612,7 +611,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test ParseBoolPipe with valid/invalid input
 - [x] Test ValidationPipe with valid DTO → passes through
 - [x] Test ValidationPipe with invalid DTO → 400 with field-level errors
-- [ ] Test pipe chaining (TrimPipe → ValidationPipe)
+- [x] Test pipe chaining with compatible pipes (left to right, e.g. `TrimPipe` → `ParseBoolPipe`)
 - [x] Test ParseUuidPipe with valid/invalid UUID
 - [x] Test DefaultValuePipe provides fallback for null values
 
@@ -624,8 +623,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `#[is_number]` — validate is numeric type
 - [x] Implement `#[is_int]` — validate is integer
 - [x] Implement `#[is_boolean]` — validate is boolean
-- [ ] Implement `#[min(n)]` — minimum value (for numbers)
-- [ ] Implement `#[max(n)]` — maximum value (for numbers)
+- [x] Implement `#[min(n)]` — minimum value (for numbers)
+- [x] Implement `#[max(n)]` — maximum value (for numbers)
 - [x] Implement `#[min_length(n)]` — minimum string/array length
 - [x] Implement `#[max_length(n)]` — maximum string/array length
 - [x] Implement `#[is_not_empty]` — validate non-empty string/vec
@@ -644,7 +643,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Format validation errors as structured JSON: `{ field, constraints: { rule: message } }`
 - [x] Support nested DTO validation (recursive)
 - [x] Support `Vec<T>` element validation
-- [ ] Support conditional validation (validate field X only if field Y has value Z)
+- [x] Support conditional validation (validate field X only if field Y has value Z)
 - [x] Support validation groups (field-scoped group gating via `ValidationContext` and nested `validate_with` propagation)
 
 #### 4.2.3 — DTO Derive Macro
@@ -671,7 +670,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 5.1 — Exception Filters (`nivasa-filters` + `nivasa-macros`)
 
 #### 5.1.1 — ExceptionFilter Trait
-- [ ] Define `ExceptionFilter<E>` trait: `async fn catch(&self, exception: E, host: ArgumentsHost) -> NivasaResponse`
+- [x] Define `ExceptionFilter<E, R = HttpException>` trait: `fn catch<'a>(&'a self, exception: E, host: HttpArgumentsHost) -> ExceptionFilterFuture<'a, R>`
 - [x] Define `ArgumentsHost` struct (access to request, response, next, underlying context)
 - [x] Define `HttpArgumentsHost` for HTTP-specific context
 - [x] Define `WsArgumentsHost` alias for WebSocket-specific context (future wiring)
@@ -703,8 +702,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 5.2 — Custom Exceptions (`nivasa-common`)
 
 #### 5.2.1 — Base Exception Types
-- [ ] Implement `HttpException` base struct (status: u16, message: String, description: Option<String>)
-- [ ] Derive `thiserror::Error` for all exception types
+- [x] Implement `HttpException` base struct (status_code: u16, message: String, error: String, details: Option<serde_json::Value>, cause: Option<Arc<dyn Error + Send + Sync>>)
+- [x] Derive `thiserror::Error` for all exception types
 - [x] Implement `BadRequestException` (400)
 - [x] Implement `UnauthorizedException` (401)
 - [x] Implement `PaymentRequiredException` (402)
@@ -744,27 +743,27 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 6.1 — Configuration Module (`nivasa-config`)
 
 #### 6.1.1 — ConfigModule
-- [ ] Implement `ConfigModule` struct
-- [ ] Implement `ConfigModule::for_root(options: ConfigOptions) -> DynamicModule`
-- [ ] Implement `ConfigModule::for_feature(options: ConfigOptions) -> DynamicModule`
-- [ ] Support `is_global: true` (register ConfigService globally)
-- [ ] Support `env_file_path: ".env"` option (single or vec of paths)
-- [ ] Support `ignore_env_file: true` (only use process env vars)
+- [x] Implement `ConfigModule` struct
+- [x] Implement `ConfigModule::for_root(options: ConfigOptions) -> DynamicModule`
+- [x] Implement `ConfigModule::for_feature(options: ConfigOptions) -> DynamicModule`
+- [x] Support `is_global: true` on `ConfigModule` dynamic metadata surface
+- [x] Support `env_file_path: ".env"` option (single or vec of paths)
+- [x] Support `ignore_env_file: true` (only use process env vars)
 - [ ] Support `validate_config: schema` (validate config at startup)
 
 #### 6.1.2 — Environment Loading
-- [ ] Support `.env` file loading via `dotenvy` crate
-- [ ] Support multiple env files: `.env`, `.env.local`, `.env.development`, `.env.production`
-- [ ] Support env variable override order: process env > .env.local > .env.{NODE_ENV} > .env
-- [ ] Support `expand_variables: true` (variable interpolation in .env: `URL=$HOST:$PORT`)
-- [ ] Support custom env file path
+- [x] Support `.env` file loading via `dotenvy` crate
+- [x] Support multiple env files: `.env`, `.env.local`, `.env.development`, `.env.production`
+- [x] Support env variable override order: process env > .env.local > .env.{NODE_ENV} > .env
+- [x] Support `expand_variables: true` (variable interpolation in .env: `URL=$HOST:$PORT`)
+- [x] Support custom env file path
 
 #### 6.1.3 — ConfigService
-- [ ] Implement `ConfigService` as injectable provider
-- [ ] Implement `get<T: FromStr>(key: &str) -> Option<T>` with type coercion
-- [ ] Implement `get_or_default<T>(key: &str, default: T) -> T`
-- [ ] Implement `get_or_throw(key: &str) -> Result<String, ConfigException>`
-- [ ] Implement namespace support: `get("database.host")`
+- [x] Implement `ConfigService` as injectable provider
+- [x] Implement `get<T: FromStr>(key: &str) -> Option<T>` with type coercion
+- [x] Implement `get_or_default<T>(key: &str, default: T) -> T`
+- [x] Implement `get_or_throw(key: &str) -> Result<String, ConfigException>`
+- [x] Implement namespace support: `get("database.host")`
 - [ ] Implement validation of required config keys at startup
 
 #### 6.1.4 — Type-Safe Config (Config Schema)
@@ -774,26 +773,26 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Support default values in schema
 
 #### 6.1.5 — Config Tests
-- [ ] Test loading from .env file
-- [ ] Test process env variable overrides .env
-- [ ] Test `get::<i32>` type coercion
-- [ ] Test `get::<bool>` type coercion
-- [ ] Test `get_or_throw` with missing key → startup error
-- [ ] Test global config is accessible from any module
+- [x] Test loading from .env file
+- [x] Test process env variable overrides .env
+- [x] Test `get::<i32>` type coercion
+- [x] Test `get::<bool>` type coercion
+- [x] Test `get_or_throw` with missing key → startup error
+- [x] Test global config is accessible from any module
 - [ ] Test config schema validation at startup
 
 ### 6.2 — Structured Logging (`tracing` integration)
 
-- [ ] Add `tracing` + `tracing-subscriber` as workspace dependencies
+- [x] Add `tracing` + `tracing-subscriber` as workspace dependencies
 - [ ] Implement `LoggerModule` with configurable log levels
 - [ ] Implement `LoggerService` injectable provider wrapping `tracing`
 - [ ] Support structured JSON logging (for production)
 - [ ] Support pretty console logging (for development)
 - [ ] Support log context propagation (request ID, user ID, module name)
-- [ ] Implement request logging span (method, path, status, duration)
+- [x] Implement request logging span (method, path, status, duration)
 - [ ] Support configurable log levels per module
-- [ ] Test log output contains expected fields
-- [ ] Test log level filtering
+- [x] Test log output contains expected fields
+- [x] Test log level filtering
 
 ### 6.3 — Testing Utilities (`nivasa-testing` or `nivasa` main crate)
 
@@ -831,7 +830,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 6.4 — CLI Tool (`nivasa-cli`)
 
 #### 6.4.1 — CLI Core
-- [ ] Add `clap` dependency for argument parsing (derive API)
+- [x] Add `clap` dependency for argument parsing (derive API)
 - [ ] Implement `nivasa new <project-name>` — scaffold new project (includes `statecharts/` directory with default SCXML files)
 - [ ] Implement `nivasa generate module <name>` (alias: `nivasa g module <name>`)
 - [ ] Implement `nivasa generate controller <name>` (alias: `nivasa g controller <name>`)
@@ -842,11 +841,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Implement `nivasa generate filter <name>`
 - [ ] Implement `nivasa generate resource <name>` (full CRUD: module + controller + service + DTOs)
 - [ ] Implement `nivasa generate middleware <name>`
-- [ ] Implement `nivasa info` — print framework version, Rust version, OS info
-- [ ] Implement `nivasa statechart validate --all` — validate all SCXML files in project
-- [ ] Implement `nivasa statechart visualize` — generate diagrams from SCXML
-- [ ] Implement `nivasa statechart parity` — check generated code matches SCXML
-- [ ] Implement `nivasa statechart diff` — show SCXML changes between commits
+- [x] Implement `nivasa info` — print framework version, Rust version, OS info
+- [x] Implement `nivasa statechart validate --all` — validate all SCXML files in project
+- [x] Implement `nivasa statechart visualize` — generate diagrams from SCXML
+- [x] Implement `nivasa statechart parity` — check generated code matches SCXML
+- [x] Implement `nivasa statechart diff` — show SCXML changes between commits
 
 #### 6.4.2 — Project Scaffolding Templates
 - [ ] Create template for new project: `Cargo.toml`, `main.rs`, `app_module.rs`, `.env`, `.gitignore`
@@ -869,7 +868,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Test `nivasa g module users` creates `users/users_module.rs`
 - [ ] Test `nivasa g resource users` creates module + controller + service + DTOs
 - [ ] Test auto-registration modifies parent module correctly
-- [ ] Test `nivasa info` outputs version information
+- [x] Test `nivasa info` outputs version information
 
 ---
 
@@ -878,36 +877,36 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 7.1 — WebSocket Support (`nivasa-websocket`)
 
 #### 7.1.1 — WebSocket Gateway
-- [ ] Implement `#[websocket_gateway("/ws")]` attribute macro
-- [ ] Implement `#[websocket_gateway({ path: "/ws", namespace: "/chat" })]`
-- [ ] Define `WebSocketGateway` trait
-- [ ] Implement connection lifecycle events: `OnGatewayInit`, `OnGatewayConnection`, `OnGatewayDisconnect`
-- [ ] Implement room/namespace support
+- [x] Implement `#[websocket_gateway("/ws")]` attribute macro
+- [x] Implement `#[websocket_gateway({ path: "/ws", namespace: "/chat" })]`
+- [x] Define `WebSocketGateway` trait
+- [x] Implement connection lifecycle events: `OnGatewayInit`, `OnGatewayConnection`, `OnGatewayDisconnect`
+- [x] Implement room/namespace support
 
 #### 7.1.2 — WebSocket Decorators
-- [ ] Implement `#[subscribe_message("event_name")]` — subscribe to named event
-- [ ] Implement `#[message_body]` — extract message payload
-- [ ] Implement `#[connected_socket]` — access the WebSocket client handle
+- [x] Implement `#[subscribe_message("event_name")]` — subscribe to named event
+- [x] Implement `#[message_body]` — extract message payload
+- [x] Implement `#[connected_socket]` — access the WebSocket client handle
 
 #### 7.1.3 — WebSocket Adapter
-- [ ] Define `WebSocketAdapter` trait for pluggable backends
-- [ ] Implement default adapter using `tokio-tungstenite`
-- [ ] Implement `server.emit("event", data)` — broadcast to all
-- [ ] Implement `server.to("room").emit("event", data)` — emit to room
-- [ ] Implement `client.emit("event", data)` — emit to specific client
-- [ ] Implement `client.join("room")` / `client.leave("room")`
+- [x] Define `WebSocketAdapter` trait for pluggable backends
+- [x] Implement default adapter using `tokio-tungstenite`
+- [x] Implement `server.emit("event", data)` — broadcast to all
+- [x] Implement `server.to("room").emit("event", data)` — emit to room
+- [x] Implement `client.emit("event", data)` — emit to specific client
+- [x] Implement `client.join("room")` / `client.leave("room")`
 
 #### 7.1.4 — WebSocket + Guards/Pipes/Interceptors
-- [ ] Support guards on WebSocket gateway methods
-- [ ] Support pipes on message body extraction
+- [x] Support guards on WebSocket gateway methods
+- [x] Support pipes on message body extraction
 - [ ] Support interceptors on WebSocket handlers
 
 #### 7.1.5 — WebSocket Tests
-- [ ] Test WebSocket connection and handshake
-- [ ] Test message subscription and handler invocation
-- [ ] Test broadcast to all connected clients
-- [ ] Test room-based messaging
-- [ ] Test disconnection cleanup
+- [x] Test WebSocket connection and handshake
+- [x] Test message subscription and handler invocation
+- [x] Test broadcast to all connected clients
+- [x] Test room-based messaging
+- [x] Test disconnection cleanup
 
 ### 7.2 — Event Emitter Module
 
@@ -935,38 +934,38 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 7.4 — Health Checks
 
-- [ ] Implement `TerminusModule` (health check module)
-- [ ] Implement `HealthCheckService` with `check()` method
-- [ ] Implement `#[health_check]` on controller method (typically GET /health)
-- [ ] Implement health indicators: `DiskHealthIndicator`, `MemoryHealthIndicator`
-- [ ] Define `HealthIndicator` trait for custom health checks
-- [ ] Support database health indicator (ping DB connection)
-- [ ] Support HTTP health indicator (ping external service)
-- [ ] Test health endpoint returns correct status (up/down)
-- [ ] Test aggregated health with multiple indicators
+- [x] Implement `TerminusModule` (health check module)
+- [x] Implement `HealthCheckService` with `check()` method
+- [x] Implement `#[health_check]` on controller method (typically GET /health)
+- [x] Implement health indicators: `DiskHealthIndicator`, `MemoryHealthIndicator`
+- [x] Define `HealthIndicator` trait for custom health checks
+- [x] Support database health indicator (ping DB connection)
+- [x] Support HTTP health indicator (ping external service)
+- [x] Test health endpoint returns correct status (up/down)
+- [x] Test aggregated health with multiple indicators
 
 ### 7.5 — OpenAPI / Swagger Integration
 
 #### 7.5.1 — OpenAPI Spec Generation
-- [ ] Implement `#[api_tags("Users")]` decorator on controllers
-- [ ] Implement `#[api_operation(summary = "Get all users")]` on handlers
-- [ ] Implement `#[api_param(name = "id", description = "User ID")]`
-- [ ] Implement `#[api_body(type = CreateUserDto)]`
-- [ ] Implement `#[api_response(status = 200, type = User, description = "Success")]`
-- [ ] Implement `#[api_bearer_auth]` for auth documentation
-- [ ] Auto-generate OpenAPI 3.0 spec from controller/DTO metadata
-- [ ] Serve spec at configurable path (default: `/api/docs/openapi.json`)
+- [x] Implement `#[api_tags("Users")]` decorator on controllers
+- [x] Implement `#[api_operation(summary = "Get all users")]` on handlers
+- [x] Implement `#[api_param(name = "id", description = "User ID")]`
+- [x] Implement `#[api_body(type = CreateUserDto)]`
+- [x] Implement `#[api_response(status = 200, type = User, description = "Success")]`
+- [x] Implement `#[api_bearer_auth]` for auth documentation
+- [x] Auto-generate OpenAPI 3.0 spec from controller/DTO metadata
+- [x] Serve spec at configurable path (default: `/api/docs/openapi.json`)
 
 #### 7.5.2 — Swagger UI
-- [ ] Bundle Swagger UI static assets (or reference CDN)
-- [ ] Serve Swagger UI at configurable path (default: `/api/docs`)
-- [ ] Support customizing title, description, version in Swagger UI
+- [x] Bundle Swagger UI static assets (or reference CDN)
+- [x] Serve Swagger UI at configurable path (default: `/api/docs`)
+- [x] Support customizing title, description, version in Swagger UI
 
 #### 7.5.3 — OpenAPI Tests
-- [ ] Test generated spec includes all routes with correct methods
-- [ ] Test spec includes request/response schemas
-- [ ] Test Swagger UI endpoint serves HTML
-- [ ] Test spec validates against OpenAPI 3.0 spec
+- [x] Test generated spec includes all routes with correct methods
+- [x] Test spec includes request/response schemas
+- [x] Test Swagger UI endpoint serves HTML
+- [x] Test spec validates against OpenAPI 3.0 spec
 
 ### 7.6 — GraphQL Support (Optional, Deferred)
 
@@ -981,15 +980,15 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ## Phase 8: NestApplication Entry Point (`nivasa` main crate)
 
-- [ ] Implement `NestApplication::create(AppModule)` factory method
+- [x] Implement `NestApplication::create(AppModule)` factory method
 - [ ] Implement `.build() -> Result<App>` — resolve all modules, DI, and routes
 - [ ] Implement `.listen(ServerOptions) -> Result<()>` — start HTTP server
 - [x] Implement `ServerOptions` struct: `port`, `host`, `cors`, `global_prefix`, `versioning`
 - [x] Introduce `AppBootstrapConfig` boundary for server-only bootstrap config
-- [ ] Use `AppBootstrapConfig::global_prefix()` to prefix all routes during bootstrap
+- [x] Use `AppBootstrapConfig::global_prefix()` to prefix all routes during bootstrap
 - [x] Implement `.use_global_guard(Guard)` — apply guard to all routes
-- [ ] Implement `.use_global_interceptor(Interceptor)` — apply interceptor globally
-- [ ] Implement `.use_global_pipe(Pipe)` — apply pipe globally (e.g., ValidationPipe)
+- [x] Implement `.use_global_interceptor(Interceptor)` — apply interceptor globally
+- [x] Implement `.use_global_pipe(Pipe)` — apply pipe globally (e.g., ValidationPipe)
 - [x] Implement `.use_global_filter(Filter)` — apply exception filter globally
 - [x] Implement `.enable_cors()` — minimal transport-side CORS bridge on `ServerOptions`; richer middleware/CorsOptions work remains future
 - [x] Implement `.enable_versioning(VersioningOptions)` — API versioning config
@@ -1030,7 +1029,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Write OpenAPI/Swagger documentation
 - [ ] Write "Migration from NestJS" guide (NestJS pattern → Nivasa equivalent)
 - [ ] Write "Comparison with other Rust frameworks" page
-- [ ] Generate `rustdoc` for all public APIs (`cargo doc --workspace --no-deps`)
+- [x] Generate `rustdoc` for all public APIs (`cargo doc --workspace --no-deps`)
 - [ ] Set up documentation website (mdBook or similar)
 - [ ] Add search to documentation site
 
@@ -1041,19 +1040,19 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 10.1 — Testing
 - [ ] Achieve >90% code coverage across all crates
 - [x] Add in-process request lifecycle integration coverage (middleware → guard → interceptor → handler → Done)
-- [ ] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
-- [ ] Write integration tests: module composition (nested modules, imports/exports)
+- [x] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
+- [x] Write integration tests: module composition (nested modules, imports/exports)
 - [x] Write integration tests: error handling pipeline (exception → filter → response)
 - [ ] Write integration tests: authentication flow (login → JWT → protected route)
-- [ ] Write integration tests: validation flow (invalid DTO → ValidationPipe → 400 response)
+- [x] Write integration tests: validation flow (invalid DTO → ValidationPipe → 400 response)
 - [ ] Write integration tests: WebSocket lifecycle
-- [ ] **SCXML compliance tests:** verify every state in every statechart is reachable by integration tests
-- [ ] **SCXML compliance tests:** verify every error transition is exercised (guard denied, validation error, handler error, etc.)
-- [ ] **SCXML compliance tests:** verify StatechartTracer log exactly matches expected transition sequence for each test scenario
+- [x] **SCXML compliance tests:** verify every state in every statechart is reachable by integration tests
+- [x] **SCXML compliance tests:** verify every error transition is exercised (guard denied, validation error, handler error, etc.)
+- [x] **SCXML compliance tests:** verify StatechartTracer log exactly matches expected transition sequence for each test scenario
 - [ ] Set up mutation testing (cargo-mutants) for critical paths
-- [ ] Run `cargo clippy` with all warnings as errors
-- [ ] Run `cargo deny check` for license/vulnerability issues
-- [ ] Run `cargo audit` for security advisories
+- [x] Run `cargo clippy` with all warnings as errors
+- [x] Run `cargo deny check` for license/vulnerability issues
+- [x] Run `cargo audit` for security advisories
 
 ### 10.2 — Benchmarking
 - [ ] Set up benchmark harness (criterion or divan)

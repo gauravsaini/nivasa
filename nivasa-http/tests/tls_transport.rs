@@ -3,12 +3,10 @@
 use nivasa_http::{Body, NivasaResponse, NivasaServer};
 use nivasa_routing::RouteMethod;
 use rustls::{
-    pki_types::{CertificateDer, PrivateKeyDer, ServerName},
+    pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer, ServerName},
     ClientConfig, RootCertStore, ServerConfig,
 };
-use std::{
-    error::Error, io::Cursor, net::TcpListener as StdTcpListener, sync::Arc, time::Duration,
-};
+use std::{error::Error, net::TcpListener as StdTcpListener, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -87,35 +85,13 @@ async fn wait_for_server(port: u16) {
 }
 
 fn load_certs(pem: &str) -> Vec<CertificateDer<'static>> {
-    let mut reader = Cursor::new(pem.as_bytes());
-    let mut certs = Vec::new();
-
-    while let Some(item) =
-        rustls_pemfile::read_one(&mut reader).expect("certificate PEM must parse")
-    {
-        if let rustls_pemfile::Item::X509Certificate(cert) = item {
-            certs.push(cert);
-        }
-    }
-
-    certs
+    CertificateDer::pem_slice_iter(pem.as_bytes())
+        .collect::<Result<Vec<_>, _>>()
+        .expect("certificate PEM must parse")
 }
 
 fn load_key(pem: &str) -> PrivateKeyDer<'static> {
-    let mut reader = Cursor::new(pem.as_bytes());
-
-    while let Some(item) =
-        rustls_pemfile::read_one(&mut reader).expect("private key PEM must parse")
-    {
-        match item {
-            rustls_pemfile::Item::Pkcs8Key(key) => return key.into(),
-            rustls_pemfile::Item::Pkcs1Key(key) => return key.into(),
-            rustls_pemfile::Item::Sec1Key(key) => return key.into(),
-            _ => {}
-        }
-    }
-
-    panic!("private key PEM must contain a key");
+    PrivateKeyDer::from_pem_slice(pem.as_bytes()).expect("private key PEM must parse")
 }
 
 #[tokio::test]

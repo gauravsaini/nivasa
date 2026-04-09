@@ -1,0 +1,5 @@
+error: expected `#[min(<number>)]`
+ --> tests/trybuild/validation_min_malformed.rs:5:5
+  |
+5 |     #[min]
+  |     ^

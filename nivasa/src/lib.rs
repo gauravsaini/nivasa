@@ -15,12 +15,13 @@
 //! at compile time and runtime.
 
 pub mod application;
+pub mod openapi;
 
 /// The prelude — import everything you need with `use nivasa::prelude::*`.
 pub mod prelude {
     pub use crate::application::{
-        AppBootstrapConfig, ServerOptions, ServerOptionsBuilder, VersioningOptions,
-        VersioningOptionsBuilder, VersioningStrategy,
+        App, AppBootstrapConfig, AppBuildError, AppRoute, NestApplication, ServerOptions,
+        ServerOptionsBuilder, VersioningOptions, VersioningOptionsBuilder, VersioningStrategy,
     };
     pub use nivasa_common::{HttpException, HttpStatus};
     #[cfg(feature = "config")]
@@ -81,8 +82,8 @@ pub mod prelude {
 }
 
 pub use application::{
-    AppBootstrapConfig, ServerOptions, ServerOptionsBuilder, VersioningOptions,
-    VersioningOptionsBuilder, VersioningStrategy,
+    App, AppBootstrapConfig, AppBuildError, AppRoute, NestApplication, ServerOptions,
+    ServerOptionsBuilder, VersioningOptions, VersioningOptionsBuilder, VersioningStrategy,
 };
 pub use nivasa_common::{self, HttpException, HttpStatus};
 #[cfg(feature = "config")]

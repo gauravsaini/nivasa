@@ -1,0 +1,5 @@
+error: expected `#[max(<number>)]`
+ --> tests/trybuild/validation_max_malformed.rs:5:5
+  |
+5 |     #[max("five")]
+  |     ^

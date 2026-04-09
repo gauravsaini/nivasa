@@ -1,0 +1,5 @@
+error: expected a string or Option<String> field for `#[validate_if]`
+ --> tests/trybuild/validation_validate_if_invalid_source_type.rs:6:5
+  |
+6 |     #[validate_if(state, "true")]
+  |     ^

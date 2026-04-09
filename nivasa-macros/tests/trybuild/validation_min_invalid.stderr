@@ -1,0 +1,5 @@
+error: expected a numeric field for `#[min]`
+ --> tests/trybuild/validation_min_invalid.rs:5:5
+  |
+5 |     #[min(2)]
+  |     ^

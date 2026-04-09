@@ -122,23 +122,12 @@ struct RouteMiddlewareBinding {
 }
 
 /// Configuration for transport-level CORS handling.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CorsOptions {
     allowed_origins: Option<Vec<String>>,
     allowed_methods: Option<Vec<Method>>,
     allowed_headers: Option<Vec<String>>,
     allow_credentials: bool,
-}
-
-impl Default for CorsOptions {
-    fn default() -> Self {
-        Self {
-            allowed_origins: None,
-            allowed_methods: None,
-            allowed_headers: None,
-            allow_credentials: false,
-        }
-    }
 }
 
 impl CorsOptions {
@@ -569,6 +558,19 @@ impl NivasaServerBuilder {
         self
     }
 
+    /// Register a GET endpoint that serves a prebuilt OpenAPI document as JSON.
+    pub fn openapi_spec_json(
+        self,
+        path: impl Into<String>,
+        document: Value,
+    ) -> Result<Self, RouteDispatchError> {
+        let document = Arc::new(document);
+
+        self.route(RouteMethod::Get, path, move |_| {
+            NivasaResponse::json(document.as_ref().clone())
+        })
+    }
+
     /// Configure transport-side CORS handling with explicit origins, methods, and headers.
     pub fn cors_options(mut self, cors: CorsOptions) -> Self {
         self.cors = Some(cors);
@@ -627,6 +629,7 @@ impl NivasaServerBuilder {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn serve_connection<S>(
     stream: S,
     routes: RouteDispatchRegistry<RouteHandlerBinding>,
@@ -710,6 +713,7 @@ async fn serve_connection<S>(
     let _ = builder.serve_connection(io, service).await;
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_request(
     request: hyper::Request<Incoming>,
     routes: RouteDispatchRegistry<RouteHandlerBinding>,

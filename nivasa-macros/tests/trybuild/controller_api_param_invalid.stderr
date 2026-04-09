@@ -1,0 +1,5 @@
+error: `#[api_param]` name cannot be empty
+ --> tests/trybuild/controller_api_param_invalid.rs:9:39
+  |
+9 |     #[nivasa_macros::api_param(name = "", description = "User ID")]
+  |                                       ^^

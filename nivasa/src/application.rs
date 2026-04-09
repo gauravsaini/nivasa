@@ -5,11 +5,27 @@
 //! configuration without pulling transport details into the main crate yet.
 
 use nivasa_common::HttpException;
+use nivasa_core::{
+    module::ModuleControllerRegistration, DependencyContainer, DiError, Module, ModuleMetadata,
+};
 use nivasa_filters::{ExceptionFilter, ExceptionFilterMetadata};
 use nivasa_http::{NivasaMiddleware, NivasaResponse, NivasaServer, NivasaServerBuilder};
 use nivasa_guards::Guard;
 use nivasa_interceptors::Interceptor;
+use nivasa_routing::{RouteDispatchError, RouteMethod};
 use nivasa_pipes::Pipe;
+use crate::openapi::{
+    OpenApiComponents, OpenApiDocument, OpenApiMediaType, OpenApiOperation, OpenApiParameter,
+    OpenApiRequestBody, OpenApiResponse, OpenApiSecurityRequirement, swagger_ui_index_html,
+};
+use serde_json::{Map, Value};
+use std::collections::HashSet;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+
+const DEFAULT_OPENAPI_SPEC_PATH: &str = "/api/docs/openapi.json";
+const DEFAULT_SWAGGER_UI_PATH: &str = "/api/docs";
 
 /// Supported API versioning strategies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -164,12 +180,150 @@ impl Default for ServerOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppBootstrapConfig {
     pub server: ServerOptions,
+    openapi_spec_path: String,
+    swagger_ui_path: String,
+}
+
+/// Minimal application shell for the umbrella crate.
+///
+/// This stays intentionally data-only until the wider application bootstrap
+/// surface lands. It preserves the root module and bootstrap configuration
+/// without claiming build, listen, or shutdown behavior yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NestApplication<T> {
+    app_module: T,
+    bootstrap: AppBootstrapConfig,
+}
+
+/// A built application shell that has resolved bootstrap-owned metadata.
+pub struct App<T> {
+    app_module: T,
+    bootstrap: AppBootstrapConfig,
+    container: DependencyContainer,
+    module_metadata: ModuleMetadata,
+    controller_registrations: Vec<ModuleControllerRegistration>,
+    routes: Vec<AppRoute>,
+}
+
+/// One route resolved during the synchronous application build step.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppRoute {
+    pub method: RouteMethod,
+    pub path: String,
+    pub handler: &'static str,
+}
+
+/// Errors raised while assembling the minimal application shell.
+#[derive(Debug)]
+pub enum AppBuildError {
+    DependencyInjection(DiError),
+    DuplicateRoute { method: String, path: String },
+}
+
+impl std::fmt::Display for AppBuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DependencyInjection(error) => write!(f, "{error}"),
+            Self::DuplicateRoute { method, path } => {
+                write!(f, "duplicate route `{method} {path}` while building app")
+            }
+        }
+    }
+}
+
+impl std::error::Error for AppBuildError {}
+
+impl From<DiError> for AppBuildError {
+    fn from(value: DiError) -> Self {
+        Self::DependencyInjection(value)
+    }
+}
+
+impl<T> NestApplication<T> {
+    /// Create an application shell from the root module using default bootstrap
+    /// configuration.
+    pub fn create(app_module: T) -> Self {
+        Self {
+            app_module,
+            bootstrap: AppBootstrapConfig::default(),
+        }
+    }
+
+    /// Borrow the root application module.
+    pub fn app_module(&self) -> &T {
+        &self.app_module
+    }
+
+    /// Borrow the current bootstrap configuration.
+    pub fn bootstrap(&self) -> &AppBootstrapConfig {
+        &self.bootstrap
+    }
+}
+
+impl<T: Module> NestApplication<T> {
+    /// Build an application shell by resolving the root module's metadata,
+    /// dependency container registrations, and controller route metadata.
+    pub fn build(self) -> Result<App<T>, AppBuildError> {
+        let module_metadata = self.app_module.metadata();
+        let controller_registrations = self.app_module.controller_registrations();
+        let container = DependencyContainer::new();
+
+        block_on(self.app_module.configure(&container))?;
+        block_on(container.initialize())?;
+
+        let routes = resolve_routes(&self.bootstrap, &controller_registrations)?;
+
+        Ok(App {
+            app_module: self.app_module,
+            bootstrap: self.bootstrap,
+            container,
+            module_metadata,
+            controller_registrations,
+            routes,
+        })
+    }
+}
+
+impl<T> App<T> {
+    /// Borrow the root application module stored in the built app.
+    pub fn app_module(&self) -> &T {
+        &self.app_module
+    }
+
+    /// Borrow the bootstrap configuration captured during build.
+    pub fn bootstrap(&self) -> &AppBootstrapConfig {
+        &self.bootstrap
+    }
+
+    /// Borrow the initialized dependency container.
+    pub fn container(&self) -> &DependencyContainer {
+        &self.container
+    }
+
+    /// Borrow the root module metadata captured during build.
+    pub fn module_metadata(&self) -> &ModuleMetadata {
+        &self.module_metadata
+    }
+
+    /// Borrow the root module controller registrations captured during build.
+    pub fn controller_registrations(&self) -> &[ModuleControllerRegistration] {
+        &self.controller_registrations
+    }
+
+    /// Borrow the resolved route metadata captured during build.
+    pub fn routes(&self) -> &[AppRoute] {
+        &self.routes
+    }
 }
 
 impl AppBootstrapConfig {
     /// Create bootstrap config from server options.
     pub fn new(server: ServerOptions) -> Self {
-        Self { server }
+        Self {
+            server,
+            openapi_spec_path: DEFAULT_OPENAPI_SPEC_PATH.to_string(),
+            swagger_ui_path: DEFAULT_SWAGGER_UI_PATH.to_string(),
+        }
     }
 
     /// Expose the global route prefix for bootstrap-time route registration.
@@ -184,6 +338,64 @@ impl AppBootstrapConfig {
     /// existing server configuration boundary.
     pub fn versioning(&self) -> Option<&VersioningOptions> {
         self.server.versioning.as_ref()
+    }
+
+    /// Path where the OpenAPI JSON document is served.
+    pub fn openapi_spec_path(&self) -> &str {
+        &self.openapi_spec_path
+    }
+
+    /// Path where the Swagger UI shell is served.
+    pub fn swagger_ui_path(&self) -> &str {
+        &self.swagger_ui_path
+    }
+
+    /// Override OpenAPI JSON path.
+    pub fn with_openapi_spec_path(mut self, path: impl Into<String>) -> Self {
+        let path = path.into().trim().to_string();
+        self.openapi_spec_path = if path.is_empty() {
+            DEFAULT_OPENAPI_SPEC_PATH.to_string()
+        } else if path.starts_with('/') {
+            path
+        } else {
+            format!("/{path}")
+        };
+        self
+    }
+
+    /// Override Swagger UI mount path.
+    pub fn with_swagger_ui_path(mut self, path: impl Into<String>) -> Self {
+        let path = normalize_swagger_ui_path(path.into());
+        self.swagger_ui_path = if path.is_empty() {
+            DEFAULT_SWAGGER_UI_PATH.to_string()
+        } else {
+            path
+        };
+        self
+    }
+
+    /// Register an OpenAPI JSON endpoint using the configured path.
+    pub fn serve_openapi_spec(
+        &self,
+        document: &OpenApiDocument,
+    ) -> Result<NivasaServerBuilder, RouteDispatchError> {
+        self.server_builder()
+            .openapi_spec_json(self.openapi_spec_path.clone(), openapi_document_to_value(document))
+    }
+
+    /// Register the Swagger UI shell at the configured mount path.
+    pub fn serve_swagger_ui(&self) -> Result<NivasaServerBuilder, RouteDispatchError> {
+        let html = swagger_ui_index_html(
+            self.openapi_spec_path.clone(),
+            "Nivasa API Docs",
+            "OpenAPI documentation",
+            "1.0.0",
+        );
+
+        self.server_builder()
+            .route(RouteMethod::Get, self.swagger_ui_path.clone(), move |_| {
+                NivasaResponse::html(html.clone())
+            })
     }
 
     /// Attach versioning configuration at bootstrap time.
@@ -208,6 +420,22 @@ impl AppBootstrapConfig {
         }
 
         builder
+    }
+
+    /// Register a bootstrap-owned unversioned route with the configured prefix.
+    ///
+    /// This is the smallest honest bootstrap route surface: it only prefixes
+    /// the route path and delegates to the existing HTTP route builder.
+    pub fn route(
+        &self,
+        method: impl Into<RouteMethod>,
+        path: impl Into<String>,
+        handler: impl Fn(&nivasa_http::NivasaRequest) -> NivasaResponse + Send + Sync + 'static,
+    ) -> Result<NivasaServerBuilder, RouteDispatchError> {
+        let path = path.into();
+
+        self.server_builder()
+            .route(method, self.prefixed_route_path(path.as_str()), handler)
     }
 
     /// Register a single global middleware at bootstrap time.
@@ -308,6 +536,333 @@ impl Default for AppBootstrapConfig {
 impl From<ServerOptions> for AppBootstrapConfig {
     fn from(server: ServerOptions) -> Self {
         Self::new(server)
+    }
+}
+
+fn openapi_document_to_value(document: &OpenApiDocument) -> Value {
+    Value::Object(Map::from_iter([
+        ("openapi".to_string(), Value::String(document.openapi.clone())),
+        ("info".to_string(), Value::Object(Map::from_iter([
+            (
+                "title".to_string(),
+                Value::String(document.info.title.clone()),
+            ),
+            (
+                "version".to_string(),
+                Value::String(document.info.version.clone()),
+            ),
+        ]))),
+        ("paths".to_string(), Value::Object(openapi_paths_to_value(&document.paths))),
+        (
+            "components".to_string(),
+            Value::Object(openapi_components_to_value(&document.components)),
+        ),
+    ]))
+}
+
+fn openapi_paths_to_value(
+    paths: &std::collections::BTreeMap<String, std::collections::BTreeMap<String, OpenApiOperation>>,
+) -> Map<String, Value> {
+    paths
+        .iter()
+        .map(|(path, operations)| {
+            (
+                path.clone(),
+                Value::Object(
+                    operations
+                        .iter()
+                        .map(|(method, operation)| {
+                            (method.clone(), openapi_operation_to_value(operation))
+                        })
+                        .collect(),
+                ),
+            )
+        })
+        .collect()
+}
+
+fn openapi_operation_to_value(operation: &OpenApiOperation) -> Value {
+    Value::Object(Map::from_iter([
+        (
+            "tags".to_string(),
+            Value::Array(
+                operation
+                    .tags
+                    .iter()
+                    .cloned()
+                    .map(Value::String)
+                    .collect(),
+            ),
+        ),
+        (
+            "summary".to_string(),
+            operation
+                .summary
+                .as_ref()
+                .map(|summary| Value::String(summary.clone()))
+                .unwrap_or(Value::Null),
+        ),
+        (
+            "parameters".to_string(),
+            Value::Array(
+                operation
+                    .parameters
+                    .iter()
+                    .map(openapi_parameter_to_value)
+                    .collect(),
+            ),
+        ),
+        (
+            "requestBody".to_string(),
+            operation
+                .request_body
+                .as_ref()
+                .map(openapi_request_body_to_value)
+                .unwrap_or(Value::Null),
+        ),
+        (
+            "responses".to_string(),
+            Value::Object(
+                operation
+                    .responses
+                    .iter()
+                    .map(|(status, response)| (status.clone(), openapi_response_to_value(response)))
+                    .collect(),
+            ),
+        ),
+        (
+            "security".to_string(),
+            Value::Array(
+                operation
+                    .security
+                    .iter()
+                    .map(openapi_security_requirement_to_value)
+                    .collect(),
+            ),
+        ),
+    ]))
+}
+
+fn openapi_parameter_to_value(parameter: &OpenApiParameter) -> Value {
+    Value::Object(Map::from_iter([
+        ("name".to_string(), Value::String(parameter.name.clone())),
+        ("in".to_string(), Value::String(parameter.location.clone())),
+        (
+            "description".to_string(),
+            Value::String(parameter.description.clone()),
+        ),
+        ("required".to_string(), Value::Bool(parameter.required)),
+        (
+            "schema".to_string(),
+            Value::Object(Map::from_iter([(
+                "type".to_string(),
+                Value::String(parameter.schema.schema_type.clone()),
+            )])),
+        ),
+    ]))
+}
+
+fn openapi_request_body_to_value(request_body: &OpenApiRequestBody) -> Value {
+    Value::Object(Map::from_iter([
+        ("required".to_string(), Value::Bool(request_body.required)),
+        (
+            "content".to_string(),
+            Value::Object(
+                request_body
+                    .content
+                    .iter()
+                    .map(|(content_type, media_type)| {
+                        (content_type.clone(), openapi_media_type_to_value(media_type))
+                    })
+                    .collect(),
+            ),
+        ),
+    ]))
+}
+
+fn openapi_response_to_value(response: &OpenApiResponse) -> Value {
+    Value::Object(Map::from_iter([
+        (
+            "description".to_string(),
+            Value::String(response.description.clone()),
+        ),
+        (
+            "content".to_string(),
+            Value::Object(
+                response
+                    .content
+                    .iter()
+                    .map(|(content_type, media_type)| {
+                        (content_type.clone(), openapi_media_type_to_value(media_type))
+                    })
+                    .collect(),
+            ),
+        ),
+    ]))
+}
+
+fn openapi_media_type_to_value(media_type: &OpenApiMediaType) -> Value {
+    Value::Object(Map::from_iter([(
+        "schema".to_string(),
+        Value::Object(Map::from_iter([(
+            "$ref".to_string(),
+            Value::String(media_type.schema_ref.clone()),
+        )])),
+    )]))
+}
+
+fn openapi_security_requirement_to_value(requirement: &OpenApiSecurityRequirement) -> Value {
+    Value::Object(
+        requirement
+            .iter()
+            .map(|(name, scopes)| {
+                (
+                    name.clone(),
+                    Value::Array(scopes.iter().cloned().map(Value::String).collect()),
+                )
+            })
+            .collect(),
+    )
+}
+
+fn openapi_components_to_value(components: &OpenApiComponents) -> Map<String, Value> {
+    Map::from_iter([
+        (
+            "schemas".to_string(),
+            Value::Object(
+                components
+                    .schemas
+                    .iter()
+                    .map(|(name, schema)| {
+                        (
+                            name.clone(),
+                            Value::Object(Map::from_iter([(
+                                "type".to_string(),
+                                Value::String(schema.schema_type.clone()),
+                            )])),
+                        )
+                    })
+                    .collect(),
+            ),
+        ),
+        (
+            "securitySchemes".to_string(),
+            Value::Object(
+                components
+                    .security_schemes
+                    .iter()
+                    .map(|(name, scheme)| {
+                        (
+                            name.clone(),
+                            Value::Object(Map::from_iter([
+                                (
+                                    "type".to_string(),
+                                    Value::String(scheme.scheme_type.clone()),
+                                ),
+                                (
+                                    "scheme".to_string(),
+                                    Value::String(scheme.scheme.clone()),
+                                ),
+                                (
+                                    "bearerFormat".to_string(),
+                                    scheme
+                                        .bearer_format
+                                        .as_ref()
+                                        .map(|value| Value::String(value.clone()))
+                                        .unwrap_or(Value::Null),
+                                ),
+                            ])),
+                        )
+                    })
+                    .collect(),
+            ),
+        ),
+    ])
+}
+
+fn normalize_swagger_ui_path(path: String) -> String {
+    let path = path.trim().to_string();
+
+    if path.is_empty() {
+        String::new()
+    } else if path.starts_with('/') {
+        path
+    } else {
+        format!("/{path}")
+    }
+}
+
+#[cfg(test)]
+mod openapi_tests {
+    use super::*;
+    use crate::openapi::{build_openapi_document, OpenApiControllerMetadata, OpenApiControllerMetadataProvider};
+
+    struct DocsController;
+
+    impl OpenApiControllerMetadataProvider for DocsController {
+        fn routes() -> Vec<(&'static str, String, &'static str)> {
+            vec![("GET", "/docs/:id".to_string(), "show")]
+        }
+
+        fn api_tags() -> Vec<&'static str> {
+            vec!["Docs"]
+        }
+
+        fn api_operation_metadata() -> Vec<(&'static str, Option<&'static str>)> {
+            vec![("show", Some("Show docs"))]
+        }
+
+        fn api_param_metadata() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
+            vec![("show", vec![("id", "Doc ID")])]
+        }
+    }
+
+    #[test]
+    fn openapi_spec_path_defaults_and_overrides() {
+        let bootstrap = AppBootstrapConfig::default();
+        assert_eq!(bootstrap.openapi_spec_path(), DEFAULT_OPENAPI_SPEC_PATH);
+        assert_eq!(bootstrap.swagger_ui_path(), DEFAULT_SWAGGER_UI_PATH);
+
+        let custom = bootstrap
+            .clone()
+            .with_openapi_spec_path("custom/openapi.json");
+        assert_eq!(custom.openapi_spec_path(), "/custom/openapi.json");
+
+        let custom_ui = bootstrap.with_swagger_ui_path("custom/docs");
+        assert_eq!(custom_ui.swagger_ui_path(), "/custom/docs");
+    }
+
+    #[test]
+    fn swagger_ui_mount_uses_configured_path_and_openapi_spec() {
+        let bootstrap = AppBootstrapConfig::default()
+            .with_openapi_spec_path("/docs/openapi.json")
+            .with_swagger_ui_path("docs");
+
+        assert_eq!(bootstrap.swagger_ui_path(), "/docs");
+        assert!(bootstrap.serve_swagger_ui().is_ok());
+    }
+
+    #[test]
+    fn openapi_document_bridge_preserves_core_shape() {
+        let document = build_openapi_document(
+            "Docs",
+            "1.0.0",
+            [OpenApiControllerMetadata::from_provider::<DocsController>()],
+        );
+
+        let value = openapi_document_to_value(&document);
+
+        assert_eq!(value["openapi"], "3.0.0");
+        assert_eq!(value["info"]["title"], "Docs");
+        assert_eq!(value["paths"]["/docs/{id}"]["get"]["summary"], "Show docs");
+        assert_eq!(
+            value["paths"]["/docs/{id}"]["get"]["parameters"][0]["name"],
+            "id"
+        );
+        assert_eq!(
+            value["paths"]["/docs/{id}"]["get"]["parameters"][0]["schema"]["type"],
+            "string"
+        );
     }
 }
 
@@ -433,8 +988,77 @@ fn normalize_version_token(version: &str) -> String {
     format!("v{}", stripped)
 }
 
+fn resolve_routes(
+    bootstrap: &AppBootstrapConfig,
+    controller_registrations: &[ModuleControllerRegistration],
+) -> Result<Vec<AppRoute>, AppBuildError> {
+    let mut seen = HashSet::new();
+    let mut routes = Vec::new();
+
+    for controller in controller_registrations {
+        for route in &controller.routes {
+            let method = RouteMethod::from(route.method);
+            let path = bootstrap.prefixed_route_path(route.path.as_str());
+
+            if !seen.insert((method.clone(), path.clone())) {
+                return Err(AppBuildError::DuplicateRoute {
+                    method: route.method.to_string(),
+                    path,
+                });
+            }
+
+            routes.push(AppRoute {
+                method,
+                path,
+                handler: route.handler,
+            });
+        }
+    }
+
+    Ok(routes)
+}
+
+fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    let waker = noop_waker();
+    let mut context = Context::from_waker(&waker);
+    let mut future = Pin::from(Box::new(future));
+
+    loop {
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(value) => return value,
+            Poll::Pending => std::thread::yield_now(),
+        }
+    }
+}
+
+fn noop_waker() -> Waker {
+    // Build is intentionally synchronous, so a noop waker is sufficient for
+    // the immediate-future DI work exercised by the current app shell.
+    unsafe { Waker::from_raw(noop_raw_waker()) }
+}
+
+fn noop_raw_waker() -> RawWaker {
+    RawWaker::new(std::ptr::null(), &NOOP_WAKER_VTABLE)
+}
+
+unsafe fn noop_clone(_: *const ()) -> RawWaker {
+    noop_raw_waker()
+}
+
+unsafe fn noop_wake(_: *const ()) {}
+
+unsafe fn noop_wake_by_ref(_: *const ()) {}
+
+unsafe fn noop_drop(_: *const ()) {}
+
+static NOOP_WAKER_VTABLE: RawWakerVTable =
+    RawWakerVTable::new(noop_clone, noop_wake, noop_wake_by_ref, noop_drop);
+
 #[cfg(test)]
-mod tests {
+mod docs_tests {
     use super::*;
     use nivasa_http::{NextMiddleware, NivasaRequest, NivasaResponse};
     use nivasa_routing::RouteMethod;
@@ -532,6 +1156,18 @@ mod tests {
             .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
             .expect("route registration should succeed");
 
+        let _server = builder.build();
+    }
+
+    #[test]
+    fn bootstrap_config_prefixes_unversioned_routes_during_registration() {
+        let bootstrap =
+            AppBootstrapConfig::from(ServerOptions::builder().global_prefix(" api/ ").build());
+        let builder = bootstrap
+            .route(RouteMethod::Get, "health", |_| NivasaResponse::text("ok"))
+            .expect("prefixed route registration should succeed");
+
+        assert_eq!(bootstrap.prefixed_route_path("health"), "/api/health");
         let _server = builder.build();
     }
 

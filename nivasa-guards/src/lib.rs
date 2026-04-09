@@ -8,6 +8,7 @@ use std::{
     future::Future,
     pin::Pin,
     sync::Arc,
+    time::Duration,
 };
 
 use nivasa_common::{HttpException, RequestContext};
@@ -165,6 +166,107 @@ pub trait Guard: Send + Sync {
     fn can_activate<'a>(&'a self, context: &'a ExecutionContext) -> GuardFuture<'a>;
 }
 
+/// Skeleton authentication guard.
+///
+/// This is intentionally shallow: it only checks for a bearer token that
+/// looks JWT-shaped (`Bearer <header.payload.signature>`). Real JWT parsing,
+/// signature verification, and claims validation remain future work.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AuthGuard;
+
+impl AuthGuard {
+    /// Create a new auth guard.
+    pub fn new() -> Self {
+        Self
+    }
+
+    fn bearer_token_from_context(context: &ExecutionContext) -> Option<String> {
+        if let Some(request_context) = context.request_context() {
+            if let Some(value) = request_context.custom_data("authorization") {
+                if let Some(token) = value.as_str() {
+                    return Some(token.to_string());
+                }
+            }
+        }
+
+        if let Some(value) = context.custom_data_map().get("authorization") {
+            let value = value.as_ref();
+
+            if let Some(token) = value.downcast_ref::<String>() {
+                return Some(token.clone());
+            }
+
+            if let Some(token) = value.downcast_ref::<&'static str>() {
+                return Some((*token).to_string());
+            }
+        }
+
+        None
+    }
+
+    fn looks_like_jwt_bearer(token: &str) -> bool {
+        let Some(token) = token.trim().strip_prefix("Bearer ") else {
+            return false;
+        };
+
+        let mut segments = token.split('.');
+        let has_three_segments = segments.next().is_some()
+            && segments.next().is_some()
+            && segments.next().is_some()
+            && segments.next().is_none();
+
+        has_three_segments && token.split('.').all(|segment| !segment.trim().is_empty())
+    }
+}
+
+impl Guard for AuthGuard {
+    fn can_activate<'a>(&'a self, context: &'a ExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async move {
+            Ok(Self::bearer_token_from_context(context)
+                .as_deref()
+                .is_some_and(Self::looks_like_jwt_bearer))
+        })
+    }
+}
+
+/// Skeleton throttling guard.
+///
+/// This keeps only the guard shape and the configured rate-limit metadata.
+/// Cross-request counters, storage backends, and true rate enforcement remain
+/// future work in the throttling module slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ThrottlerGuard {
+    limit: u32,
+    ttl: Duration,
+}
+
+impl ThrottlerGuard {
+    /// Create a new throttling guard skeleton.
+    pub fn new(limit: u32, ttl: Duration) -> Self {
+        Self { limit, ttl }
+    }
+
+    /// Number of requests allowed in the configured window.
+    pub fn limit(&self) -> u32 {
+        self.limit
+    }
+
+    /// Duration of the configured window.
+    pub fn ttl(&self) -> Duration {
+        self.ttl
+    }
+
+    fn has_minimal_valid_configuration(&self) -> bool {
+        self.limit > 0 && !self.ttl.is_zero()
+    }
+}
+
+impl Guard for ThrottlerGuard {
+    fn can_activate<'a>(&'a self, _context: &'a ExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async move { Ok(self.has_minimal_valid_configuration()) })
+    }
+}
+
 /// Guard that authorizes requests by comparing required `roles` metadata from
 /// the request context against the roles attached to the current request.
 #[derive(Debug, Default, Clone, Copy)]
@@ -192,22 +294,18 @@ impl RolesGuard {
         if let Some(request_context) = context.request_context() {
             if let Some(values) = request_context.handler_metadata("roles") {
                 let roles = values.as_array()?;
-                return Some(
-                    roles
-                        .iter()
-                        .map(|role| role.as_str().map(|role| role.to_string()))
-                        .collect::<Option<Vec<_>>>()?,
-                );
+                return roles
+                    .iter()
+                    .map(|role| role.as_str().map(|role| role.to_string()))
+                    .collect::<Option<Vec<_>>>();
             }
 
             if let Some(values) = request_context.class_metadata("roles") {
                 let roles = values.as_array()?;
-                return Some(
-                    roles
-                        .iter()
-                        .map(|role| role.as_str().map(|role| role.to_string()))
-                        .collect::<Option<Vec<_>>>()?,
-                );
+                return roles
+                    .iter()
+                    .map(|role| role.as_str().map(|role| role.to_string()))
+                    .collect::<Option<Vec<_>>>();
             }
         }
 
@@ -219,12 +317,10 @@ impl RolesGuard {
         if let Some(request_context) = context.request_context() {
             if let Some(values) = request_context.custom_data("roles") {
                 let roles = values.as_array()?;
-                return Some(
-                    roles
-                        .iter()
-                        .map(|role| role.as_str().map(|role| role.to_string()))
-                        .collect::<Option<Vec<_>>>()?,
-                );
+                return roles
+                    .iter()
+                    .map(|role| role.as_str().map(|role| role.to_string()))
+                    .collect::<Option<Vec<_>>>();
             }
         }
 
@@ -254,11 +350,12 @@ impl Guard for RolesGuard {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExecutionContext, Guard, RolesGuard};
+    use super::{AuthGuard, ExecutionContext, Guard, RolesGuard, ThrottlerGuard};
     use nivasa_common::{HttpException, RequestContext};
     use std::{
         future::Future,
         pin::Pin,
+        time::Duration,
         task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
     };
 
@@ -326,7 +423,57 @@ mod tests {
             );
 
         let result = run_ready(RoleGuard.can_activate(&context));
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn auth_guard_accepts_jwt_shaped_bearer_tokens() {
+        let mut request_context = RequestContext::new();
+        request_context.set_custom_data("authorization", "Bearer header.payload.signature");
+
+        let context = ExecutionContext::new(()).with_request_context(request_context);
+        let guard = AuthGuard::new();
+
+        let result = run_ready(guard.can_activate(&context));
+
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn auth_guard_rejects_missing_or_malformed_bearer_tokens() {
+        let mut missing_context = RequestContext::new();
+        missing_context.set_custom_data("authorization", "token-without-bearer-prefix");
+
+        let missing = ExecutionContext::new(()).with_request_context(missing_context);
+        let guard = AuthGuard::new();
+
+        assert!(!run_ready(guard.can_activate(&missing)).unwrap());
+
+        let mut malformed_context = RequestContext::new();
+        malformed_context.set_custom_data("authorization", "Bearer not.jwt-shaped");
+
+        let malformed = ExecutionContext::new(()).with_request_context(malformed_context);
+
+        assert!(!run_ready(guard.can_activate(&malformed)).unwrap());
+    }
+
+    #[test]
+    fn throttler_guard_exposes_rate_limit_configuration_without_storage_backends() {
+        let guard = ThrottlerGuard::new(10, Duration::from_secs(60));
+
+        assert_eq!(guard.limit(), 10);
+        assert_eq!(guard.ttl(), Duration::from_secs(60));
+        assert!(run_ready(guard.can_activate(&ExecutionContext::new(()))).unwrap());
+    }
+
+    #[test]
+    fn throttler_guard_rejects_unconfigured_windows() {
+        let zero_limit = ThrottlerGuard::new(0, Duration::from_secs(60));
+        let zero_ttl = ThrottlerGuard::new(10, Duration::from_secs(0));
+        let context = ExecutionContext::new(());
+
+        assert!(!run_ready(zero_limit.can_activate(&context)).unwrap());
+        assert!(!run_ready(zero_ttl.can_activate(&context)).unwrap());
     }
 
     #[test]
@@ -342,7 +489,7 @@ mod tests {
         let guard = RolesGuard::new();
         let result = run_ready(guard.can_activate(&context));
 
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
     }
 
     #[test]
@@ -356,7 +503,7 @@ mod tests {
         let guard = RolesGuard::new();
         let result = run_ready(guard.can_activate(&context));
 
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
     }
 
     fn run_ready<F: Future>(future: F) -> F::Output {

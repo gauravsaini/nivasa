@@ -11,6 +11,7 @@ struct SignupForm {
 }
 
 #[derive(Dto)]
+#[allow(dead_code)]
 struct ProfileForm {
     #[is_string]
     display_name: String,
@@ -37,12 +38,14 @@ struct ContactListForm {
 }
 
 #[derive(Dto)]
+#[allow(dead_code)]
 struct FeatureFlags {
     #[is_boolean]
     enabled: bool,
 }
 
 #[derive(Dto)]
+#[allow(dead_code)]
 struct UsageStats {
     #[is_number]
     retry_count: u32,
@@ -51,9 +54,28 @@ struct UsageStats {
 }
 
 #[derive(Dto)]
+#[allow(dead_code)]
 struct IntMetrics {
     #[is_int]
     retry_count: i32,
+}
+
+#[derive(Dto)]
+struct NumericBoundsForm {
+    #[min(2)]
+    #[max(5)]
+    retry_count: u32,
+    #[min(-10.5)]
+    #[max(20.25)]
+    average_latency_ms: f64,
+}
+
+#[derive(Dto)]
+struct OptionalNumericBoundsForm {
+    #[is_optional]
+    #[min(2)]
+    #[max(5)]
+    retry_count: Option<u32>,
 }
 
 #[derive(Dto)]
@@ -147,6 +169,23 @@ struct OptionalContactForm {
 }
 
 #[derive(Dto)]
+struct ConditionalValidationForm {
+    mode: String,
+    #[validate_if(mode, "create")]
+    #[is_email]
+    email: String,
+}
+
+#[derive(Dto)]
+struct OptionalConditionalValidationForm {
+    mode: String,
+    #[is_optional]
+    #[validate_if(mode, "create")]
+    #[is_email]
+    email: Option<String>,
+}
+
+#[derive(Dto)]
 struct GroupedChildForm {
     #[groups("create")]
     #[is_email]
@@ -167,6 +206,7 @@ struct GroupedParentForm {
     child: GroupedChildForm,
 }
 
+#[allow(clippy::ptr_arg)]
 fn uses_example_domain(value: &String) -> bool {
     value.ends_with("@example.com")
 }
@@ -195,6 +235,14 @@ struct PartialContactForm {
 #[derive(PartialDto)]
 struct PartialCustomValidateForm {
     #[custom_validate(uses_example_domain)]
+    email: Option<String>,
+}
+
+#[derive(PartialDto)]
+struct PartialConditionalValidationForm {
+    mode: Option<String>,
+    #[validate_if(mode, "create")]
+    #[is_email]
     email: Option<String>,
 }
 
@@ -341,6 +389,70 @@ fn dto_validation_accepts_integer_fields() {
     let form = IntMetrics { retry_count: 3 };
 
     assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_accepts_numeric_min_max_bounds() {
+    let form = NumericBoundsForm {
+        retry_count: 3,
+        average_latency_ms: 12.5,
+    };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_rejects_values_below_min() {
+    let form = NumericBoundsForm {
+        retry_count: 1,
+        average_latency_ms: 12.5,
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "retry_count");
+    assert_eq!(
+        errors.errors()[0].constraints.get("min"),
+        Some(&"must be at least 2".to_string())
+    );
+}
+
+#[test]
+fn dto_validation_rejects_values_above_max() {
+    let form = NumericBoundsForm {
+        retry_count: 3,
+        average_latency_ms: 21.0,
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "average_latency_ms");
+    assert_eq!(
+        errors.errors()[0].constraints.get("max"),
+        Some(&"must be at most 20.25".to_string())
+    );
+}
+
+#[test]
+fn dto_validation_skips_optional_numeric_bounds_when_absent() {
+    let form = OptionalNumericBoundsForm { retry_count: None };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_applies_optional_numeric_bounds_when_present() {
+    let form = OptionalNumericBoundsForm {
+        retry_count: Some(1),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "retry_count");
+    assert_eq!(
+        errors.errors()[0].constraints.get("min"),
+        Some(&"must be at least 2".to_string())
+    );
 }
 
 #[test]
@@ -644,6 +756,55 @@ fn dto_validation_rejects_regex_mismatches() {
 }
 
 #[test]
+fn dto_validation_applies_validate_if_when_condition_matches() {
+    let form = ConditionalValidationForm {
+        mode: "create".into(),
+        email: "not-an-email".into(),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "email");
+    assert_eq!(
+        errors.errors()[0].constraints.get("is_email"),
+        Some(&"must be a valid email".to_string())
+    );
+}
+
+#[test]
+fn dto_validation_skips_validate_if_when_condition_does_not_match() {
+    let form = ConditionalValidationForm {
+        mode: "update".into(),
+        email: "not-an-email".into(),
+    };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_composes_validate_if_with_optional_fields() {
+    let form = OptionalConditionalValidationForm {
+        mode: "create".into(),
+        email: None,
+    };
+
+    assert!(form.validate().is_ok());
+
+    let form = OptionalConditionalValidationForm {
+        mode: "create".into(),
+        email: Some("not-an-email".into()),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "email");
+    assert_eq!(
+        errors.errors()[0].constraints.get("is_email"),
+        Some(&"must be a valid email".to_string())
+    );
+}
+
+#[test]
 fn dto_validation_skips_optional_fields_when_absent() {
     let form = OptionalContactForm { email: None };
 
@@ -709,6 +870,36 @@ fn dto_validation_runs_optional_custom_validators_when_present() {
         errors.errors()[0].constraints.get("custom_validate"),
         Some(&"failed custom validation".to_string())
     );
+}
+
+#[test]
+fn partial_dto_validation_applies_validate_if_for_partial_fields() {
+    let form = PartialConditionalValidationForm {
+        mode: Some("create".into()),
+        email: Some("not-an-email".into()),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "email");
+    assert_eq!(
+        errors.errors()[0].constraints.get("is_email"),
+        Some(&"must be a valid email".to_string())
+    );
+
+    let form = PartialConditionalValidationForm {
+        mode: Some("update".into()),
+        email: Some("not-an-email".into()),
+    };
+
+    assert!(form.validate().is_ok());
+
+    let form = PartialConditionalValidationForm {
+        mode: None,
+        email: Some("not-an-email".into()),
+    };
+
+    assert!(form.validate().is_ok());
 }
 
 #[test]

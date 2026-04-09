@@ -2,10 +2,12 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
     parse_macro_input,
+    parse::{Parse, ParseStream},
     punctuated::Punctuated,
     spanned::Spanned,
-    Attribute, Data, DeriveInput, Error, Field, Fields, GenericArgument, LitInt, LitStr, Meta,
-    Path, PathArguments, Result, Token, Type, TypePath,
+    Attribute, Data, DeriveInput, Error, Expr, ExprLit, ExprUnary, Field, Fields,
+    GenericArgument, Lit, LitInt, LitStr, Meta, Path, PathArguments, Result, Token, Type,
+    TypePath, UnOp,
 };
 
 pub fn dto_impl(input: TokenStream) -> TokenStream {
@@ -76,8 +78,8 @@ fn expand_validation_derive(
 
     let mut field_checks = Vec::new();
 
-    for field in fields {
-        field_checks.extend(build_field_checks(field, mode)?);
+    for field in &fields {
+        field_checks.extend(build_field_checks(field, &fields, mode)?);
     }
 
     Ok(quote! {
@@ -102,7 +104,11 @@ fn expand_validation_derive(
     })
 }
 
-fn build_field_checks(field: &Field, mode: DeriveMode) -> Result<Vec<proc_macro2::TokenStream>> {
+fn build_field_checks(
+    field: &Field,
+    all_fields: &[&Field],
+    mode: DeriveMode,
+) -> Result<Vec<proc_macro2::TokenStream>> {
     let field_name = field
         .ident
         .as_ref()
@@ -143,10 +149,34 @@ fn build_field_checks(field: &Field, mode: DeriveMode) -> Result<Vec<proc_macro2
             groups.extend(parse_groups(attr)?);
             Ok::<_, Error>(groups)
         })?;
+    let validate_if_guards = field
+        .attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("validate_if"))
+        .try_fold(Vec::new(), |mut guards, attr| {
+            let condition = parse_validate_if_condition(attr)?;
+            let source_field = find_field_by_ident(all_fields, &condition.source_field).ok_or_else(
+                || {
+                    Error::new(
+                        condition.source_field.span(),
+                        format!(
+                            "unknown field `{}` for `#[validate_if]`",
+                            condition.source_field
+                        ),
+                    )
+                },
+            )?;
+            ensure_validate_if_source_type(&source_field.ty, attr)?;
+            guards.push(build_validate_if_guard(source_field, &condition.expected_value));
+            Ok::<_, Error>(guards)
+        })?;
     let mut checks = Vec::new();
 
     for attr in &field.attrs {
-        if attr.path().is_ident("is_optional") || attr.path().is_ident("groups") {
+        if attr.path().is_ident("is_optional")
+            || attr.path().is_ident("groups")
+            || attr.path().is_ident("validate_if")
+        {
             continue;
         }
 
@@ -265,6 +295,36 @@ fn build_field_checks(field: &Field, mode: DeriveMode) -> Result<Vec<proc_macro2
                     );
                 }
             });
+        } else if attr.path().is_ident("min") {
+            ensure_numeric_bound_type(field_ty, attr, "min")?;
+            let bound = parse_numeric_bound(attr, "min")?;
+            let bound_expr = &bound.expr;
+            let message =
+                LitStr::new(&format!("must be at least {}", bound.display), attr.span());
+
+            checks.push(quote! {
+                if (*#field_value_access as f64) < ((#bound_expr) as f64) {
+                    errors.push(
+                        nivasa_validation::ValidationError::new(#field_label)
+                            .with_constraint("min", #message),
+                    );
+                }
+            });
+        } else if attr.path().is_ident("max") {
+            ensure_numeric_bound_type(field_ty, attr, "max")?;
+            let bound = parse_numeric_bound(attr, "max")?;
+            let bound_expr = &bound.expr;
+            let message =
+                LitStr::new(&format!("must be at most {}", bound.display), attr.span());
+
+            checks.push(quote! {
+                if (*#field_value_access as f64) > ((#bound_expr) as f64) {
+                    errors.push(
+                        nivasa_validation::ValidationError::new(#field_label)
+                            .with_constraint("max", #message),
+                    );
+                }
+            });
         } else if attr.path().is_ident("validate_nested") {
             if is_optional {
                 checks.push(build_nested_validation_check_with_access(
@@ -325,6 +385,18 @@ fn build_field_checks(field: &Field, mode: DeriveMode) -> Result<Vec<proc_macro2
         quote! {
             let #field_value_ident = &self.#field_name;
             #(#checks)*
+        }
+    };
+    let field_scope = if validate_if_guards.is_empty() {
+        field_scope
+    } else {
+        let validate_if_guard = quote! {
+            #(#validate_if_guards)&&*
+        };
+        quote! {
+            if #validate_if_guard {
+                #field_scope
+            }
         }
     };
 
@@ -522,6 +594,81 @@ fn build_nested_validation_check_direct(
     })
 }
 
+#[derive(Clone, Debug)]
+struct ValidateIfCondition {
+    source_field: syn::Ident,
+    expected_value: LitStr,
+}
+
+impl Parse for ValidateIfCondition {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let source_field: syn::Ident = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let expected_value: LitStr = input.parse()?;
+
+        if !input.is_empty() {
+            return Err(input.error(
+                "expected `#[validate_if(field_name, \"value\")]`",
+            ));
+        }
+
+        Ok(Self {
+            source_field,
+            expected_value,
+        })
+    }
+}
+
+fn parse_validate_if_condition(attr: &Attribute) -> Result<ValidateIfCondition> {
+    if !matches!(&attr.meta, Meta::List(_)) {
+        return Err(Error::new(
+            attr.span(),
+            "expected `#[validate_if(field_name, \"value\")]`",
+        ));
+    }
+
+    attr.parse_args::<ValidateIfCondition>().map_err(|_| {
+        Error::new(
+            attr.span(),
+            "expected `#[validate_if(field_name, \"value\")]`",
+        )
+    })
+}
+
+fn find_field_by_ident<'a>(all_fields: &'a [&Field], ident: &syn::Ident) -> Option<&'a Field> {
+    all_fields
+        .iter()
+        .copied()
+        .find(|field| field.ident.as_ref() == Some(ident))
+}
+
+fn build_validate_if_guard(
+    source_field: &Field,
+    expected_value: &LitStr,
+) -> proc_macro2::TokenStream {
+    let source_field_name = source_field.ident.as_ref().unwrap();
+    if is_option_like_type(&source_field.ty) {
+        quote! {
+            self.#source_field_name.as_deref() == Some(#expected_value)
+        }
+    } else {
+        quote! {
+            self.#source_field_name == #expected_value
+        }
+    }
+}
+
+fn ensure_validate_if_source_type(ty: &Type, attr: &Attribute) -> Result<()> {
+    if is_string_like_type(ty) || option_inner_type(ty).is_some_and(is_string_like_type) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            attr.span(),
+            "expected a string or Option<String> field for `#[validate_if]`",
+        ))
+    }
+}
+
 fn ensure_string_type(ty: &Type, attr: &Attribute) -> Result<()> {
     if is_string_like_type(ty) {
         Ok(())
@@ -606,6 +753,17 @@ fn ensure_array_size_type(ty: &Type, attr: &Attribute, rule_name: &str) -> Resul
         Err(Error::new(
             attr.span(),
             format!("expected a vec field for `#[{}]`", rule_name),
+        ))
+    }
+}
+
+fn ensure_numeric_bound_type(ty: &Type, attr: &Attribute, rule_name: &str) -> Result<()> {
+    if is_number_like_type(ty) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            attr.span(),
+            format!("expected a numeric field for `#[{}]`", rule_name),
         ))
     }
 }
@@ -798,6 +956,50 @@ fn parse_matches_pattern(attr: &Attribute) -> Result<String> {
     attr.parse_args::<LitStr>()
         .map(|pattern| pattern.value())
         .map_err(|_| Error::new(attr.span(), "expected `#[matches(\"<regex>\")]`"))
+}
+
+struct NumericBound {
+    expr: Expr,
+    display: String,
+}
+
+fn parse_numeric_bound(attr: &Attribute, rule_name: &str) -> Result<NumericBound> {
+    let expr = attr
+        .parse_args::<Expr>()
+        .map_err(|_| Error::new(attr.span(), format!("expected `#[{}(<number>)]`", rule_name)))?;
+
+    if !is_numeric_bound_expr(&expr) {
+        return Err(Error::new(
+            attr.span(),
+            format!("expected `#[{}(<number>)]`", rule_name),
+        ));
+    }
+
+    Ok(NumericBound {
+        display: quote!(#expr).to_string().replace(' ', ""),
+        expr,
+    })
+}
+
+fn is_numeric_bound_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Lit(ExprLit {
+            lit: Lit::Int(_) | Lit::Float(_),
+            ..
+        }) => true,
+        Expr::Unary(ExprUnary {
+            op: UnOp::Neg(_),
+            expr,
+            ..
+        }) => matches!(
+            expr.as_ref(),
+            Expr::Lit(ExprLit {
+                lit: Lit::Int(_) | Lit::Float(_),
+                ..
+            })
+        ),
+        _ => false,
+    }
 }
 
 fn parse_groups(attr: &Attribute) -> Result<Vec<LitStr>> {

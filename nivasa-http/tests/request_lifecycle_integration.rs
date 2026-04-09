@@ -5,6 +5,10 @@ use http::{Method, StatusCode};
 use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
+use nivasa_common::HttpException;
+use nivasa_filters::{
+    ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, ExceptionFilterMetadata,
+};
 use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 use nivasa_http::{
     resolve_controller_guard_execution, run_controller_action_with_request, Body,
@@ -15,7 +19,9 @@ use nivasa_interceptors::{
     CallHandler, ExecutionContext as InterceptorExecutionContext, Interceptor, InterceptorFuture,
 };
 use nivasa_macros::{controller, impl_controller};
+use nivasa_pipes::{ArgumentMetadata, Pipe};
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod};
+use serde_json::Value;
 use serde_json::json;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::{Arc, Mutex};
@@ -133,6 +139,122 @@ impl Interceptor for RequestHeaderInterceptor {
             log.push("interceptor.post");
             Ok(response)
         })
+    }
+}
+
+struct FullLifecycleMiddleware {
+    log: LifecycleLog,
+}
+
+#[async_trait]
+impl NivasaMiddleware for FullLifecycleMiddleware {
+    async fn use_(&self, mut req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
+        self.log.push("middleware");
+        req.body_mut().clone_from(&Body::text("  from-middleware  "));
+        next.run(req).await
+    }
+}
+
+struct FullLifecycleGuard {
+    log: LifecycleLog,
+}
+
+impl Guard for FullLifecycleGuard {
+    fn can_activate<'a>(&'a self, context: &'a GuardExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async move {
+            self.log.push("guard");
+
+            let request = context
+                .request::<NivasaRequest>()
+                .expect("guard context must carry the request");
+            assert_eq!(request.path(), "/lifecycle/full");
+            assert_eq!(request.body(), &Body::text("  from-middleware  "));
+
+            Ok(true)
+        })
+    }
+}
+
+struct FullLifecyclePipe {
+    log: LifecycleLog,
+}
+
+impl Pipe for FullLifecyclePipe {
+    fn transform(&self, value: Value, _metadata: ArgumentMetadata) -> Result<Value, HttpException> {
+        self.log.push("pipe");
+
+        let body = value
+            .as_str()
+            .ok_or_else(|| HttpException::bad_request("FullLifecyclePipe expects a string body"))?;
+
+        Ok(Value::String(body.trim().to_owned()))
+    }
+}
+
+struct FullLifecycleInterceptor {
+    log: LifecycleLog,
+}
+
+impl Interceptor for FullLifecycleInterceptor {
+    type Response = NivasaResponse;
+
+    fn intercept(
+        &self,
+        context: &InterceptorExecutionContext,
+        next: CallHandler<Self::Response>,
+    ) -> InterceptorFuture<Self::Response> {
+        let log = self.log.clone();
+
+        assert_eq!(context.request_method(), Some("POST"));
+        assert_eq!(context.request_path(), Some("/lifecycle/full"));
+        assert_eq!(context.handler_name(), None);
+
+        Box::pin(async move {
+            log.push("interceptor.pre");
+            let _response = next.handle().await?;
+            log.push("interceptor.post");
+            Err(HttpException::bad_request("full lifecycle intercepted"))
+        })
+    }
+}
+
+struct FullLifecycleFilter {
+    log: LifecycleLog,
+}
+
+impl ExceptionFilter<HttpException, NivasaResponse> for FullLifecycleFilter {
+    fn catch<'a>(
+        &'a self,
+        exception: HttpException,
+        host: ArgumentsHost,
+    ) -> ExceptionFilterFuture<'a, NivasaResponse> {
+        let log = self.log.clone();
+
+        Box::pin(async move {
+            log.push("filter");
+
+            let request = host
+                .request::<NivasaRequest>()
+                .expect("filter context must expose the request");
+
+            NivasaResponse::new(
+                StatusCode::from_u16(exception.status_code)
+                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                json!({
+                    "statusCode": exception.status_code,
+                    "message": exception.message,
+                    "error": exception.error,
+                    "requestPath": request.path(),
+                    "lifecycle": log.snapshot(),
+                }),
+            )
+        })
+    }
+}
+
+impl ExceptionFilterMetadata for FullLifecycleFilter {
+    fn exception_type(&self) -> Option<&'static str> {
+        Some(std::any::type_name::<HttpException>())
     }
 }
 
@@ -490,6 +612,92 @@ async fn request_lifecycle_maps_interceptor_responses_into_a_data_envelope(
     assert_eq!(
         log.snapshot(),
         vec!["interceptor.pre", "handler", "interceptor.post"]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn request_lifecycle_runs_through_middleware_guard_pipe_handler_and_filter(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let log = LifecycleLog::new();
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .middleware(FullLifecycleMiddleware { log: log.clone() })
+        .use_global_guard(FullLifecycleGuard { log: log.clone() })
+        .use_global_pipe(FullLifecyclePipe { log: log.clone() })
+        .interceptor(FullLifecycleInterceptor { log: log.clone() })
+        .use_global_filter(FullLifecycleFilter { log: log.clone() })
+        .route(RouteMethod::Post, "/lifecycle/full", {
+            let log = log.clone();
+            move |request| {
+                log.push("handler");
+                assert_eq!(request.path(), "/lifecycle/full");
+                assert_eq!(request.body(), &Body::text("from-middleware"));
+                NivasaResponse::text("handler")
+            }
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::POST)
+        .uri(format!("http://127.0.0.1:{port}/lifecycle/full"))
+        .header(CONTENT_TYPE, "text/plain")
+        .body(Full::new(Bytes::from_static(b"ignored")))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let body = response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    let body = serde_json::from_slice::<serde_json::Value>(&body)?;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(content_type.as_deref(), Some("application/json"));
+    assert_eq!(
+        body,
+        json!({
+            "statusCode": 400,
+            "message": "full lifecycle intercepted",
+            "error": "Bad Request",
+            "requestPath": "/lifecycle/full",
+            "lifecycle": [
+                "middleware",
+                "guard",
+                "pipe",
+                "interceptor.pre",
+                "handler",
+                "interceptor.post",
+                "filter"
+            ]
+        })
+    );
+    assert_eq!(
+        log.snapshot(),
+        vec![
+            "middleware",
+            "guard",
+            "pipe",
+            "interceptor.pre",
+            "handler",
+            "interceptor.post",
+            "filter"
+        ]
     );
 
     Ok(())

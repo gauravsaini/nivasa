@@ -1,0 +1,5 @@
+error: unknown field `state` for `#[validate_if]`
+ --> tests/trybuild/validation_validate_if_unknown_field.rs:5:19
+  |
+5 |     #[validate_if(state, "create")]
+  |                   ^^^^^

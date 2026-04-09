@@ -1,0 +1,7 @@
+error: `#[subscribe_message]` expects an event name like `#[subscribe_message("event_name")]`
+ --> tests/trybuild/subscribe_message_invalid_args.rs:6:5
+  |
+6 |     #[subscribe_message(42)]
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `subscribe_message` (in Nightly builds, run with -Z macro-backtrace for more info)

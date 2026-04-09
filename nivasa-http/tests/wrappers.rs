@@ -82,7 +82,7 @@ fn request_extraction_supports_single_query_and_header_values() {
     let request = NivasaRequest::from_http(request);
 
     assert_eq!(request.query_typed::<u32>("page").unwrap(), 2);
-    assert_eq!(request.query_typed::<bool>("active").unwrap(), true);
+    assert!(request.query_typed::<bool>("active").unwrap());
     assert_eq!(request.header_typed::<u32>("x-retry-count").unwrap(), 3);
     assert_eq!(
         request.header_typed::<String>("x-request-id").unwrap(),

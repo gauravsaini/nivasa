@@ -105,7 +105,7 @@ use nivasa_http::{
     Body, ControllerResponse, FromRequest, Json, NivasaRequest, NivasaResponse, Query,
     RequestPipeline,
 };
-use nivasa_guards::{ExecutionContext, Guard, GuardFuture, RolesGuard};
+use nivasa_guards::{ExecutionContext, Guard, GuardFuture, RolesGuard, ThrottlerGuard};
 use nivasa_macros::{controller, impl_controller};
 use nivasa_routing::{
     Controller, RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod, RoutePathCaptures,
@@ -116,6 +116,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
+use std::time::Duration;
 
 type GuardedRouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
 
@@ -166,7 +167,7 @@ fn post_route_registration_supports_json_and_query_extraction() {
 
     assert!(routes.resolve_match("POST", request.path()).is_some());
     assert_eq!(request.query_typed::<u32>("page").unwrap(), 2);
-    assert_eq!(request.query_typed::<bool>("active").unwrap(), true);
+    assert!(request.query_typed::<bool>("active").unwrap());
     assert_eq!(
         request.header_typed::<String>("x-request-id").unwrap(),
         "abc123"
@@ -238,6 +239,7 @@ struct VersionedReportsController;
 
 #[impl_controller]
 impl VersionedReportsController {
+    #[allow(dead_code)]
     #[nivasa_macros::get("/summary")]
     #[nivasa_macros::http_code(204)]
     #[nivasa_macros::header("x-controller-version", "v1")]
@@ -347,6 +349,19 @@ impl RolesController {
     #[nivasa_macros::get("/dashboard")]
     fn dashboard(&self) -> NivasaResponse {
         NivasaResponse::text("dashboard").with_header("x-controller-mode", "roles")
+    }
+}
+
+#[controller("/throttle")]
+#[nivasa_macros::guard(ThrottlerGuard)]
+#[derive(Clone, Copy)]
+struct ThrottledController;
+
+#[impl_controller]
+impl ThrottledController {
+    #[nivasa_macros::get("/allow")]
+    fn allow(&self) -> NivasaResponse {
+        NivasaResponse::text("allowed").with_header("x-controller-mode", "throttled")
     }
 }
 
@@ -668,9 +683,9 @@ fn controller_req_runtime_exposes_raw_request_only_after_route_matching() {
     );
 }
 
-async fn evaluate_controller_guard<'a, G: Guard>(
+async fn evaluate_controller_guard<G: Guard>(
     pipeline: &mut RequestPipeline,
-    guard: &'a G,
+    guard: &G,
     handler: &'static str,
     controller_guards: &[&'static str],
     handler_guard_metadata: &[(&'static str, Vec<&'static str>)],
@@ -824,6 +839,83 @@ async fn controller_guard_metadata_applies_to_every_route() {
         assert_eq!(method, "GET");
         assert!(path.starts_with("/guarded/"));
     }
+}
+
+#[tokio::test]
+async fn throttler_guard_controller_proof_compiles_and_runs_when_configured() {
+    let controller = ThrottledController;
+    let controller_guards = ThrottledController::__nivasa_controller_guards();
+    let handler_guard_metadata = ThrottledController::__nivasa_controller_guard_metadata();
+    let route = ThrottledController::__nivasa_controller_routes()
+        .into_iter()
+        .next()
+        .expect("throttled controller must expose a route");
+
+    assert_eq!(controller_guards, vec!["ThrottlerGuard"]);
+    assert_eq!(handler_guard_metadata.len(), 1);
+    assert!(handler_guard_metadata
+        .iter()
+        .all(|(_, guards)| guards.is_empty()));
+
+    let mut registry: RouteDispatchRegistry<GuardedRouteHandler> = RouteDispatchRegistry::new();
+    registry
+        .register_pattern(
+            RouteMethod::from(route.0),
+            route.1.clone(),
+            Arc::new(move |request: &NivasaRequest| {
+                run_controller_action_with_request(request, |_| controller.allow())
+            }),
+        )
+        .expect("throttled controller route must register");
+
+    let request = NivasaRequest::new(Method::GET, "/throttle/allow", Body::empty());
+    let mut pipeline = RequestPipeline::new(request);
+    pipeline.parse_request().unwrap();
+    pipeline.complete_middleware().unwrap();
+
+    let outcome = pipeline.match_route(&registry).unwrap();
+    assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
+    assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+
+    let contract = resolve_controller_guard_execution(
+        route.2,
+        &controller_guards,
+        &handler_guard_metadata,
+    )
+    .expect("throttler guard contract must exist");
+    assert_eq!(contract.handler(), route.2);
+    assert_eq!(contract.guards(), &["ThrottlerGuard"]);
+
+    let guard_outcome = pipeline
+        .evaluate_guard(
+            &ThrottlerGuard::new(10, Duration::from_secs(60)),
+            &ExecutionContext::new(()),
+        )
+        .await
+        .expect("throttler guard evaluation must advance the request pipeline");
+
+    assert!(matches!(guard_outcome, GuardExecutionOutcome::Passed));
+    assert_eq!(pipeline.snapshot().current_state, "InterceptorPre");
+    pipeline.complete_interceptors_pre().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "PipeTransform");
+    pipeline.complete_pipes().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "HandlerExecution");
+
+    let response = match outcome {
+        RouteDispatchOutcome::Matched(entry) => (entry.value)(pipeline.request()),
+        _ => panic!("throttled controller route must match"),
+    };
+
+    pipeline.complete_handler().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "InterceptorPost");
+    pipeline.complete_interceptors_post().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "SendingResponse");
+    pipeline.complete_response().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "Done");
+
+    assert_eq!(response.status(), http::StatusCode::OK);
+    assert_eq!(response.headers().get("x-controller-mode").unwrap(), "throttled");
+    assert_eq!(response.body(), &Body::text("allowed"));
 }
 
 #[tokio::test]
@@ -1019,10 +1111,7 @@ async fn controller_guard_resolves_from_dependency_container() {
     );
     assert_eq!(response.body(), &Body::text("guarded"));
 
-    assert_eq!(
-        container.resolve::<InjectableGuard>().await.unwrap().allowance.allowed,
-        true
-    );
+    assert!(container.resolve::<InjectableGuard>().await.unwrap().allowance.allowed);
 }
 
 #[tokio::test]

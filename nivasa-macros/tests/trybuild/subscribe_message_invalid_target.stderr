@@ -1,0 +1,5 @@
+error: `#[subscribe_message]` only supports inherent methods
+ --> tests/trybuild/subscribe_message_invalid_target.rs:4:4
+  |
+4 | fn not_a_method() {}
+  |    ^^^^^^^^^^^^

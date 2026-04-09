@@ -1,0 +1,5 @@
+error: `#[api_operation]` summary cannot be empty
+ --> tests/trybuild/controller_api_operation_invalid.rs:9:46
+  |
+9 |     #[nivasa_macros::api_operation(summary = "")]
+  |                                              ^^

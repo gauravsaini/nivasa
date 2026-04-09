@@ -17,9 +17,13 @@ nivasa-macros = { path = "../nivasa-macros" }
 nivasa-http = { path = "../nivasa-http" }
 nivasa-interceptors = { path = "../nivasa-interceptors" }
 nivasa-routing = { path = "../nivasa-routing" }
+serde_json = { workspace = true }
 nivasa-config = { path = "../nivasa-config", optional = true }
 nivasa-validation = { path = "../nivasa-validation", optional = true }
 nivasa-websocket = { path = "../nivasa-websocket", optional = true }
+
+[dev-dependencies]
+openapiv3 = "2.2"
 
 [features]
 default = []

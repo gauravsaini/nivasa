@@ -3,8 +3,10 @@ mod filter;
 mod injectable;
 mod middleware;
 mod module_macro;
-mod validation;
 mod scxml_handler;
+mod subscribe_message;
+mod validation;
+mod websocket_gateway;
 
 use proc_macro::TokenStream;
 
@@ -77,6 +79,8 @@ pub fn scxml_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
     Dto,
     attributes(
         groups,
+        min,
+        max,
         is_email,
         is_string,
         is_number,
@@ -85,6 +89,7 @@ pub fn scxml_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
         is_uuid,
         is_url,
         is_enum,
+        validate_if,
         matches,
         is_not_empty,
         custom_validate,
@@ -104,6 +109,8 @@ pub fn dto(input: TokenStream) -> TokenStream {
     PartialDto,
     attributes(
         groups,
+        min,
+        max,
         is_email,
         is_string,
         is_number,
@@ -112,6 +119,7 @@ pub fn dto(input: TokenStream) -> TokenStream {
         is_uuid,
         is_url,
         is_enum,
+        validate_if,
         matches,
         is_not_empty,
         custom_validate,
@@ -168,7 +176,27 @@ pub fn middleware(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn websocket_gateway(attr: TokenStream, item: TokenStream) -> TokenStream {
+    websocket_gateway::websocket_gateway(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn subscribe_message(attr: TokenStream, item: TokenStream) -> TokenStream {
+    subscribe_message::subscribe_message(attr, item)
+}
+
+#[proc_macro_attribute]
 pub fn body(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn message_body(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+pub fn connected_socket(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
 
@@ -180,6 +208,11 @@ pub fn param(_attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn query(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
+}
+
+#[proc_macro_attribute]
+pub fn pipe(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::pipe(attr, item)
 }
 
 #[proc_macro_attribute]

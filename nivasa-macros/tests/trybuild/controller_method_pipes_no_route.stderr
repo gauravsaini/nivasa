@@ -1,0 +1,5 @@
+error: controller metadata requires an HTTP method attribute
+ --> tests/trybuild/controller_method_pipes_no_route.rs:9:8
+  |
+9 |     fn create(&self) {}
+  |        ^^^^^^

@@ -32,6 +32,23 @@ fn matched_pipeline() -> RequestPipeline {
     pipeline
 }
 
+fn assert_latest_transition(
+    pipeline: &RequestPipeline,
+    from: &str,
+    event: &str,
+    to: Option<&str>,
+) {
+    let snapshot = pipeline.snapshot();
+    let transition = snapshot
+        .recent_transitions
+        .last()
+        .expect("pipeline must record the latest SCXML transition");
+
+    assert_eq!(transition.from, from);
+    assert_eq!(transition.event, event);
+    assert_eq!(transition.to.as_deref(), to);
+}
+
 #[test]
 fn request_pipeline_advances_through_initial_scxml_stages() {
     let pipeline = ready_pipeline();
@@ -61,6 +78,12 @@ fn request_pipeline_drives_route_matching_outcomes() {
     assert!(matches!(not_found, RouteDispatchOutcome::NotFound));
     assert_eq!(not_found_pipeline.snapshot().current_state, "ErrorHandling");
     assert!(not_found_pipeline.request().path_params().is_none());
+    assert_latest_transition(
+        &not_found_pipeline,
+        "RouteMatching",
+        "RouteNotFound",
+        Some("ErrorHandling"),
+    );
 
     let mut not_allowed_pipeline = ready_pipeline();
     let mut not_allowed_routes = RouteDispatchRegistry::new();
@@ -80,6 +103,12 @@ fn request_pipeline_drives_route_matching_outcomes() {
         "ErrorHandling"
     );
     assert!(not_allowed_pipeline.request().path_params().is_none());
+    assert_latest_transition(
+        &not_allowed_pipeline,
+        "RouteMatching",
+        "RouteMethodNotAllowed",
+        Some("ErrorHandling"),
+    );
 }
 
 #[test]
@@ -114,6 +143,12 @@ fn request_pipeline_routes_middleware_errors_to_error_handling() {
 
     assert_eq!(pipeline.snapshot().current_state, "ErrorHandling");
     assert!(pipeline.request().path_params().is_none());
+    assert_latest_transition(
+        &pipeline,
+        "MiddlewareChain",
+        "ErrorMiddleware",
+        Some("ErrorHandling"),
+    );
 }
 
 #[test]
@@ -125,6 +160,7 @@ fn request_pipeline_routes_parse_errors_to_error_handling() {
 
     assert_eq!(pipeline.snapshot().current_state, "ErrorHandling");
     assert!(pipeline.request().path_params().is_none());
+    assert_latest_transition(&pipeline, "Received", "ErrorParse", Some("ErrorHandling"));
 }
 
 #[test]
@@ -152,11 +188,13 @@ fn request_pipeline_short_circuits_guard_denials_via_scxml() {
 
     pipeline.deny_guards().unwrap();
     assert_eq!(pipeline.snapshot().current_state, "ErrorHandling");
+    assert_latest_transition(&pipeline, "GuardChain", "GuardDenied", Some("ErrorHandling"));
     pipeline.handle_filter().unwrap();
     assert_eq!(pipeline.snapshot().current_state, "SendingResponse");
     pipeline.fail_send().unwrap();
 
     assert_eq!(pipeline.snapshot().current_state, "Done");
+    assert_latest_transition(&pipeline, "SendingResponse", "ErrorSend", Some("Done"));
 }
 
 struct AllowGuard;
@@ -234,6 +272,7 @@ async fn request_pipeline_can_evaluate_guard_results_through_scxml() {
         nivasa_http::GuardExecutionOutcome::Denied
     ));
     assert_eq!(denied.snapshot().current_state, "ErrorHandling");
+    assert_latest_transition(&denied, "GuardChain", "GuardDenied", Some("ErrorHandling"));
 
     let mut errored = matched_pipeline();
     let error_outcome = errored.evaluate_guard(&ErrorGuard, &context).await.unwrap();
@@ -245,6 +284,7 @@ async fn request_pipeline_can_evaluate_guard_results_through_scxml() {
         other => panic!("expected guard error outcome, got {other:?}"),
     }
     assert_eq!(errored.snapshot().current_state, "ErrorHandling");
+    assert_latest_transition(&errored, "GuardChain", "ErrorGuard", Some("ErrorHandling"));
 }
 
 #[tokio::test]
@@ -331,23 +371,37 @@ fn request_pipeline_routes_late_stage_errors_through_error_handling() {
     let mut guard_error = matched_pipeline();
     guard_error.fail_guards().unwrap();
     assert_eq!(guard_error.snapshot().current_state, "ErrorHandling");
+    assert_latest_transition(&guard_error, "GuardChain", "ErrorGuard", Some("ErrorHandling"));
 
     let mut interceptor_error = matched_pipeline();
     interceptor_error.pass_guards().unwrap();
     interceptor_error.fail_interceptors_pre().unwrap();
     assert_eq!(interceptor_error.snapshot().current_state, "ErrorHandling");
+    assert_latest_transition(
+        &interceptor_error,
+        "InterceptorPre",
+        "ErrorInterceptor",
+        Some("ErrorHandling"),
+    );
 
     let mut validation_error = matched_pipeline();
     validation_error.pass_guards().unwrap();
     validation_error.complete_interceptors_pre().unwrap();
     validation_error.fail_validation().unwrap();
     assert_eq!(validation_error.snapshot().current_state, "ErrorHandling");
+    assert_latest_transition(
+        &validation_error,
+        "PipeTransform",
+        "ErrorValidation",
+        Some("ErrorHandling"),
+    );
 
     let mut pipe_error = matched_pipeline();
     pipe_error.pass_guards().unwrap();
     pipe_error.complete_interceptors_pre().unwrap();
     pipe_error.fail_pipes().unwrap();
     assert_eq!(pipe_error.snapshot().current_state, "ErrorHandling");
+    assert_latest_transition(&pipe_error, "PipeTransform", "ErrorPipe", Some("ErrorHandling"));
 
     let mut handler_error = matched_pipeline();
     handler_error.pass_guards().unwrap();
@@ -355,6 +409,12 @@ fn request_pipeline_routes_late_stage_errors_through_error_handling() {
     handler_error.complete_pipes().unwrap();
     handler_error.fail_handler().unwrap();
     assert_eq!(handler_error.snapshot().current_state, "ErrorHandling");
+    assert_latest_transition(
+        &handler_error,
+        "HandlerExecution",
+        "ErrorHandler",
+        Some("ErrorHandling"),
+    );
 
     let mut interceptor_post_error = matched_pipeline();
     interceptor_post_error.pass_guards().unwrap();
@@ -366,6 +426,12 @@ fn request_pipeline_routes_late_stage_errors_through_error_handling() {
         interceptor_post_error.snapshot().current_state,
         "ErrorHandling"
     );
+    assert_latest_transition(
+        &interceptor_post_error,
+        "InterceptorPost",
+        "ErrorInterceptorPost",
+        Some("ErrorHandling"),
+    );
 }
 
 #[test]
@@ -375,6 +441,12 @@ fn request_pipeline_routes_unhandled_filter_outcomes_through_scxml() {
     pipeline.deny_guards().unwrap();
     pipeline.fail_filter_unhandled().unwrap();
     assert_eq!(pipeline.snapshot().current_state, "SendingResponse");
+    assert_latest_transition(
+        &pipeline,
+        "ErrorHandling",
+        "ErrorFilterUnhandled",
+        Some("SendingResponse"),
+    );
     pipeline.complete_response().unwrap();
 
     assert_eq!(pipeline.snapshot().current_state, "Done");

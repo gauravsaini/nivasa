@@ -1,0 +1,5 @@
+error: `#[message_body]` only supports bare or string-list syntax
+ --> tests/trybuild/websocket_message_body_namevalue_invalid.rs:9:16
+  |
+9 |     fn publish(#[nivasa_macros::message_body = "payload"] payload: String) {
+  |                ^

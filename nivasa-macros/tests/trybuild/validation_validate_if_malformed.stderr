@@ -1,0 +1,5 @@
+error: expected `#[validate_if(field_name, "value")]`
+ --> tests/trybuild/validation_validate_if_malformed.rs:5:5
+  |
+5 |     #[validate_if]
+  |     ^

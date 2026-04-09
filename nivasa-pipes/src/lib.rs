@@ -303,7 +303,7 @@ where
 }
 
 fn validation_exception(errors: ValidationErrors) -> HttpException {
-    let details = serde_json::to_value(&errors).unwrap_or_else(|_| Value::Null);
+    let details = serde_json::to_value(&errors).unwrap_or(Value::Null);
     HttpException::bad_request("Validation failed").with_details(details)
 }
 
