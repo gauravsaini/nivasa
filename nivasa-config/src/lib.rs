@@ -121,6 +121,14 @@ impl ConfigService {
         self.get_raw(key)?.parse().ok()
     }
 
+    /// Borrow and parse a typed config value, or fall back to a default.
+    pub fn get_or_default<T>(&self, key: &str, default: T) -> T
+    where
+        T: FromStr,
+    {
+        self.get(key).unwrap_or(default)
+    }
+
     /// Borrow all config values as a read-only map.
     pub fn values(&self) -> &BTreeMap<String, String> {
         &self.values
@@ -457,6 +465,20 @@ mod tests {
         assert_eq!(service.get::<bool>("FEATURE_ENABLED"), Some(true));
         assert_eq!(service.get::<i32>("MISSING"), None);
         assert_eq!(service.get::<i32>("BROKEN_PORT"), None);
+    }
+
+    #[test]
+    fn config_service_get_or_default_falls_back_when_missing_or_invalid() {
+        let service = ConfigService::from_values(BTreeMap::from([
+            ("PORT".to_string(), "3000".to_string()),
+            ("FEATURE_ENABLED".to_string(), "true".to_string()),
+            ("BROKEN_PORT".to_string(), "abc".to_string()),
+        ]));
+
+        assert_eq!(service.get_or_default("PORT", 80), 3000);
+        assert_eq!(service.get_or_default("MISSING", 80), 80);
+        assert_eq!(service.get_or_default("BROKEN_PORT", 80), 80);
+        assert_eq!(service.get_or_default("FEATURE_ENABLED", false), true);
     }
 
     #[test]
