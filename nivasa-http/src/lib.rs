@@ -12,6 +12,7 @@ pub use health::{
     DatabaseHealthIndicator, DiskHealthIndicator, HealthCheckResult, HealthCheckService,
     HealthIndicator, HealthIndicatorResult, HealthStatus, HttpHealthIndicator,
     MemoryHealthIndicator,
+    TerminusModule,
 };
 pub use server::{CorsOptions, GlobalFilterBinding};
 

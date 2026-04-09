@@ -181,11 +181,32 @@ impl HealthCheckService {
     }
 }
 
+/// Minimal facade module that bundles health indicators behind one service.
+#[derive(Clone, Default)]
+pub struct TerminusModule {
+    service: HealthCheckService,
+}
+
+impl TerminusModule {
+    /// Create a new health module from the provided indicators.
+    pub fn new(indicators: Vec<Arc<dyn HealthIndicator>>) -> Self {
+        Self {
+            service: HealthCheckService::new(indicators),
+        }
+    }
+
+    /// Borrow the bundled health-check service.
+    pub fn health_check_service(&self) -> &HealthCheckService {
+        &self.service
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         DatabaseHealthIndicator, DiskHealthIndicator, HealthCheckService, HealthIndicator,
         HealthIndicatorResult, HealthStatus, HttpHealthIndicator, MemoryHealthIndicator,
+        TerminusModule,
     };
     use async_trait::async_trait;
     use serde_json::json;
@@ -324,5 +345,18 @@ mod tests {
         );
         assert_eq!(result.details[2].status, HealthStatus::Down);
         assert_eq!(result.details[2].details, None);
+    }
+
+    #[tokio::test]
+    async fn terminus_module_wraps_health_check_service() {
+        let module = TerminusModule::new(vec![
+            Arc::new(DiskHealthIndicator),
+            Arc::new(MemoryHealthIndicator),
+        ]);
+
+        let result = module.health_check_service().check().await;
+
+        assert_eq!(result.status, HealthStatus::Up);
+        assert_eq!(result.details.len(), 2);
     }
 }
