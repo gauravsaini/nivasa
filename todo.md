@@ -855,7 +855,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Create template for guard file
 - [x] Create template for interceptor/pipe/filter files
 - [x] Create template for resource: module + controller + service + create DTO + update DTO
-- [ ] Use `askama` or string templates for code generation
+- [x] Use `askama` or string templates for code generation
 
 #### 6.4.3 — CLI Auto-Registration
 - [ ] After generating a module, auto-add import to parent module's `imports` list
