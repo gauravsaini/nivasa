@@ -156,6 +156,19 @@ pub struct ClientRoomMembership<'a, ClientId> {
     client: ClientId,
 }
 
+/// Minimal in-memory client event registry.
+#[derive(Debug, Clone)]
+pub struct ClientEventRegistry<ClientId> {
+    clients: HashMap<ClientId, Vec<(String, String)>>,
+}
+
+/// Client-scoped event sink for `client.emit("event", data)`.
+#[derive(Debug)]
+pub struct ClientEventHandle<'a, ClientId> {
+    registry: &'a mut ClientEventRegistry<ClientId>,
+    client: ClientId,
+}
+
 impl<ClientId> NamespaceRegistry<ClientId>
 where
     ClientId: Clone + Eq + Hash,
@@ -239,6 +252,45 @@ where
     }
 }
 
+impl<ClientId> ClientEventRegistry<ClientId>
+where
+    ClientId: Clone + Eq + Hash,
+{
+    /// Create an empty client event registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Return a client-scoped event handle.
+    pub fn client(&mut self, client: ClientId) -> ClientEventHandle<'_, ClientId> {
+        ClientEventHandle {
+            registry: self,
+            client,
+        }
+    }
+
+    /// Return recorded events for a specific client.
+    pub fn events_for(&self, client: &ClientId) -> Vec<(String, String)> {
+        self.clients.get(client).cloned().unwrap_or_default()
+    }
+
+    /// Return `true` when no client has emitted any event.
+    pub fn is_empty(&self) -> bool {
+        self.clients.is_empty()
+    }
+}
+
+impl<ClientId> Default for ClientEventRegistry<ClientId>
+where
+    ClientId: Clone + Eq + Hash,
+{
+    fn default() -> Self {
+        Self {
+            clients: HashMap::new(),
+        }
+    }
+}
+
 impl<'a, ClientId> ClientRoomMembership<'a, ClientId>
 where
     ClientId: Clone + Eq + Hash,
@@ -265,11 +317,29 @@ where
     }
 }
 
+impl<'a, ClientId> ClientEventHandle<'a, ClientId>
+where
+    ClientId: Clone + Eq + Hash,
+{
+    /// Emit one event for the scoped client.
+    pub fn emit(&mut self, event: impl Into<String>, data: impl Into<String>) -> usize {
+        let entry = self.registry.clients.entry(self.client.clone()).or_default();
+        entry.push((event.into(), data.into()));
+        entry.len()
+    }
+
+    /// Return scoped client identifier.
+    pub fn client(&self) -> &ClientId {
+        &self.client
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        ClientRoomMembership, DefaultWebSocketAdapter, NamespaceRegistry, OnGatewayConnection,
-        OnGatewayDisconnect, OnGatewayInit, RoomRegistry, WebSocketAdapter, WebSocketGateway,
+        ClientEventRegistry, ClientRoomMembership, DefaultWebSocketAdapter, NamespaceRegistry,
+        OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit, RoomRegistry, WebSocketAdapter,
+        WebSocketGateway,
     };
     use std::sync::{
         atomic::{AtomicBool, Ordering},
@@ -313,6 +383,39 @@ mod tests {
             adapter.backend_role(),
             tokio_tungstenite::tungstenite::protocol::Role::Server
         );
+    }
+
+    #[test]
+    fn client_event_registry_keeps_emits_isolated_by_client() {
+        let mut registry = ClientEventRegistry::new();
+
+        {
+            let mut client = registry.client("client-1");
+            assert_eq!(client.client(), &"client-1");
+            assert_eq!(client.emit("message", "hello"), 1);
+            assert_eq!(client.emit("typing", "on"), 2);
+        }
+
+        {
+            let mut other_client = registry.client("client-2");
+            assert_eq!(other_client.emit("message", "other"), 1);
+        }
+
+        assert_eq!(
+            registry.events_for(&"client-1"),
+            vec![
+                ("message".to_string(), "hello".to_string()),
+                ("typing".to_string(), "on".to_string()),
+            ]
+        );
+        assert_eq!(
+            registry.events_for(&"client-2"),
+            vec![("message".to_string(), "other".to_string())]
+        );
+        assert!(!registry.events_for(&"client-1").contains(&(
+            "message".to_string(),
+            "other".to_string()
+        )));
     }
 
     impl OnGatewayInit for DemoLifecycleGateway {

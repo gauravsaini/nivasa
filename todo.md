@@ -893,7 +893,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement default adapter using `tokio-tungstenite`
 - [ ] Implement `server.emit("event", data)` — broadcast to all
 - [ ] Implement `server.to("room").emit("event", data)` — emit to room
-- [ ] Implement `client.emit("event", data)` — emit to specific client
+- [x] Implement `client.emit("event", data)` — emit to specific client
 - [x] Implement `client.join("room")` / `client.leave("room")`
 
 #### 7.1.4 — WebSocket + Guards/Pipes/Interceptors
