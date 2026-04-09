@@ -1052,7 +1052,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Set up mutation testing (cargo-mutants) for critical paths
 - [x] Run `cargo clippy` with all warnings as errors
 - [ ] Run `cargo deny check` for license/vulnerability issues
-- [ ] Run `cargo audit` for security advisories
+- [x] Run `cargo audit` for security advisories
 
 ### 10.2 — Benchmarking
 - [ ] Set up benchmark harness (criterion or divan)
