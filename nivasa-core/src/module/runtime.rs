@@ -7,13 +7,16 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+/// Errors from module lifecycle runtime.
 pub enum ModuleLifecycleError {
+    /// Statechart rejected state transition.
     #[error("invalid module lifecycle transition from {state:?} using {event:?}: {details}")]
     InvalidTransition {
         state: NivasaModuleState,
         event: NivasaModuleEvent,
         details: String,
     },
+    /// Dependency container failure.
     #[error(transparent)]
     DependencyInjection(#[from] DiError),
 }
@@ -30,10 +33,12 @@ pub struct ModuleRuntime<M> {
 }
 
 impl<M> ModuleRuntime<M> {
+    /// Build runtime with fresh dependency container.
     pub fn new(module: M) -> Self {
         Self::with_container(module, DependencyContainer::new())
     }
 
+    /// Build runtime with caller-owned dependency container.
     pub fn with_container(module: M, container: DependencyContainer) -> Self {
         Self {
             module,
@@ -42,26 +47,32 @@ impl<M> ModuleRuntime<M> {
         }
     }
 
+    /// Underlying module instance.
     pub fn module(&self) -> &M {
         &self.module
     }
 
+    /// Dependency container owned by runtime.
     pub fn container(&self) -> &DependencyContainer {
         &self.container
     }
 
+    /// Current SCXML state.
     pub fn state(&self) -> NivasaModuleState {
         self.engine.current_state()
     }
 
+    /// Events valid in current state.
     pub fn valid_events(&self) -> Vec<NivasaModuleEvent> {
         self.engine.valid_events()
     }
 
+    /// True when engine in final state.
     pub fn is_terminal(&self) -> bool {
         self.engine.is_in_final_state()
     }
 
+    /// Send raw lifecycle event into SCXML engine.
     pub fn send_event(
         &mut self,
         event: NivasaModuleEvent,
@@ -87,18 +98,22 @@ impl<M> ModuleRuntime<M> {
 }
 
 impl<M: Module> ModuleRuntime<M> {
+    /// Enter loading state.
     pub fn start_loading(&mut self) -> Result<NivasaModuleState, ModuleLifecycleError> {
         self.send_event(NivasaModuleEvent::ModuleLoad)
     }
 
+    /// Mark imports resolved.
     pub fn imports_resolved(&mut self) -> Result<NivasaModuleState, ModuleLifecycleError> {
         self.send_event(NivasaModuleEvent::ImportsResolved)
     }
 
+    /// Mark missing import error.
     pub fn import_missing(&mut self) -> Result<NivasaModuleState, ModuleLifecycleError> {
         self.send_event(NivasaModuleEvent::ErrorImportMissing)
     }
 
+    /// Run module configure, then mark providers registered.
     pub async fn register_providers(
         &mut self,
     ) -> Result<NivasaModuleState, ModuleLifecycleError> {
@@ -106,6 +121,7 @@ impl<M: Module> ModuleRuntime<M> {
         self.send_event(NivasaModuleEvent::ProvidersRegistered)
     }
 
+    /// Initialize dependency container, then map outcome to lifecycle state.
     pub async fn resolve_dependencies(
         &mut self,
     ) -> Result<NivasaModuleState, ModuleLifecycleError> {
@@ -124,6 +140,7 @@ impl<M: Module> ModuleRuntime<M> {
         }
     }
 
+    /// Full load sequence.
     pub async fn load(&mut self) -> Result<NivasaModuleState, ModuleLifecycleError> {
         self.start_loading()?;
         self.imports_resolved()?;
@@ -131,26 +148,32 @@ impl<M: Module> ModuleRuntime<M> {
         self.resolve_dependencies().await
     }
 
+    /// Abort loading sequence.
     pub fn abort_load(&mut self) -> Result<NivasaModuleState, ModuleLifecycleError> {
         self.send_event(NivasaModuleEvent::ModuleAbort)
     }
 
+    /// Enter init state.
     pub fn initialize(&mut self) -> Result<NivasaModuleState, ModuleLifecycleError> {
         self.send_event(NivasaModuleEvent::ModuleInit)
     }
 
+    /// Enter active state.
     pub fn activate(&mut self) -> Result<NivasaModuleState, ModuleLifecycleError> {
         self.send_event(NivasaModuleEvent::ModuleActivate)
     }
 
+    /// Begin destroy sequence.
     pub fn begin_destroy(&mut self) -> Result<NivasaModuleState, ModuleLifecycleError> {
         self.send_event(NivasaModuleEvent::ModuleDestroy)
     }
 
+    /// Finish destroy sequence.
     pub fn complete_destroy(&mut self) -> Result<NivasaModuleState, ModuleLifecycleError> {
         self.send_event(NivasaModuleEvent::DestroyComplete)
     }
 
+    /// Init, then activate.
     pub async fn activate_after_init(
         &mut self,
     ) -> Result<NivasaModuleState, ModuleLifecycleError> {
@@ -160,6 +183,7 @@ impl<M: Module> ModuleRuntime<M> {
 }
 
 impl<M: Module + OnModuleInit> ModuleRuntime<M> {
+    /// Init, then run `on_module_init`.
     pub async fn initialize_with_hooks(
         &mut self,
     ) -> Result<NivasaModuleState, ModuleLifecycleError> {
@@ -170,6 +194,7 @@ impl<M: Module + OnModuleInit> ModuleRuntime<M> {
 }
 
 impl<M: Module + OnModuleDestroy> ModuleRuntime<M> {
+    /// Begin destroy, run `on_module_destroy`, then finish destroy.
     pub async fn destroy_with_hooks(
         &mut self,
     ) -> Result<NivasaModuleState, ModuleLifecycleError> {

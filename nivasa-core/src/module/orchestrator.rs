@@ -14,6 +14,10 @@ type HookFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 type ModuleHook<M> = for<'a> fn(&'a M) -> HookFuture<'a>;
 
 #[derive(Clone, Copy)]
+/// Hook set for module and application lifecycle callbacks.
+///
+/// Use `none()` for no hooks, `module_lifecycle()` for module init/destroy,
+/// `application_lifecycle()` for app bootstrap/shutdown, or `all()` for both.
 pub struct ModuleHookSet<M> {
     on_module_init: Option<ModuleHook<M>>,
     on_module_destroy: Option<ModuleHook<M>>,
@@ -22,6 +26,7 @@ pub struct ModuleHookSet<M> {
 }
 
 impl<M> ModuleHookSet<M> {
+    /// No lifecycle hooks.
     pub fn none() -> Self {
         Self {
             on_module_init: None,
@@ -42,6 +47,7 @@ impl<M> ModuleHookSet<M>
 where
     M: OnModuleInit + OnModuleDestroy,
 {
+    /// Module init and destroy hooks only.
     pub fn module_lifecycle() -> Self {
         Self {
             on_module_init: Some(|module| Box::pin(module.on_module_init())),
@@ -55,6 +61,7 @@ impl<M> ModuleHookSet<M>
 where
     M: OnApplicationBootstrap + OnApplicationShutdown,
 {
+    /// Application bootstrap and shutdown hooks only.
     pub fn application_lifecycle() -> Self {
         Self {
             on_application_bootstrap: Some(|module| Box::pin(module.on_application_bootstrap())),
@@ -68,6 +75,7 @@ impl<M> ModuleHookSet<M>
 where
     M: OnModuleInit + OnModuleDestroy + OnApplicationBootstrap + OnApplicationShutdown,
 {
+    /// All module and application lifecycle hooks.
     pub fn all() -> Self {
         Self {
             on_module_init: Some(|module| Box::pin(module.on_module_init())),
@@ -79,11 +87,15 @@ where
 }
 
 #[derive(Debug, Error)]
+/// Errors from module orchestration.
 pub enum ModuleOrchestratorError {
+    /// Registry layer failure.
     #[error(transparent)]
     Registry(#[from] ModuleRegistryError),
+    /// Lifecycle engine failure.
     #[error(transparent)]
     Lifecycle(#[from] ModuleLifecycleError),
+    /// Registered module has no runtime entry.
     #[error("module runtime missing for registered module {type_id:?}")]
     MissingRuntime { type_id: TypeId },
 }
@@ -174,6 +186,7 @@ impl Default for ModuleOrchestrator {
 }
 
 impl ModuleOrchestrator {
+    /// Create empty orchestrator.
     pub fn new() -> Self {
         Self {
             registry: ModuleRegistry::new(),
@@ -182,6 +195,7 @@ impl ModuleOrchestrator {
         }
     }
 
+    /// Register module with no extra hooks.
     pub fn register<M>(&mut self, module: M) -> bool
     where
         M: Module + Send + Sync + 'static,
@@ -189,6 +203,7 @@ impl ModuleOrchestrator {
         self.register_with_hooks(module, ModuleHookSet::none())
     }
 
+    /// Register module with explicit lifecycle hooks.
     pub fn register_with_hooks<M>(&mut self, module: M, hooks: ModuleHookSet<M>) -> bool
     where
         M: Module + Send + Sync + 'static,
@@ -200,20 +215,24 @@ impl ModuleOrchestrator {
         inserted
     }
 
+    /// Registry view for registered modules.
     pub fn registry(&self) -> &ModuleRegistry {
         &self.registry
     }
 
+    /// Activation order from last successful bootstrap.
     pub fn activation_order(&self) -> &[TypeId] {
         &self.activation_order
     }
 
+    /// Current module state by type.
     pub fn state_for<M: Module>(&self) -> Option<super::lifecycle::NivasaModuleState> {
         self.runtimes
             .get(&TypeId::of::<M>())
             .map(|runtime| runtime.state())
     }
 
+    /// Bootstrap modules in dependency order, then run app bootstrap hooks.
     pub async fn bootstrap(&mut self) -> Result<&[TypeId], ModuleOrchestratorError> {
         let order = self.registry.resolve_order()?;
 
@@ -233,6 +252,7 @@ impl ModuleOrchestrator {
         Ok(&self.activation_order)
     }
 
+    /// Shut down modules in reverse activation order.
     pub async fn shutdown(&mut self) -> Result<(), ModuleOrchestratorError> {
         for type_id in self.activation_order.iter().rev().copied().collect::<Vec<_>>() {
             let runtime = self.runtime_ref(type_id)?;
