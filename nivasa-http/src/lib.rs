@@ -44,7 +44,6 @@ use std::{
     convert::Infallible,
     fmt,
     future::Future,
-    io::Write,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},

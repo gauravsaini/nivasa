@@ -94,6 +94,10 @@ pub struct OpenApiMediaType {
 
 /// Simple security requirement map.
 pub type OpenApiSecurityRequirement = BTreeMap<String, Vec<String>>;
+/// Controller response metadata grouped by route key.
+type OpenApiControllerResponseMetadata = Vec<(u16, &'static str, &'static str)>;
+/// Controller response metadata grouped by operation.
+type OpenApiResponseMetadata = Vec<(&'static str, OpenApiControllerResponseMetadata)>;
 
 /// Bridge trait for controllers that already expose generated metadata helpers.
 pub trait OpenApiControllerMetadataProvider {
@@ -111,7 +115,7 @@ pub trait OpenApiControllerMetadataProvider {
         Vec::new()
     }
 
-    fn api_response_metadata() -> Vec<(&'static str, Vec<(u16, &'static str, &'static str)>)> {
+    fn api_response_metadata() -> OpenApiResponseMetadata {
         Vec::new()
     }
 
@@ -131,7 +135,7 @@ pub struct OpenApiControllerMetadata {
     pub api_tags: Vec<&'static str>,
     pub api_operations: Vec<(&'static str, Option<&'static str>)>,
     pub api_params: Vec<(&'static str, Vec<(&'static str, &'static str)>)>,
-    pub api_responses: Vec<(&'static str, Vec<(u16, &'static str, &'static str)>)>,
+    pub api_responses: OpenApiResponseMetadata,
     pub api_bodies: Vec<(&'static str, &'static str)>,
     pub api_bearer_auth: Vec<&'static str>,
 }
