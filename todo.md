@@ -334,7 +334,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Validate no duplicate routes within a controller
 
 #### 2.1.4 — Parameter Extraction
-> ⚠️ **SCXML / controller boundary:** the request pipeline still stops at route dispatch. The landed controller runtime slices are `#[body]` request extraction, `#[req]` raw request access, `#[param("name")]` path-param extraction, `#[query]` full query DTO extraction, `#[header("name")]` single-header extraction, `#[res]` response-builder access, and multipart `#[file]` / `#[files]` helpers. `#[headers]`, `#[ip]`, `#[session]`, and `#[custom_param(...)]` stay partial or pending until the later SCXML handler-execution path lands.
+> ⚠️ **SCXML / controller boundary:** request pipeline now runs past route dispatch through controller execution stages. Landed controller runtime slices are `#[body]` request extraction, `#[req]` raw request access, `#[param("name")]` path-param extraction, `#[query]` full query DTO extraction, `#[query("name")]` single query-param extraction, `#[header("name")]` single-header extraction, `#[res]` response-builder access, and multipart `#[file]` / `#[files]` helpers. `#[headers]`, `#[ip]`, `#[session]`, and `#[custom_param(...)]` stay partial or pending.
 
 - [x] Strip and record controller parameter extractor metadata in `#[impl_controller]`
 - [x] Implement `#[body]` extractor — deserialize JSON request body to typed DTO
@@ -418,7 +418,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 - [x] Document the full request lifecycle (reference the SCXML statechart diagram)
 - [x] Create a `StatechartEngine<RequestStatechart>` per incoming request
-- [x] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` (route dispatch is the current SCXML stop; the first `#[res]` runtime slice begins on the controller side, and full controller execution plus later SCXML stages remain future work) → ...
+- [x] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` → `GuardChain` → `InterceptorPre` → `PipeTransform` → `HandlerExecution` → `InterceptorPost` → `SendingResponse` → `Done`
 - [x] Each pipeline stage handler returns a `RequestEvent` that the engine uses to transition
 - [x] Pipeline short-circuits are SCXML transitions: GuardDenied → `ErrorHandling` (not ad-hoc if/else)
 - [x] Errors at any stage raise `error.*` events → engine transitions to `ErrorHandling` state
