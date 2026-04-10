@@ -1031,7 +1031,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Write "Comparison with other Rust frameworks" page
 - [x] Generate `rustdoc` for all public APIs (`cargo doc --workspace --no-deps`)
 - [ ] Set up documentation website (mdBook or similar)
-- [ ] Add search to documentation site
+- [x] Add search to documentation site
 
 ---
 

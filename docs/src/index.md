@@ -1,7 +1,9 @@
 # Nivasa Docs Site
 
-This mdBook site is the front door for the repo docs. It stays lightweight and
-points into the existing markdown pages already checked into `docs/`.
+This mdBook site is the front door for repo docs. It stays lightweight and
+points into existing markdown pages checked into `docs/`.
+
+Search is enabled in rendered HTML. Use built-in search bar to jump pages.
 
 Start here:
 
