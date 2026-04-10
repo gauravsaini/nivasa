@@ -1,0 +1,14 @@
+[package]
+name = "nivasa-example-crud-rest-api"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nivasa = { path = "../../nivasa" }
+nivasa-core = { path = "../../nivasa-core" }
+nivasa-routing = { path = "../../nivasa-routing" }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[workspace]
