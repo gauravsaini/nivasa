@@ -18,6 +18,12 @@ type ModuleHook<M> = for<'a> fn(&'a M) -> HookFuture<'a>;
 ///
 /// Use `none()` for no hooks, `module_lifecycle()` for module init/destroy,
 /// `application_lifecycle()` for app bootstrap/shutdown, or `all()` for both.
+///
+/// ```rust
+/// use nivasa_core::module::ModuleHookSet;
+///
+/// let _hooks: ModuleHookSet<()> = ModuleHookSet::none();
+/// ```
 pub struct ModuleHookSet<M> {
     on_module_init: Option<ModuleHook<M>>,
     on_module_destroy: Option<ModuleHook<M>>,
@@ -88,6 +94,15 @@ where
 
 #[derive(Debug, Error)]
 /// Errors from module orchestration.
+///
+/// ```rust,no_run
+/// use nivasa_core::module::ModuleOrchestratorError;
+///
+/// # let error = ModuleOrchestratorError::MissingRuntime {
+/// #     type_id: std::any::TypeId::of::<()>(),
+/// # };
+/// let _ = error.to_string();
+/// ```
 pub enum ModuleOrchestratorError {
     /// Registry layer failure.
     #[error(transparent)]
@@ -173,6 +188,29 @@ where
     }
 }
 
+/// Coordinates module registration, bootstrap, and shutdown.
+///
+/// ```rust,no_run
+/// use async_trait::async_trait;
+/// use nivasa_core::di::{DependencyContainer, error::DiError};
+/// use nivasa_core::module::{Module, ModuleMetadata, ModuleOrchestrator};
+///
+/// struct AppModule;
+///
+/// #[async_trait]
+/// impl Module for AppModule {
+///     fn metadata(&self) -> ModuleMetadata {
+///         ModuleMetadata::new()
+///     }
+///
+///     async fn configure(&self, _container: &DependencyContainer) -> Result<(), DiError> {
+///         Ok(())
+///     }
+/// }
+///
+/// let mut orchestrator = ModuleOrchestrator::new();
+/// let _registered = orchestrator.register(AppModule);
+/// ```
 pub struct ModuleOrchestrator {
     registry: ModuleRegistry,
     runtimes: HashMap<TypeId, Box<dyn ManagedModuleRuntime>>,
@@ -196,6 +234,28 @@ impl ModuleOrchestrator {
     }
 
     /// Register module with no extra hooks.
+    ///
+    /// ```rust,no_run
+    /// use async_trait::async_trait;
+    /// use nivasa_core::di::{DependencyContainer, error::DiError};
+    /// use nivasa_core::module::{Module, ModuleMetadata, ModuleOrchestrator};
+    ///
+    /// struct AppModule;
+    ///
+    /// #[async_trait]
+    /// impl Module for AppModule {
+    ///     fn metadata(&self) -> ModuleMetadata {
+    ///         ModuleMetadata::new()
+    ///     }
+    ///
+    ///     async fn configure(&self, _container: &DependencyContainer) -> Result<(), DiError> {
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// let mut orchestrator = ModuleOrchestrator::new();
+    /// let _ = orchestrator.register(AppModule);
+    /// ```
     pub fn register<M>(&mut self, module: M) -> bool
     where
         M: Module + Send + Sync + 'static,
@@ -204,6 +264,28 @@ impl ModuleOrchestrator {
     }
 
     /// Register module with explicit lifecycle hooks.
+    ///
+    /// ```rust,no_run
+    /// use async_trait::async_trait;
+    /// use nivasa_core::di::{DependencyContainer, error::DiError};
+    /// use nivasa_core::module::{Module, ModuleHookSet, ModuleMetadata, ModuleOrchestrator};
+    ///
+    /// struct AppModule;
+    ///
+    /// #[async_trait]
+    /// impl Module for AppModule {
+    ///     fn metadata(&self) -> ModuleMetadata {
+    ///         ModuleMetadata::new()
+    ///     }
+    ///
+    ///     async fn configure(&self, _container: &DependencyContainer) -> Result<(), DiError> {
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// let mut orchestrator = ModuleOrchestrator::new();
+    /// let _ = orchestrator.register_with_hooks(AppModule, ModuleHookSet::none());
+    /// ```
     pub fn register_with_hooks<M>(&mut self, module: M, hooks: ModuleHookSet<M>) -> bool
     where
         M: Module + Send + Sync + 'static,
@@ -216,16 +298,55 @@ impl ModuleOrchestrator {
     }
 
     /// Registry view for registered modules.
+    ///
+    /// ```rust,no_run
+    /// use nivasa_core::module::ModuleOrchestrator;
+    ///
+    /// let orchestrator = ModuleOrchestrator::new();
+    /// let _registry = orchestrator.registry();
+    /// ```
     pub fn registry(&self) -> &ModuleRegistry {
         &self.registry
     }
 
     /// Activation order from last successful bootstrap.
+    ///
+    /// ```rust,no_run
+    /// use nivasa_core::module::ModuleOrchestrator;
+    ///
+    /// let orchestrator = ModuleOrchestrator::new();
+    /// assert!(orchestrator.activation_order().is_empty());
+    /// ```
     pub fn activation_order(&self) -> &[TypeId] {
         &self.activation_order
     }
 
     /// Current module state by type.
+    ///
+    /// ```rust,no_run
+    /// use async_trait::async_trait;
+    /// use nivasa_core::di::{DependencyContainer, error::DiError};
+    /// use nivasa_core::module::{Module, ModuleMetadata, ModuleOrchestrator};
+    ///
+    /// struct AppModule;
+    ///
+    /// #[async_trait]
+    /// impl Module for AppModule {
+    ///     fn metadata(&self) -> ModuleMetadata {
+    ///         ModuleMetadata::new()
+    ///     }
+    ///
+    ///     async fn configure(
+    ///         &self,
+    ///         _container: &nivasa_core::di::DependencyContainer,
+    ///     ) -> Result<(), nivasa_core::di::error::DiError> {
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// let orchestrator = ModuleOrchestrator::new();
+    /// let _state = orchestrator.state_for::<AppModule>();
+    /// ```
     pub fn state_for<M: Module>(&self) -> Option<super::lifecycle::NivasaModuleState> {
         self.runtimes
             .get(&TypeId::of::<M>())
