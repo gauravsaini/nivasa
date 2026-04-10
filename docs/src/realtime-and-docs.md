@@ -8,4 +8,4 @@ the repo.
 - [CLI](../../cli.md)
 - [Migration from NestJS](../../migration-from-nestjs.md)
 - [Comparison with other Rust Frameworks](../../comparison-rust-frameworks.md)
-
+- [Publishing Order](../../publishing-order.md)

@@ -36,3 +36,7 @@ Documentation root for Nivasa.
 
 - [WebSocket Support](./websocket.md) - gateway traits, metadata, room membership, and the current macro/runtime split.
 - [OpenAPI / Swagger](./openapi-swagger.md) - controller metadata to OpenAPI, plus Swagger UI route serving.
+- [CLI](./cli.md) - `info`, project scaffolding, generators, and SCXML tooling.
+- [Migration from NestJS](./migration-from-nestjs.md) - current Nivasa equivalents and known gaps.
+- [Comparison with other Rust Frameworks](./comparison-rust-frameworks.md) - high-level tradeoffs versus Axum, Actix Web, Rocket, and others.
+- [Publishing Order](./publishing-order.md) - crate release order and release-prep notes.
