@@ -82,6 +82,20 @@ impl HttpException {
     /// Attach additional details to the exception payload.
     ///
     /// The details are serialized only when present.
+    ///
+    /// ```rust
+    /// use nivasa_common::HttpException;
+    /// use serde_json::json;
+    ///
+    /// let err = HttpException::bad_request("invalid input")
+    ///     .with_details(json!({
+    ///         "field": "email",
+    ///         "reason": "missing @"
+    ///     }));
+    ///
+    /// assert_eq!(err.status_code, 400);
+    /// assert_eq!(err.details.as_ref().unwrap()["field"], "email");
+    /// ```
     pub fn with_details(mut self, details: serde_json::Value) -> Self {
         self.details = Some(details);
         self
@@ -90,6 +104,17 @@ impl HttpException {
     /// Attach an underlying cause without changing the serialized payload.
     ///
     /// The cause is used for `std::error::Error::source` only.
+    ///
+    /// ```rust
+    /// use nivasa_common::HttpException;
+    /// use std::error::Error;
+    ///
+    /// let err = HttpException::internal_server_error("boom")
+    ///     .with_cause(std::io::Error::other("disk full"));
+    ///
+    /// assert!(err.source().is_some());
+    /// assert_eq!(err.status_code, 500);
+    /// ```
     pub fn with_cause(mut self, cause: impl StdError + Send + Sync + 'static) -> Self {
         self.cause = Some(Arc::new(cause));
         self
@@ -98,6 +123,14 @@ impl HttpException {
     // --- Factory methods for common HTTP exceptions ---
 
     /// Create a `400 Bad Request` exception.
+    ///
+    /// ```rust
+    /// use nivasa_common::HttpException;
+    ///
+    /// let err = HttpException::bad_request("missing required field");
+    /// assert_eq!(err.status_code, 400);
+    /// assert_eq!(err.error, "Bad Request");
+    /// ```
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self::new(400u16, message)
     }
