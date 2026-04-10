@@ -2,10 +2,42 @@
 //!
 //! These types represent the in-memory model of an SCXML document,
 //! closely following the spec's element definitions.
+//!
+//! ```rust
+//! use nivasa_statechart::types::{Event, EventType, ScxmlMetadata, State, StateType};
+//!
+//! let event = Event::internal("error.send.failed");
+//! assert!(event.matches_descriptor("error.send"));
+//!
+//! let state = State {
+//!     id: "ready".into(),
+//!     state_type: StateType::Atomic,
+//!     parent: None,
+//!     children: vec![],
+//!     initial: None,
+//!     transitions: vec![],
+//!     has_on_entry: false,
+//!     has_on_exit: false,
+//!     invoke: vec![],
+//! };
+//!
+//! let metadata = ScxmlMetadata {
+//!     name: Some("checkout".into()),
+//!     version: "1.0".into(),
+//!     initial: Some(state.id.clone()),
+//!     datamodel: None,
+//! };
+//!
+//! assert_eq!(metadata.version, "1.0");
+//! assert_eq!(event.event_type, EventType::Internal);
+//! ```
 
 use serde::{Deserialize, Serialize};
 
 /// Unique identifier for a state within a statechart.
+///
+/// The crate keeps state IDs as plain strings so the SCXML parser can preserve
+/// document values without introducing a separate wrapper type.
 pub type StateId = String;
 
 /// The type of a state node in the statechart.
@@ -22,6 +54,27 @@ pub enum StateType {
 }
 
 /// A state node in the statechart.
+///
+/// This is the in-memory shape used by the parser and runtime to represent an
+/// SCXML `<state>` or `<parallel>` element.
+///
+/// ```rust
+/// use nivasa_statechart::types::{State, StateType};
+///
+/// let ready = State {
+///     id: "ready".into(),
+///     state_type: StateType::Atomic,
+///     parent: None,
+///     children: vec![],
+///     initial: None,
+///     transitions: vec![],
+///     has_on_entry: false,
+///     has_on_exit: false,
+///     invoke: vec![],
+/// };
+///
+/// assert_eq!(ready.id, "ready");
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
     /// Unique identifier for this state.
@@ -54,6 +107,9 @@ pub enum TransitionType {
 }
 
 /// A transition between states, triggered by events and guarded by conditions.
+///
+/// Transition targets are stored as state IDs so the runtime can resolve them
+/// after parsing the whole document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transition {
     /// Event descriptor(s) that trigger this transition. `None` = eventless transition.
@@ -76,6 +132,8 @@ pub enum HistoryType {
 }
 
 /// A history pseudo-state.
+///
+/// History nodes remember the last active configuration for a compound state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryState {
     pub id: StateId,
@@ -84,6 +142,9 @@ pub struct HistoryState {
 }
 
 /// An invocation of an external service.
+///
+/// The parser keeps invocation metadata mostly as strings because SCXML lets
+/// the document define the concrete service wiring.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Invoke {
     /// Type of service to invoke.
@@ -108,6 +169,8 @@ pub enum EventType {
 }
 
 /// An SCXML event.
+///
+/// Events are the runtime signals that move the machine forward.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
@@ -180,6 +243,21 @@ impl Event {
 }
 
 /// Metadata about the parsed SCXML document.
+///
+/// This is the top-level document header the parser extracts from `<scxml>`.
+///
+/// ```rust
+/// use nivasa_statechart::types::ScxmlMetadata;
+///
+/// let metadata = ScxmlMetadata {
+///     name: Some("demo".into()),
+///     version: "1.0".into(),
+///     initial: Some("idle".into()),
+///     datamodel: Some("ecmascript".into()),
+/// };
+///
+/// assert_eq!(metadata.name.as_deref(), Some("demo"));
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScxmlMetadata {
     /// Name of the statechart.
