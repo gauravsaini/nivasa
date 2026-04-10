@@ -2,6 +2,25 @@
 //!
 //! Every exception maps to an HTTP status code and follows the standard
 //! error response shape: `{ statusCode, message, error }`.
+//!
+//! # Example
+//!
+//! ```rust
+//! use nivasa_common::{HttpException, HttpStatus};
+//!
+//! let err = HttpException::not_found("user not found")
+//!     .with_details(serde_json::json!({
+//!         "resource": "user",
+//!         "id": 42
+//!     }));
+//!
+//! assert_eq!(err.status_code, 404);
+//! assert_eq!(err.error, "Not Found");
+//! assert_eq!(err.details.unwrap()["resource"], "user");
+//!
+//! let typed = HttpException::from_status(HttpStatus::BadRequest, "invalid input");
+//! assert_eq!(typed.status_code, 400);
+//! ```
 
 use serde::Serialize;
 use std::{error::Error as StdError, sync::Arc};
@@ -11,8 +30,8 @@ use crate::HttpStatus;
 
 /// Base HTTP exception type.
 ///
-/// All specific exception types (BadRequest, NotFound, etc.) are created
-/// via constructor functions on this type.
+/// This is the common serialized shape used by the framework's HTTP errors.
+/// Factory helpers on the type build the standard status-specific variants.
 #[derive(Debug, Clone, Serialize, Error)]
 #[error("{status_code} {error}: {message}")]
 #[serde(rename_all = "camelCase")]
@@ -28,7 +47,15 @@ pub struct HttpException {
 }
 
 impl HttpException {
-    /// Create a new HttpException with the given status code and message.
+    /// Create a new `HttpException` with the given status code and message.
+    ///
+    /// ```rust
+    /// use nivasa_common::HttpException;
+    ///
+    /// let err = HttpException::new(422, "validation failed");
+    /// assert_eq!(err.status_code, 422);
+    /// assert_eq!(err.error, "Unprocessable Entity");
+    /// ```
     pub fn new(status_code: u16, message: impl Into<String>) -> Self {
         let error = default_error_name(status_code);
         Self {
@@ -40,18 +67,29 @@ impl HttpException {
         }
     }
 
-    /// Create a new HttpException from a typed HTTP status.
+    /// Create a new `HttpException` from a typed HTTP status.
+    ///
+    /// ```rust
+    /// use nivasa_common::{HttpException, HttpStatus};
+    ///
+    /// let err = HttpException::from_status(HttpStatus::Forbidden, "no access");
+    /// assert_eq!(err.status_code, 403);
+    /// ```
     pub fn from_status(status: HttpStatus, message: impl Into<String>) -> Self {
         Self::new(status.into(), message)
     }
 
-    /// Attach additional details to the exception.
+    /// Attach additional details to the exception payload.
+    ///
+    /// The details are serialized only when present.
     pub fn with_details(mut self, details: serde_json::Value) -> Self {
         self.details = Some(details);
         self
     }
 
     /// Attach an underlying cause without changing the serialized payload.
+    ///
+    /// The cause is used for `std::error::Error::source` only.
     pub fn with_cause(mut self, cause: impl StdError + Send + Sync + 'static) -> Self {
         self.cause = Some(Arc::new(cause));
         self
@@ -59,78 +97,97 @@ impl HttpException {
 
     // --- Factory methods for common HTTP exceptions ---
 
+    /// Create a `400 Bad Request` exception.
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self::new(400u16, message)
     }
 
+    /// Create a `401 Unauthorized` exception.
     pub fn unauthorized(message: impl Into<String>) -> Self {
         Self::new(401u16, message)
     }
 
+    /// Create a `402 Payment Required` exception.
     pub fn payment_required(message: impl Into<String>) -> Self {
         Self::new(402u16, message)
     }
 
+    /// Create a `403 Forbidden` exception.
     pub fn forbidden(message: impl Into<String>) -> Self {
         Self::new(403u16, message)
     }
 
+    /// Create a `404 Not Found` exception.
     pub fn not_found(message: impl Into<String>) -> Self {
         Self::new(404u16, message)
     }
 
+    /// Create a `405 Method Not Allowed` exception.
     pub fn method_not_allowed(message: impl Into<String>) -> Self {
         Self::new(405u16, message)
     }
 
+    /// Create a `406 Not Acceptable` exception.
     pub fn not_acceptable(message: impl Into<String>) -> Self {
         Self::new(406u16, message)
     }
 
+    /// Create a `409 Conflict` exception.
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::new(409u16, message)
     }
 
+    /// Create a `410 Gone` exception.
     pub fn gone(message: impl Into<String>) -> Self {
         Self::new(410u16, message)
     }
 
+    /// Create a `413 Payload Too Large` exception.
     pub fn payload_too_large(message: impl Into<String>) -> Self {
         Self::new(413u16, message)
     }
 
+    /// Create a `415 Unsupported Media Type` exception.
     pub fn unsupported_media_type(message: impl Into<String>) -> Self {
         Self::new(415u16, message)
     }
 
+    /// Create a `422 Unprocessable Entity` exception.
     pub fn unprocessable_entity(message: impl Into<String>) -> Self {
         Self::new(422u16, message)
     }
 
+    /// Create a `429 Too Many Requests` exception.
     pub fn too_many_requests(message: impl Into<String>) -> Self {
         Self::new(429u16, message)
     }
 
+    /// Create a `408 Request Timeout` exception.
     pub fn request_timeout(message: impl Into<String>) -> Self {
         Self::new(408u16, message)
     }
 
+    /// Create a `500 Internal Server Error` exception.
     pub fn internal_server_error(message: impl Into<String>) -> Self {
         Self::new(500u16, message)
     }
 
+    /// Create a `501 Not Implemented` exception.
     pub fn not_implemented(message: impl Into<String>) -> Self {
         Self::new(501u16, message)
     }
 
+    /// Create a `502 Bad Gateway` exception.
     pub fn bad_gateway(message: impl Into<String>) -> Self {
         Self::new(502u16, message)
     }
 
+    /// Create a `503 Service Unavailable` exception.
     pub fn service_unavailable(message: impl Into<String>) -> Self {
         Self::new(503u16, message)
     }
 
+    /// Create a `504 Gateway Timeout` exception.
     pub fn gateway_timeout(message: impl Into<String>) -> Self {
         Self::new(504u16, message)
     }
