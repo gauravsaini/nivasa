@@ -1068,6 +1068,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 10.3 — Release Preparation
 - [ ] Final API review: ensure public APIs are consistent and well-named
 - [ ] Fill remaining public types/functions with rustdoc examples
+  - recent docs wave covered the major public surfaces in `nivasa-core`, `nivasa-http`, `nivasa-macros`, `nivasa-statechart`, `nivasa-common`, `nivasa-routing`, `nivasa-validation`, `nivasa-websocket`, `nivasa-filters`, `nivasa-interceptors`, `nivasa-pipes`, and `nivasa-guards`; the remaining gaps are now mostly lower-level internals
 - [x] Write `CHANGELOG.md` following Keep a Changelog format
 - [x] Write `CONTRIBUTING.md` with contribution guidelines
 - [x] Set up crate publishing order (dependencies first):
