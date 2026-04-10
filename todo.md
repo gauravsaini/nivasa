@@ -1019,7 +1019,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Write API versioning documentation
 - [x] Write guards documentation (including Reflector and metadata)
 - [x] Write interceptors documentation (with caching, logging examples)
-- [ ] Write pipes documentation (built-in pipes, custom pipes)
+- [x] Write pipes documentation (built-in pipes, custom pipes)
 - [x] Write exception filters documentation
 - [x] Write middleware documentation (including Tower compatibility)
 - [x] Write configuration documentation (env loading, type-safe config)
