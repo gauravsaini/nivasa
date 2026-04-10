@@ -14,6 +14,16 @@ use std::hash::Hash;
 /// This stays intentionally small until the richer websocket runtime lands.
 /// It gives downstream crates a concrete public abstraction to implement
 /// without implying any transport, room, or message-routing behavior yet.
+///
+/// ```rust,no_run
+/// use nivasa_websocket::WebSocketGateway;
+///
+/// struct ChatGateway;
+///
+/// fn assert_gateway<T: WebSocketGateway>() {}
+///
+/// assert_gateway::<ChatGateway>();
+/// ```
 pub trait WebSocketGateway: Send + Sync + 'static {}
 
 impl<T> WebSocketGateway for T where T: Send + Sync + 'static {}
@@ -23,6 +33,16 @@ impl<T> WebSocketGateway for T where T: Send + Sync + 'static {}
 /// This stays as a marker-style abstraction until the concrete transport layer
 /// lands. It gives downstream crates a stable public trait to reference
 /// without implying any handshake, subscription, or room behavior yet.
+///
+/// ```rust,no_run
+/// use nivasa_websocket::WebSocketAdapter;
+///
+/// struct InMemoryAdapter;
+///
+/// fn assert_adapter<T: WebSocketAdapter>() {}
+///
+/// assert_adapter::<InMemoryAdapter>();
+/// ```
 pub trait WebSocketAdapter: Send + Sync + 'static {}
 
 impl<T> WebSocketAdapter for T where T: Send + Sync + 'static {}
@@ -46,6 +66,18 @@ impl DefaultWebSocketAdapter {
 /// Gateway startup hook.
 ///
 /// Implement on gateway type when need bootstrap callback after runtime init.
+///
+/// ```rust,no_run
+/// use nivasa_websocket::OnGatewayInit;
+///
+/// struct Gateway;
+///
+/// impl OnGatewayInit for Gateway {
+///     fn on_gateway_init(&self) {
+///         // bootstrap hook
+///     }
+/// }
+/// ```
 pub trait OnGatewayInit: Send + Sync + 'static {
     /// Run once when websocket runtime starts.
     fn on_gateway_init(&self) {}
@@ -54,6 +86,21 @@ pub trait OnGatewayInit: Send + Sync + 'static {
 /// Gateway connect hook.
 ///
 /// Use when need per-client setup after connection accepted.
+///
+/// ```rust,no_run
+/// use nivasa_websocket::OnGatewayConnection;
+///
+/// struct Gateway;
+/// struct Client;
+///
+/// impl OnGatewayConnection for Gateway {
+///     type Client = Client;
+///
+///     fn on_gateway_connection(&self, _client: &Self::Client) {
+///         // per-client hook
+///     }
+/// }
+/// ```
 pub trait OnGatewayConnection: Send + Sync + 'static {
     /// Connected client payload.
     type Client: Send + Sync + 'static;
@@ -65,6 +112,21 @@ pub trait OnGatewayConnection: Send + Sync + 'static {
 /// Gateway disconnect hook.
 ///
 /// Use when need cleanup after client leaves.
+///
+/// ```rust,no_run
+/// use nivasa_websocket::OnGatewayDisconnect;
+///
+/// struct Gateway;
+/// struct Client;
+///
+/// impl OnGatewayDisconnect for Gateway {
+///     type Client = Client;
+///
+///     fn on_gateway_disconnect(&self, _client: &Self::Client) {
+///         // cleanup hook
+///     }
+/// }
+/// ```
 pub trait OnGatewayDisconnect: Send + Sync + 'static {
     /// Disconnected client payload.
     type Client: Send + Sync + 'static;
@@ -74,6 +136,14 @@ pub trait OnGatewayDisconnect: Send + Sync + 'static {
 }
 
 /// In-memory room registry for one namespace.
+///
+/// ```rust
+/// use nivasa_websocket::RoomRegistry;
+///
+/// let mut rooms = RoomRegistry::new("/chat");
+/// assert!(rooms.join("lobby", "client-1"));
+/// assert!(rooms.contains("lobby", &"client-1"));
+/// ```
 #[derive(Debug, Clone)]
 pub struct RoomRegistry<ClientId> {
     namespace: String,
@@ -172,6 +242,15 @@ pub struct ClientRoomMembership<'a, ClientId> {
 }
 
 /// In-memory client event inboxes.
+///
+/// ```rust
+/// use nivasa_websocket::ClientEventRegistry;
+///
+/// let mut events = ClientEventRegistry::new();
+/// let mut client = events.client("client-1");
+/// assert_eq!(client.emit("message", "hello"), 1);
+/// assert_eq!(events.events_for(&"client-1").len(), 1);
+/// ```
 #[derive(Debug, Clone)]
 pub struct ClientEventRegistry<ClientId> {
     clients: HashMap<ClientId, Vec<(String, String)>>,
@@ -185,6 +264,15 @@ pub struct ClientEventHandle<'a, ClientId> {
 }
 
 /// In-memory server broadcast inboxes.
+///
+/// ```rust
+/// use nivasa_websocket::ServerEventRegistry;
+///
+/// let mut server = ServerEventRegistry::new();
+/// server.connect("client-1");
+/// server.connect("client-2");
+/// assert_eq!(server.server().emit("notice", "hello"), 2);
+/// ```
 #[derive(Debug, Clone)]
 pub struct ServerEventRegistry<ClientId> {
     clients: HashMap<ClientId, Vec<(String, String)>>,
@@ -197,6 +285,16 @@ pub struct ServerEventHandle<'a, ClientId> {
 }
 
 /// In-memory room broadcast inboxes.
+///
+/// ```rust
+/// use nivasa_websocket::RoomEventRegistry;
+///
+/// let mut rooms = RoomEventRegistry::new();
+/// rooms.connect("client-1");
+/// rooms.connect("client-2");
+/// rooms.join("lobby", "client-1");
+/// assert_eq!(rooms.to("lobby").emit("notice", "hello"), 1);
+/// ```
 #[derive(Debug, Clone)]
 pub struct RoomEventRegistry<ClientId> {
     rooms: NamespaceRegistry<ClientId>,
