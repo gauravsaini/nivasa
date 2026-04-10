@@ -3,16 +3,80 @@
 //! SCXML (W3C State Chart XML) engine for the Nivasa framework.
 //!
 //! This crate provides:
-//! - **Parser**: Parse `.scxml` files into an in-memory state tree
-//! - **Validator**: Check statecharts for completeness, reachability, determinism
-//! - **Codegen**: Generate Rust enums, transition tables, and handler traits from SCXML
-//! - **Engine**: Runtime statechart interpreter that enforces valid transitions
+//! - **Parser**: parse `.scxml` files into an in-memory state tree
+//! - **Validator**: check statecharts for schema and semantic issues
+//! - **Codegen**: generate Rust enums, transition tables, and handler traits from SCXML
+//! - **Engine**: runtime statechart interpreter that enforces valid transitions
 //!
-//! ## Architecture
+//! ## How It Fits
 //!
-//! The SCXML files in `statecharts/` are the **source of truth** for all state
-//! machines in Nivasa. The `build.rs` script parses them and generates Rust code.
-//! The `StatechartEngine` enforces transitions at runtime — there is no `set_state()`.
+//! SCXML files in `statecharts/` are the source of truth for Nivasa state
+//! machines. Build-time code generation produces Rust types from those files,
+//! and `StatechartEngine` is the only runtime way to move between states.
+//!
+//! ## Quick Start
+//!
+//! ```rust
+//! use nivasa_statechart::{StatechartEngine, StatechartSpec};
+//!
+//! #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+//! enum DoorState {
+//!     Closed,
+//!     Open,
+//! }
+//!
+//! #[derive(Debug, Clone, PartialEq, Eq)]
+//! enum DoorEvent {
+//!     Open,
+//!     Close,
+//! }
+//!
+//! struct DoorSpec;
+//!
+//! impl StatechartSpec for DoorSpec {
+//!     type State = DoorState;
+//!     type Event = DoorEvent;
+//!
+//!     fn transition(current: &Self::State, event: &Self::Event) -> Option<Self::State> {
+//!         match (current, event) {
+//!             (DoorState::Closed, DoorEvent::Open) => Some(DoorState::Open),
+//!             (DoorState::Open, DoorEvent::Close) => Some(DoorState::Closed),
+//!             _ => None,
+//!         }
+//!     }
+//!
+//!     fn valid_events_for(state: &Self::State) -> Vec<Self::Event> {
+//!         match state {
+//!             DoorState::Closed => vec![DoorEvent::Open],
+//!             DoorState::Open => vec![DoorEvent::Close],
+//!         }
+//!     }
+//!
+//!     fn is_final(_: &Self::State) -> bool {
+//!         false
+//!     }
+//!
+//!     fn name() -> &'static str {
+//!         "door"
+//!     }
+//!
+//!     fn scxml_hash() -> &'static str {
+//!         "demo"
+//!     }
+//! }
+//!
+//! let mut engine = StatechartEngine::<DoorSpec>::new(DoorState::Closed);
+//! assert_eq!(engine.current_state(), DoorState::Closed);
+//! assert_eq!(engine.send_event(DoorEvent::Open).unwrap(), DoorState::Open);
+//! ```
+//!
+//! ## SCXML Validation
+//!
+//! ```rust,no_run
+//! use nivasa_statechart::validate_scxml_schema;
+//!
+//! validate_scxml_schema("statecharts/example.scxml").unwrap();
+//! ```
 //!
 //! ## SCXML Compliance
 //!
