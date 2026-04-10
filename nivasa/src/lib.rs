@@ -8,6 +8,19 @@
 //! use nivasa::prelude::*;
 //! ```
 //!
+//! ## Import Styles
+//!
+//! Use [`prelude`] when you want common app types, macros, and traits in one
+//! place. Use direct imports when you want a smaller namespace.
+//!
+//! ```rust,no_run
+//! use nivasa::prelude::*;
+//! use nivasa::{App, Controller, Middleware};
+//! ```
+//!
+//! `Middleware` is the umbrella alias for `NivasaMiddleware`, so old and new
+//! imports share one name.
+//!
 //! ## Architecture
 //!
 //! Every lifecycle in Nivasa is modeled as a W3C SCXML statechart.
@@ -17,7 +30,15 @@
 pub mod application;
 pub mod openapi;
 
-/// The prelude — import everything you need with `use nivasa::prelude::*`.
+/// Common Nivasa imports.
+///
+/// Use this when app code wants the usual framework surface in one statement.
+/// For smaller modules, prefer direct imports from [`crate`] so the dependency
+/// surface stays explicit.
+///
+/// ```rust,no_run
+/// use nivasa::prelude::*;
+/// ```
 pub mod prelude {
     pub use crate::application::{
         App, AppBootstrapConfig, AppBuildError, AppRoute, NestApplication, ServerOptions,
