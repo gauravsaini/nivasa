@@ -243,6 +243,24 @@ impl CorsOptions {
 }
 
 /// Minimal HTTP transport shell for Nivasa.
+///
+/// Use the builder to register routes and middleware, then call [`NivasaServer::listen`]
+/// to start serving requests.
+///
+/// ```no_run
+/// use nivasa_http::{NivasaResponse, NivasaServer};
+/// use nivasa_routing::RouteMethod;
+///
+/// fn main() -> std::io::Result<()> {
+///     let server = NivasaServer::builder()
+///         .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
+///         .expect("route registers")
+///         .build();
+///
+///     let runtime = tokio::runtime::Runtime::new()?;
+///     runtime.block_on(server.listen("127.0.0.1", 3000))
+/// }
+/// ```
 pub struct NivasaServer {
     routes: RouteDispatchRegistry<RouteHandlerBinding>,
     middleware: Option<MiddlewareLayer>,
@@ -261,6 +279,16 @@ pub struct NivasaServer {
 }
 
 /// Builder for [`NivasaServer`].
+///
+/// ```no_run
+/// use nivasa_http::{NivasaResponse, NivasaServer};
+/// use nivasa_routing::RouteMethod;
+///
+/// let server = NivasaServer::builder()
+///     .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
+///     .expect("route registers")
+///     .build();
+/// ```
 pub struct NivasaServerBuilder {
     routes: RouteDispatchRegistry<RouteHandlerBinding>,
     middleware: Option<MiddlewareLayer>,
@@ -280,11 +308,38 @@ pub struct NivasaServerBuilder {
 
 impl NivasaServer {
     /// Create a new server builder.
+    ///
+    /// ```no_run
+    /// use nivasa_http::{NivasaResponse, NivasaServer};
+    /// use nivasa_routing::RouteMethod;
+    ///
+    /// let server = NivasaServer::builder()
+    ///     .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
+    ///     .expect("route registers")
+    ///     .build();
+    ///
+    /// # let _ = server;
+    /// ```
     pub fn builder() -> NivasaServerBuilder {
         NivasaServerBuilder::new()
     }
 
     /// Start listening for HTTP requests.
+    ///
+    /// ```no_run
+    /// use nivasa_http::{NivasaResponse, NivasaServer};
+    /// use nivasa_routing::RouteMethod;
+    ///
+    /// fn main() -> std::io::Result<()> {
+    ///     let server = NivasaServer::builder()
+    ///         .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
+    ///         .expect("route registers")
+    ///         .build();
+    ///
+    ///     let runtime = tokio::runtime::Runtime::new()?;
+    ///     runtime.block_on(server.listen("127.0.0.1", 3000))
+    /// }
+    /// ```
     pub async fn listen(mut self, host: impl AsRef<str>, port: u16) -> io::Result<()> {
         let addr = socket_addr(host.as_ref(), port)?;
         let listener = TcpListener::bind(addr).await?;
@@ -393,6 +448,18 @@ impl NivasaServerBuilder {
     }
 
     /// Register a request handler for a route.
+    ///
+    /// ```no_run
+    /// use nivasa_http::{NivasaResponse, NivasaServer};
+    /// use nivasa_routing::RouteMethod;
+    ///
+    /// let server = NivasaServer::builder()
+    ///     .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
+    ///     .expect("route registers")
+    ///     .build();
+    ///
+    /// # let _ = server;
+    /// ```
     pub fn route(
         mut self,
         method: impl Into<RouteMethod>,
