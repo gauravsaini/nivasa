@@ -1067,7 +1067,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 10.3 — Release Preparation
 - [ ] Final API review: ensure public APIs are consistent and well-named
-- [ ] Ensure all public types/functions have rustdoc with examples
+- [ ] Fill remaining public types/functions with rustdoc examples
 - [x] Write `CHANGELOG.md` following Keep a Changelog format
 - [x] Write `CONTRIBUTING.md` with contribution guidelines
 - [x] Set up crate publishing order (dependencies first):
