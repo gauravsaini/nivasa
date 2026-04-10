@@ -48,14 +48,13 @@ pub mod prelude {
     pub use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
     pub use nivasa_http::upload::MultipartLimits;
     pub use nivasa_http::HttpExceptionFilter;
-    pub use nivasa_http::NivasaMiddleware as Middleware;
     pub use nivasa_http::NivasaMiddlewareLayer;
     pub use nivasa_http::TowerServiceMiddleware;
     pub use nivasa_http::{
         upload, Body, ControllerResponse, Download, FromRequest, GuardExecutionOutcome, HeaderMap,
-        Html, IntoResponse, Json, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse,
-        NivasaServer, NivasaServerBuilder, Query, Redirect, RequestExtractError, RequestPipeline,
-        Sse, SseEvent, StreamBody, Text, UploadedFile,
+        Html, IntoResponse, Json, NextMiddleware, NivasaMiddleware, NivasaMiddleware as Middleware,
+        NivasaRequest, NivasaResponse, NivasaServer, NivasaServerBuilder, Query, Redirect,
+        RequestExtractError, RequestPipeline, Sse, SseEvent, StreamBody, Text, UploadedFile,
     };
     pub use nivasa_interceptors::{
         CallHandler, ClassSerializerInterceptor, ExecutionContext, Interceptor, InterceptorFuture,
@@ -109,14 +108,14 @@ pub use nivasa_filters::{
 pub use nivasa_guards::{self, ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 pub use nivasa_http::upload::MultipartLimits;
 pub use nivasa_http::HttpExceptionFilter;
-pub use nivasa_http::NivasaMiddleware as Middleware;
-pub use nivasa_http::NivasaMiddlewareLayer;
-pub use nivasa_http::TowerServiceMiddleware;
-pub use nivasa_http::{
-    self, upload, Body, ControllerResponse, Download, FromRequest, GuardExecutionOutcome,
-    HeaderMap, Html, IntoResponse, Json, NextMiddleware, NivasaMiddleware, NivasaRequest,
-    NivasaResponse, NivasaServer, NivasaServerBuilder, Query, Redirect, RequestExtractError,
-    RequestPipeline, Sse, SseEvent, StreamBody, Text, UploadedFile,
+    pub use nivasa_http::NivasaMiddlewareLayer;
+    pub use nivasa_http::TowerServiceMiddleware;
+    pub use nivasa_http::{
+        self, upload, Body, ControllerResponse, Download, FromRequest, GuardExecutionOutcome,
+        HeaderMap, Html, IntoResponse, Json, NextMiddleware, NivasaMiddleware,
+        NivasaMiddleware as Middleware, NivasaRequest, NivasaResponse, NivasaServer,
+        NivasaServerBuilder, Query, Redirect, RequestExtractError, RequestPipeline, Sse,
+        SseEvent, StreamBody, Text, UploadedFile,
 };
 pub use nivasa_interceptors::{
     self, CallHandler, ClassSerializerInterceptor, ExecutionContext, Interceptor,

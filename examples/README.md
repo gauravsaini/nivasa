@@ -2,9 +2,17 @@
 
 Example applications for the Nivasa framework.
 
-## Layout
+## Landed
 
 - `hello-world/`
+- `testing/`
+- `config-env/`
+- `auth-jwt/`
+- `crud-rest-api/`
+- `websocket-chat/`
+
+## Legacy Placeholders
+
 - `basic/`
 - `auth/`
 - `websocket/`

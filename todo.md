@@ -1003,35 +1003,35 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 9.1 — Example Applications
 - [x] Create `examples/hello-world/` — minimal app with one GET route
-- [ ] Create `examples/crud-rest-api/` — full CRUD with DTOs, validation, error handling
-- [ ] Create `examples/auth-jwt/` — JWT authentication with guards, roles, protected routes
-- [ ] Create `examples/websocket-chat/` — real-time chat using WebSocket gateway
-- [ ] Create `examples/config-env/` — environment-based configuration
-- [ ] Create `examples/testing/` — demonstrate testing utilities and mock providers
-- [ ] Each example: include README with explanation and how to run
+- [x] Create `examples/crud-rest-api/` — full CRUD with DTOs, validation, error handling
+- [x] Create `examples/auth-jwt/` — JWT authentication with guards, roles, protected routes
+- [x] Create `examples/websocket-chat/` — real-time chat using WebSocket gateway
+- [x] Create `examples/config-env/` — environment-based configuration
+- [x] Create `examples/testing/` — demonstrate testing utilities and mock providers
+- [x] Each example: include README with explanation and how to run
 
 ### 9.2 — Documentation
-- [ ] Write "Getting Started" quickstart guide (install, hello world, run)
-- [ ] Write "First Steps" tutorial (controllers, services, modules from scratch)
-- [ ] Write module system deep-dive documentation
-- [ ] Write DI container documentation (scopes, custom providers, lifecycle)
-- [ ] Write controllers & routing documentation (all extractors, response types)
+- [x] Write "Getting Started" quickstart guide (install, hello world, run)
+- [x] Write "First Steps" tutorial (controllers, services, modules from scratch)
+- [x] Write module system deep-dive documentation
+- [x] Write DI container documentation (scopes, custom providers, lifecycle)
+- [x] Write controllers & routing documentation (all extractors, response types)
 - [x] Write API versioning documentation
-- [ ] Write guards documentation (including Reflector and metadata)
-- [ ] Write interceptors documentation (with caching, logging examples)
-- [ ] Write pipes documentation (built-in pipes, custom pipes)
+- [x] Write guards documentation (including Reflector and metadata)
+- [x] Write interceptors documentation (with caching, logging examples)
+- [x] Write pipes documentation (built-in pipes, custom pipes)
 - [x] Write exception filters documentation
 - [x] Write middleware documentation (including Tower compatibility)
-- [ ] Write configuration documentation (env loading, type-safe config)
-- [ ] Write testing documentation (TestingModule, TestClient, mocking)
-- [ ] Write CLI documentation (all generators, options)
-- [ ] Write WebSocket documentation
-- [ ] Write OpenAPI/Swagger documentation
-- [ ] Write "Migration from NestJS" guide (NestJS pattern → Nivasa equivalent)
-- [ ] Write "Comparison with other Rust frameworks" page
+- [x] Write configuration documentation (env loading, type-safe config)
+- [x] Write testing documentation (TestingModule, TestClient, mocking)
+- [x] Write CLI documentation (all generators, options)
+- [x] Write WebSocket documentation
+- [x] Write OpenAPI/Swagger documentation
+- [x] Write "Migration from NestJS" guide (NestJS pattern → Nivasa equivalent)
+- [x] Write "Comparison with other Rust frameworks" page
 - [x] Generate `rustdoc` for all public APIs (`cargo doc --workspace --no-deps`)
-- [ ] Set up documentation website (mdBook or similar)
-- [ ] Add search to documentation site
+- [x] Set up documentation website (mdBook or similar)
+- [x] Add search to documentation site
 
 ---
 
@@ -1068,9 +1068,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 10.3 — Release Preparation
 - [ ] Final API review: ensure public APIs are consistent and well-named
 - [ ] Ensure all public types/functions have rustdoc with examples
-- [ ] Write `CHANGELOG.md` following Keep a Changelog format
-- [ ] Write `CONTRIBUTING.md` with contribution guidelines
-- [ ] Set up crate publishing order (dependencies first):
+- [x] Write `CHANGELOG.md` following Keep a Changelog format
+- [x] Write `CONTRIBUTING.md` with contribution guidelines
+- [x] Set up crate publishing order (dependencies first):
   1. [ ] Publish `nivasa-common`
   2. [ ] Publish `nivasa-core`
   3. [ ] Publish `nivasa-macros`

@@ -1,0 +1,10 @@
+[package]
+name = "nivasa-example-websocket-chat"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nivasa-websocket = { path = "../../nivasa-websocket" }
+nivasa-macros = { path = "../../nivasa-macros" }
+
+[workspace]

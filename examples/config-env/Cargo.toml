@@ -1,0 +1,9 @@
+[package]
+name = "nivasa-example-config-env"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nivasa-config = { path = "../../nivasa-config" }
+
+[workspace]

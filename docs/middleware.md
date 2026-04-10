@@ -6,7 +6,7 @@ This page documents the middleware surface that is already shipped in `nivasa-ht
 
 The public API currently exposes the following pieces:
 
-1. `NivasaMiddleware` as the core async middleware trait.
+1. `NivasaMiddleware` as the core async middleware trait, with `Middleware` kept as an umbrella-crate alias for existing imports.
 1. `RequestIdMiddleware`, which propagates an incoming `X-Request-Id` or generates one when missing.
 1. `LoggerMiddleware`, which logs method, path, and response status with `tracing::info!`.
 1. `TowerServiceMiddleware`, which adapts a Tower `Service<NivasaRequest, Response = NivasaResponse, Error = Infallible>` into a `NivasaMiddleware`.
@@ -42,6 +42,7 @@ The adapter pair is intentionally narrow and still useful:
 
 1. [`TowerServiceMiddleware`](../nivasa-http/src/lib.rs) wraps an existing Tower service so it behaves like a Nivasa middleware.
 1. [`NivasaMiddlewareLayer`](../nivasa-http/src/lib.rs) wraps a Nivasa middleware so it can sit inside a Tower stack.
+1. The umbrella crate exports both `NivasaMiddleware` and the `Middleware` alias, so existing code can keep the shorter name while the docs stay on the canonical trait name.
 
 The proof test in [`nivasa-http/tests/tower_middleware.rs`](../nivasa-http/tests/tower_middleware.rs) shows the intended composition with real Tower ecosystem code:
 
