@@ -80,6 +80,27 @@ impl ProviderRegistry {
     }
 
     /// Inserts a provider for an explicit `TypeId`.
+    ///
+    /// ```rust
+    /// use std::any::TypeId;
+    /// use std::sync::Arc;
+    ///
+    /// use nivasa_core::di::provider::{ProviderScope, ValueProvider};
+    /// use nivasa_core::di::registry::ProviderRegistry;
+    ///
+    /// #[derive(Debug)]
+    /// struct Config;
+    ///
+    /// let mut registry = ProviderRegistry::new();
+    /// let provider = Arc::new(ValueProvider::new(Config));
+    /// let type_id = TypeId::of::<Config>();
+    ///
+    /// assert!(registry.insert_by_id(type_id, provider.clone()).is_none());
+    /// assert!(registry.get_by_id(type_id).is_some());
+    ///
+    /// let metadata = registry.metadata_by_id(type_id).expect("metadata");
+    /// assert_eq!(metadata.scope, ProviderScope::Singleton);
+    /// ```
     pub fn insert_by_id(
         &mut self,
         type_id: TypeId,
@@ -103,6 +124,24 @@ impl ProviderRegistry {
     }
 
     /// Returns the provider registered for `type_id`, if any.
+    ///
+    /// ```rust
+    /// use std::any::TypeId;
+    /// use std::sync::Arc;
+    ///
+    /// use nivasa_core::di::provider::ValueProvider;
+    /// use nivasa_core::di::registry::ProviderRegistry;
+    ///
+    /// #[derive(Debug)]
+    /// struct Config;
+    ///
+    /// let mut registry = ProviderRegistry::new();
+    /// let provider = Arc::new(ValueProvider::new(Config));
+    /// let type_id = TypeId::of::<Config>();
+    ///
+    /// registry.insert_by_id(type_id, provider.clone());
+    /// assert!(registry.get_by_id(type_id).is_some());
+    /// ```
     pub fn get_by_id(&self, type_id: TypeId) -> Option<Arc<dyn Provider>> {
         self.entries
             .get(&type_id)
@@ -117,6 +156,26 @@ impl ProviderRegistry {
     }
 
     /// Removes and returns the provider registered for `type_id`, if any.
+    ///
+    /// ```rust
+    /// use std::any::TypeId;
+    /// use std::sync::Arc;
+    ///
+    /// use nivasa_core::di::provider::ValueProvider;
+    /// use nivasa_core::di::registry::ProviderRegistry;
+    ///
+    /// #[derive(Debug)]
+    /// struct Config;
+    ///
+    /// let mut registry = ProviderRegistry::new();
+    /// let provider = Arc::new(ValueProvider::new(Config));
+    /// let type_id = TypeId::of::<Config>();
+    ///
+    /// registry.insert_by_id(type_id, provider);
+    /// assert!(registry.remove_by_id(type_id).is_some());
+    /// assert!(registry.get_by_id(type_id).is_none());
+    /// assert!(registry.metadata_by_id(type_id).is_none());
+    /// ```
     pub fn remove_by_id(&mut self, type_id: TypeId) -> Option<Arc<dyn Provider>> {
         self.entries.remove(&type_id).map(|entry| entry.provider)
     }
@@ -129,11 +188,49 @@ impl ProviderRegistry {
     }
 
     /// Returns the metadata snapshot for `type_id`, if any.
+    ///
+    /// ```rust
+    /// use std::any::TypeId;
+    /// use std::sync::Arc;
+    ///
+    /// use nivasa_core::di::provider::{ProviderScope, ValueProvider};
+    /// use nivasa_core::di::registry::ProviderRegistry;
+    ///
+    /// #[derive(Debug)]
+    /// struct Config;
+    ///
+    /// let mut registry = ProviderRegistry::new();
+    /// let provider = Arc::new(ValueProvider::new(Config));
+    /// let type_id = TypeId::of::<Config>();
+    ///
+    /// registry.insert_by_id(type_id, provider);
+    /// let metadata = registry.metadata_by_id(type_id).expect("metadata");
+    /// assert_eq!(metadata.scope, ProviderScope::Singleton);
+    /// ```
     pub fn metadata_by_id(&self, type_id: TypeId) -> Option<ProviderMetadata> {
         self.entries.get(&type_id).map(|entry| entry.metadata.clone())
     }
 
     /// Returns a snapshot of all registered providers and their metadata.
+    ///
+    /// ```rust
+    /// use std::any::TypeId;
+    /// use std::sync::Arc;
+    ///
+    /// use nivasa_core::di::provider::ValueProvider;
+    /// use nivasa_core::di::registry::ProviderRegistry;
+    ///
+    /// #[derive(Debug)]
+    /// struct Config;
+    ///
+    /// let mut registry = ProviderRegistry::new();
+    /// let provider = Arc::new(ValueProvider::new(Config));
+    /// registry.insert_by_id(TypeId::of::<Config>(), provider);
+    ///
+    /// let snapshot = registry.snapshot();
+    /// assert_eq!(snapshot.len(), 1);
+    /// assert_eq!(snapshot[0].0, TypeId::of::<Config>());
+    /// ```
     pub fn snapshot(&self) -> Vec<(TypeId, Arc<dyn Provider>, ProviderMetadata)> {
         self.entries
             .iter()
