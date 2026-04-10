@@ -122,6 +122,18 @@ struct RouteMiddlewareBinding {
 }
 
 /// Configuration for transport-level CORS handling.
+///
+/// ```no_run
+/// use http::Method;
+/// use nivasa_http::CorsOptions;
+///
+/// let cors = CorsOptions::permissive()
+///     .allow_origins(["https://app.example"])
+///     .allow_methods([Method::GET, Method::POST])
+///     .allow_headers(["content-type", "authorization"])
+///     .allow_credentials(true);
+/// # let _ = cors;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CorsOptions {
     allowed_origins: Option<Vec<String>>,
@@ -639,6 +651,25 @@ impl NivasaServerBuilder {
     }
 
     /// Configure transport-side CORS handling with explicit origins, methods, and headers.
+    ///
+    /// ```no_run
+    /// use http::Method;
+    /// use nivasa_http::{CorsOptions, NivasaResponse, NivasaServer};
+    /// use nivasa_routing::RouteMethod;
+    ///
+    /// let cors = CorsOptions::permissive()
+    ///     .allow_origins(["https://app.example"])
+    ///     .allow_methods([Method::GET])
+    ///     .allow_headers(["content-type"]);
+    ///
+    /// let server = NivasaServer::builder()
+    ///     .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
+    ///     .expect("route registers")
+    ///     .cors_options(cors)
+    ///     .build();
+    ///
+    /// # let _ = server;
+    /// ```
     pub fn cors_options(mut self, cors: CorsOptions) -> Self {
         self.cors = Some(cors);
         self
