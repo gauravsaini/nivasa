@@ -1024,7 +1024,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Write middleware documentation (including Tower compatibility)
 - [x] Write configuration documentation (env loading, type-safe config)
 - [x] Write testing documentation (TestingModule, TestClient, mocking)
-- [ ] Write CLI documentation (all generators, options)
+- [x] Write CLI documentation (all generators, options)
 - [x] Write WebSocket documentation
 - [x] Write OpenAPI/Swagger documentation
 - [ ] Write "Migration from NestJS" guide (NestJS pattern → Nivasa equivalent)
