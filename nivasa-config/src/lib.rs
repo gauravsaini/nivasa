@@ -21,9 +21,13 @@ use std::str::FromStr;
 /// surface that later loading slices will consume.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ConfigOptions {
+    /// Mark the config module as globally visible.
     pub is_global: bool,
+    /// Ordered list of `.env` file paths to merge.
     pub env_file_paths: Vec<String>,
+    /// Skip `.env` files and read only process environment variables.
     pub ignore_env_file: bool,
+    /// Enable `$VAR` and `${VAR}` interpolation in loaded values.
     pub expand_variables: bool,
 }
 
@@ -88,6 +92,7 @@ pub struct ConfigOptionsProvider;
 /// Errors raised by read-only config lookups.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigException {
+    /// A requested key was not present in the config map.
     MissingKey { key: String },
 }
 
@@ -113,6 +118,13 @@ pub struct ConfigService {
 
 impl ConfigService {
     /// Create an empty config service.
+    ///
+    /// ```
+    /// use nivasa_config::ConfigService;
+    ///
+    /// let service = ConfigService::new();
+    /// assert!(service.values().is_empty());
+    /// ```
     pub fn new() -> Self {
         Self {
             values: BTreeMap::new(),
@@ -120,16 +132,46 @@ impl ConfigService {
     }
 
     /// Build a config service from an already-loaded key/value map.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use nivasa_config::ConfigService;
+    ///
+    /// let service = ConfigService::from_values(BTreeMap::from([
+    ///     ("PORT".to_string(), "3000".to_string()),
+    /// ]));
+    /// assert_eq!(service.get_raw("PORT"), Some("3000"));
+    /// ```
     pub fn from_values(values: BTreeMap<String, String>) -> Self {
         Self { values }
     }
 
     /// Borrow a raw config value by key.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use nivasa_config::ConfigService;
+    ///
+    /// let service = ConfigService::from_values(BTreeMap::from([
+    ///     ("HOST".to_string(), "127.0.0.1".to_string()),
+    /// ]));
+    /// assert_eq!(service.get_raw("HOST"), Some("127.0.0.1"));
+    /// ```
     pub fn get_raw(&self, key: &str) -> Option<&str> {
         self.values.get(key).map(|value| value.as_str())
     }
 
     /// Borrow and parse a typed config value by key.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use nivasa_config::ConfigService;
+    ///
+    /// let service = ConfigService::from_values(BTreeMap::from([
+    ///     ("PORT".to_string(), "3000".to_string()),
+    /// ]));
+    /// assert_eq!(service.get::<i32>("PORT"), Some(3000));
+    /// ```
     pub fn get<T>(&self, key: &str) -> Option<T>
     where
         T: FromStr,
@@ -138,6 +180,17 @@ impl ConfigService {
     }
 
     /// Borrow and parse a typed config value, or fall back to a default.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use nivasa_config::ConfigService;
+    ///
+    /// let service = ConfigService::from_values(BTreeMap::from([
+    ///     ("PORT".to_string(), "3000".to_string()),
+    /// ]));
+    /// assert_eq!(service.get_or_default("MISSING", 80), 80);
+    /// assert_eq!(service.get_or_default("PORT", 80), 3000);
+    /// ```
     pub fn get_or_default<T>(&self, key: &str, default: T) -> T
     where
         T: FromStr,
@@ -146,6 +199,16 @@ impl ConfigService {
     }
 
     /// Borrow a raw config value, or return a config error if it is missing.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use nivasa_config::ConfigService;
+    ///
+    /// let service = ConfigService::from_values(BTreeMap::from([
+    ///     ("HOST".to_string(), "127.0.0.1".to_string()),
+    /// ]));
+    /// assert_eq!(service.get_or_throw("HOST").unwrap(), "127.0.0.1");
+    /// ```
     pub fn get_or_throw(&self, key: &str) -> Result<String, ConfigException> {
         self.get_raw(key)
             .map(|value| value.to_string())
@@ -171,6 +234,7 @@ pub struct ConfigModule;
 /// Errors raised while loading `.env` config sources.
 #[derive(Debug)]
 pub enum ConfigLoadError {
+    /// The env file could not be read from disk.
     EnvFile(io::Error),
 }
 
@@ -212,6 +276,14 @@ impl ConfigModule {
     /// configured order. Later files can override earlier keys. If variable
     /// expansion is enabled, values can reference other keys via `$VAR` or
     /// `${VAR}` before process env overlay happens.
+    ///
+    /// ```
+    /// use nivasa_config::{ConfigModule, ConfigOptions};
+    ///
+    /// let options = ConfigOptions::new().with_ignore_env_file(true);
+    /// let loaded = ConfigModule::load_env(&options).unwrap();
+    /// assert!(loaded.is_empty());
+    /// ```
     pub fn load_env(options: &ConfigOptions) -> Result<BTreeMap<String, String>, ConfigLoadError> {
         if options.ignore_env_file {
             return Ok(BTreeMap::new());
