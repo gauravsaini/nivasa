@@ -1069,7 +1069,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Final API review: ensure public APIs are consistent and well-named
 - [ ] Ensure all public types/functions have rustdoc with examples
 - [x] Write `CHANGELOG.md` following Keep a Changelog format
-- [ ] Write `CONTRIBUTING.md` with contribution guidelines
+- [x] Write `CONTRIBUTING.md` with contribution guidelines
 - [ ] Set up crate publishing order (dependencies first):
   1. [ ] Publish `nivasa-common`
   2. [ ] Publish `nivasa-core`
