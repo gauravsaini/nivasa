@@ -1,10 +1,6 @@
 [book]
 title = "Nivasa Documentation"
-authors = ["Nivasa Contributors"]
-language = "en"
-multilingual = false
 src = "docs/src"
 
-[build]
-create-missing = false
-
+[output.html]
+default-theme = "light"
