@@ -1003,12 +1003,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 9.1 — Example Applications
 - [x] Create `examples/hello-world/` — minimal app with one GET route
-- [ ] Create `examples/crud-rest-api/` — full CRUD with DTOs, validation, error handling
-- [ ] Create `examples/auth-jwt/` — JWT authentication with guards, roles, protected routes
-- [ ] Create `examples/websocket-chat/` — real-time chat using WebSocket gateway
-- [ ] Create `examples/config-env/` — environment-based configuration
-- [ ] Create `examples/testing/` — demonstrate testing utilities and mock providers
-- [ ] Each example: include README with explanation and how to run
+- [x] Create `examples/crud-rest-api/` — full CRUD with DTOs, validation, error handling
+- [x] Create `examples/auth-jwt/` — JWT authentication with guards, roles, protected routes
+- [x] Create `examples/websocket-chat/` — real-time chat using WebSocket gateway
+- [x] Create `examples/config-env/` — environment-based configuration
+- [x] Create `examples/testing/` — demonstrate testing utilities and mock providers
+- [x] Each example: include README with explanation and how to run
 
 ### 9.2 — Documentation
 - [ ] Write "Getting Started" quickstart guide (install, hello world, run)
