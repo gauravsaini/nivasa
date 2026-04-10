@@ -1013,12 +1013,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 9.2 — Documentation
 - [x] Write "Getting Started" quickstart guide (install, hello world, run)
 - [x] Write "First Steps" tutorial (controllers, services, modules from scratch)
-- [ ] Write module system deep-dive documentation
-- [ ] Write DI container documentation (scopes, custom providers, lifecycle)
-- [ ] Write controllers & routing documentation (all extractors, response types)
+- [x] Write module system deep-dive documentation
+- [x] Write DI container documentation (scopes, custom providers, lifecycle)
+- [x] Write controllers & routing documentation (all extractors, response types)
 - [x] Write API versioning documentation
-- [ ] Write guards documentation (including Reflector and metadata)
-- [ ] Write interceptors documentation (with caching, logging examples)
+- [x] Write guards documentation (including Reflector and metadata)
+- [x] Write interceptors documentation (with caching, logging examples)
 - [ ] Write pipes documentation (built-in pipes, custom pipes)
 - [x] Write exception filters documentation
 - [x] Write middleware documentation (including Tower compatibility)
