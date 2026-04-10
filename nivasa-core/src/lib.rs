@@ -10,11 +10,24 @@
 //! Common imports:
 //!
 //! ```rust
-//! use nivasa_core::{DependencyContainer, ModuleMetadata, ModuleRegistry};
+//! use nivasa_core::{DependencyContainer, ModuleMetadata, ModuleRegistry, Reflector};
 //!
 //! let _container = DependencyContainer::new();
 //! let _registry = ModuleRegistry::new();
-//! let _metadata = ModuleMetadata::default();
+//! let _metadata = ModuleMetadata::new();
+//! let _reflector = Reflector::new();
+//! ```
+//!
+//! ```rust
+//! use async_trait::async_trait;
+//! use nivasa_core::module::OnModuleInit;
+//!
+//! struct AppModule;
+//!
+//! #[async_trait]
+//! impl OnModuleInit for AppModule {
+//!     async fn on_module_init(&self) {}
+//! }
 //! ```
 //!
 //! ```rust
