@@ -8,6 +8,15 @@ use crate::di::lifecycle::{NivasaProviderEvent, NivasaProviderState, NivasaProvi
 use nivasa_statechart::StatechartEngine;
 
 /// Lifespan scope of a provider instance.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_core::ProviderScope;
+///
+/// assert_eq!(ProviderScope::Singleton, ProviderScope::default());
+/// assert_eq!(ProviderScope::Scoped as u8, ProviderScope::Scoped as u8);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ProviderScope {
     /// A single instance is created and shared across the entire application lifecycle.
@@ -122,6 +131,19 @@ impl Provider for LifecycleProvider {
 }
 
 /// A provider that wraps a pre-constructed value.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_core::{Provider, ProviderScope};
+/// use nivasa_core::di::ValueProvider;
+///
+/// let provider = ValueProvider::new(42_u32);
+/// let metadata = provider.metadata();
+///
+/// assert_eq!(metadata.scope, ProviderScope::Singleton);
+/// assert_eq!(metadata.dependencies.len(), 0);
+/// ```
 pub struct ValueProvider<T: Send + Sync + 'static> {
     metadata: ProviderMetadata,
     value: Arc<T>,
@@ -129,11 +151,33 @@ pub struct ValueProvider<T: Send + Sync + 'static> {
 
 impl<T: Send + Sync + 'static> ValueProvider<T> {
     /// Create a singleton provider from an owned value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use nivasa_core::{Provider, ProviderScope};
+    /// use nivasa_core::di::ValueProvider;
+    ///
+    /// let provider = ValueProvider::new(String::from("hello"));
+    /// assert_eq!(provider.metadata().scope, ProviderScope::Singleton);
+    /// ```
     pub fn new(value: T) -> Self {
         Self::new_from_arc(Arc::new(value))
     }
 
     /// Create a singleton provider from a shared value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use std::sync::Arc;
+    /// use nivasa_core::Provider;
+    /// use nivasa_core::di::ValueProvider;
+    ///
+    /// let shared = Arc::new(7_u32);
+    /// let provider = ValueProvider::new_from_arc(shared);
+    /// assert_eq!(provider.metadata().type_name, "u32");
+    /// ```
     pub fn new_from_arc(value: Arc<T>) -> Self {
         Self {
             metadata: ProviderMetadata {
@@ -162,6 +206,21 @@ impl<T: Send + Sync + 'static> Provider for ValueProvider<T> {
 }
 
 /// A provider that uses a factory function to construct the value.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_core::{DiError, Provider, ProviderScope};
+/// use nivasa_core::di::FactoryProvider;
+///
+/// let provider = FactoryProvider::new(
+///     ProviderScope::Scoped,
+///     vec![],
+///     |_container| Box::pin(async { Ok::<_, DiError>(7_u32) }),
+/// );
+///
+/// assert_eq!(provider.metadata().scope, ProviderScope::Scoped);
+/// ```
 pub struct FactoryProvider<T, F>
 where
     T: Send + Sync + 'static,
@@ -189,6 +248,21 @@ where
         + 'static,
 {
     /// Create a provider backed by an async factory.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use nivasa_core::{DiError, Provider, ProviderScope};
+    /// use nivasa_core::di::FactoryProvider;
+    ///
+    /// let provider = FactoryProvider::new(
+    ///     ProviderScope::Transient,
+    ///     vec![],
+    ///     |_container| Box::pin(async { Ok::<_, DiError>(String::from("ok")) }),
+    /// );
+    ///
+    /// assert_eq!(provider.metadata().scope, ProviderScope::Transient);
+    /// ```
     pub fn new(scope: ProviderScope, dependencies: Vec<TypeId>, factory: F) -> Self {
         Self {
             metadata: ProviderMetadata {
@@ -228,6 +302,21 @@ where
 }
 
 /// A provider that constructs a class (struct) by calling its `Injectable::build` method.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_core::{DiError, Provider, ProviderScope};
+/// use nivasa_core::di::provider::ClassProvider;
+///
+/// let provider = ClassProvider::new(
+///     ProviderScope::Singleton,
+///     vec![],
+///     |_container| Box::pin(async { Ok::<_, DiError>(99_u32) }),
+/// );
+///
+/// assert_eq!(provider.metadata().scope, ProviderScope::Singleton);
+/// ```
 pub struct ClassProvider<T, F>
 where
     T: Send + Sync + 'static,
@@ -255,6 +344,21 @@ where
         + 'static,
 {
     /// Create a provider backed by an async constructor.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use nivasa_core::{DiError, Provider, ProviderScope};
+    /// use nivasa_core::di::provider::ClassProvider;
+    ///
+    /// let provider = ClassProvider::new(
+    ///     ProviderScope::Scoped,
+    ///     vec![],
+    ///     |_container| Box::pin(async { Ok::<_, DiError>(String::from("built")) }),
+    /// );
+    ///
+    /// assert_eq!(provider.metadata().scope, ProviderScope::Scoped);
+    /// ```
     pub fn new(scope: ProviderScope, dependencies: Vec<TypeId>, constructor: F) -> Self {
         Self {
             metadata: ProviderMetadata {
