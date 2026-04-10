@@ -269,6 +269,47 @@ impl<S: StatechartSpec> StatechartEngine<S> {
     ///
     /// Use this when you want transition visibility without changing runtime
     /// behavior.
+    ///
+    /// ```rust
+    /// use nivasa_statechart::engine::{StatechartEngine, StatechartSpec, StatechartTracer};
+    ///
+    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// # enum DemoState { Idle, Done }
+    /// # #[derive(Debug, Clone, PartialEq, Eq)]
+    /// # enum DemoEvent { Finish }
+    /// # struct DemoSpec;
+    /// # impl StatechartSpec for DemoSpec {
+    /// #     type State = DemoState;
+    /// #     type Event = DemoEvent;
+    /// #     fn transition(current: &Self::State, event: &Self::Event) -> Option<Self::State> {
+    /// #         match (current, event) {
+    /// #             (DemoState::Idle, DemoEvent::Finish) => Some(DemoState::Done),
+    /// #             _ => None,
+    /// #         }
+    /// #     }
+    /// #     fn valid_events_for(state: &Self::State) -> Vec<Self::Event> {
+    /// #         match state {
+    /// #             DemoState::Idle => vec![DemoEvent::Finish],
+    /// #             DemoState::Done => vec![],
+    /// #         }
+    /// #     }
+    /// #     fn is_final(state: &Self::State) -> bool { matches!(state, DemoState::Done) }
+    /// #     fn name() -> &'static str { "demo" }
+    /// #     fn scxml_hash() -> &'static str { "hash" }
+    /// # }
+    /// # #[derive(Default)]
+    /// # struct NoopTracer;
+    /// # impl StatechartTracer for NoopTracer {
+    /// #     fn on_transition(&self, _: &str, _: &str, _: &str) {}
+    /// #     fn on_invalid_transition(&self, _: &str, _: &str, _: &[String]) {}
+    /// # }
+    /// let mut engine = StatechartEngine::<DemoSpec>::with_tracer(
+    ///     DemoState::Idle,
+    ///     Box::new(NoopTracer::default()),
+    /// );
+    /// assert_eq!(engine.current_state(), DemoState::Idle);
+    /// assert_eq!(engine.send_event(DemoEvent::Finish).unwrap(), DemoState::Done);
+    /// ```
     pub fn with_tracer(initial_state: S::State, tracer: Box<dyn StatechartTracer>) -> Self {
         Self {
             current_state: S::enter_initial_state(initial_state),
@@ -396,6 +437,50 @@ impl<S: StatechartSpec> StatechartEngine<S> {
     ///
     /// The snapshot includes the statechart identity, current state, SCXML
     /// hash, optional raw SCXML, and recent transition history.
+    ///
+    /// ```rust
+    /// use nivasa_statechart::engine::{StatechartEngine, StatechartSpec, StatechartTracer};
+    ///
+    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// # enum DemoState { Idle, Done }
+    /// # #[derive(Debug, Clone, PartialEq, Eq)]
+    /// # enum DemoEvent { Finish }
+    /// # struct DemoSpec;
+    /// # impl StatechartSpec for DemoSpec {
+    /// #     type State = DemoState;
+    /// #     type Event = DemoEvent;
+    /// #     fn transition(current: &Self::State, event: &Self::Event) -> Option<Self::State> {
+    /// #         match (current, event) {
+    /// #             (DemoState::Idle, DemoEvent::Finish) => Some(DemoState::Done),
+    /// #             _ => None,
+    /// #         }
+    /// #     }
+    /// #     fn valid_events_for(state: &Self::State) -> Vec<Self::Event> {
+    /// #         match state {
+    /// #             DemoState::Idle => vec![DemoEvent::Finish],
+    /// #             DemoState::Done => vec![],
+    /// #         }
+    /// #     }
+    /// #     fn is_final(state: &Self::State) -> bool { matches!(state, DemoState::Done) }
+    /// #     fn name() -> &'static str { "demo" }
+    /// #     fn scxml_hash() -> &'static str { "hash" }
+    /// # }
+    /// # struct NoopTracer;
+    /// # impl StatechartTracer for NoopTracer {
+    /// #     fn on_transition(&self, _: &str, _: &str, _: &str) {}
+    /// #     fn on_invalid_transition(&self, _: &str, _: &str, _: &[String]) {}
+    /// # }
+    /// let mut engine = StatechartEngine::<DemoSpec>::with_tracer(
+    ///     DemoState::Idle,
+    ///     Box::new(NoopTracer),
+    /// );
+    /// engine.send_event(DemoEvent::Finish).unwrap();
+    ///
+    /// let snapshot = engine.snapshot(Some("<scxml name=\"demo\"/>".to_string()));
+    /// assert_eq!(snapshot.statechart_name, "demo");
+    /// assert_eq!(snapshot.current_state, "Done");
+    /// assert_eq!(snapshot.raw_scxml.as_deref(), Some("<scxml name=\"demo\"/>"));
+    /// ```
     pub fn snapshot(&self, raw_scxml: Option<String>) -> StatechartSnapshot {
         StatechartSnapshot {
             statechart_name: S::name().to_string(),

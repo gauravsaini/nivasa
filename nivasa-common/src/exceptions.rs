@@ -136,6 +136,14 @@ impl HttpException {
     }
 
     /// Create a `401 Unauthorized` exception.
+    ///
+    /// ```rust
+    /// use nivasa_common::HttpException;
+    ///
+    /// let err = HttpException::unauthorized("missing token");
+    /// assert_eq!(err.status_code, 401);
+    /// assert_eq!(err.error, "Unauthorized");
+    /// ```
     pub fn unauthorized(message: impl Into<String>) -> Self {
         Self::new(401u16, message)
     }
@@ -201,6 +209,14 @@ impl HttpException {
     }
 
     /// Create a `500 Internal Server Error` exception.
+    ///
+    /// ```rust
+    /// use nivasa_common::HttpException;
+    ///
+    /// let err = HttpException::internal_server_error("something broke");
+    /// assert_eq!(err.status_code, 500);
+    /// assert_eq!(err.error, "Internal Server Error");
+    /// ```
     pub fn internal_server_error(message: impl Into<String>) -> Self {
         Self::new(500u16, message)
     }
