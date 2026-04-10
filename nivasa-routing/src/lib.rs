@@ -9,6 +9,16 @@ use std::cmp::Ordering;
 /// Static routes remain the common case, and the parser also accepts named
 /// parameters, trailing optional parameters, and trailing wildcard segments for
 /// broader matching.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_routing::RoutePattern;
+///
+/// let pattern = RoutePattern::parse("/users/:id").unwrap();
+/// assert!(pattern.matches("/users/42"));
+/// assert_eq!(pattern.path(), "/users/:id");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RoutePattern {
     Static(Vec<String>),
@@ -32,6 +42,15 @@ pub struct RouteEntry<T> {
 }
 
 /// An HTTP-like method used by the dispatch registry.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_routing::RouteMethod;
+///
+/// assert_eq!(RouteMethod::parse("get").as_str(), "GET");
+/// assert_eq!(RouteMethod::parse("trace").as_str(), "TRACE");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RouteMethod {
     Get,
@@ -55,6 +74,17 @@ pub struct RouteDispatchEntry<T> {
 }
 
 /// Captured values extracted from a matching route path.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_routing::RoutePattern;
+///
+/// let captures = RoutePattern::parse("/users/:id").unwrap()
+///     .captures("/users/42")
+///     .unwrap();
+/// assert_eq!(captures.get("id"), Some("42"));
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RoutePathCaptures {
     parameters: Vec<(String, String)>,
@@ -137,6 +167,16 @@ pub struct RouteDispatchSelection<'a, T> {
 }
 
 /// Metadata describing a controller and the route prefix it owns.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_routing::ControllerMetadata;
+///
+/// let metadata = ControllerMetadata::new("/users").with_version("1");
+/// assert_eq!(metadata.path(), "/users");
+/// assert_eq!(metadata.versioned_path(), "/v1/users");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ControllerMetadata {
     path: String,
@@ -371,6 +411,19 @@ impl From<String> for RouteMethod {
 }
 
 /// Registry of routes keyed by normalized path pattern.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_routing::RouteRegistry;
+///
+/// let mut routes = RouteRegistry::new();
+/// routes.register_static("/health", "ok").unwrap();
+/// routes.register_pattern("/users/:id", "user").unwrap();
+///
+/// assert_eq!(routes.resolve("/health"), Some(&"ok"));
+/// assert_eq!(routes.resolve("/users/42"), Some(&"user"));
+/// ```
 #[derive(Debug, Clone)]
 pub struct RouteRegistry<T> {
     routes: Vec<RouteEntry<T>>,
@@ -446,6 +499,18 @@ impl<T> RouteRegistry<T> {
 }
 
 /// Registry of method-aware routes keyed by normalized path pattern.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_routing::RouteDispatchRegistry;
+///
+/// let mut routes = RouteDispatchRegistry::new();
+/// routes.register_pattern("GET", "/users/:id", "show").unwrap();
+///
+/// let matched = routes.resolve_match("GET", "/users/42").unwrap();
+/// assert_eq!(matched.captures.get("id"), Some("42"));
+/// ```
 #[derive(Debug, Clone)]
 pub struct RouteDispatchRegistry<T> {
     routes: Vec<RouteDispatchEntry<T>>,
@@ -1232,10 +1297,32 @@ fn version_segment(version: &str) -> String {
     }
 }
 
+/// Parse an API version from an `X-API-Version` header value.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_routing::parse_api_version_header;
+///
+/// assert_eq!(parse_api_version_header("v3"), Some("v3".to_string()));
+/// assert_eq!(parse_api_version_header("3"), Some("v3".to_string()));
+/// ```
 pub fn parse_api_version_header(value: &str) -> Option<String> {
     normalize_version_token(value)
 }
 
+/// Parse an API version from an `Accept` header value.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_routing::parse_api_version_accept;
+///
+/// assert_eq!(
+///     parse_api_version_accept("application/vnd.nivasa.v2+json"),
+///     Some("v2".to_string())
+/// );
+/// ```
 pub fn parse_api_version_accept(value: &str) -> Option<String> {
     value.split(',').find_map(|candidate| {
         let candidate = candidate.trim();

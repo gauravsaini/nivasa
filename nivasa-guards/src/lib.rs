@@ -1,6 +1,59 @@
 //! # nivasa-guards
 //!
-//! Nivasa framework guard primitives.
+//! Guard primitives for request gating.
+//!
+//! `ExecutionContext` carries request-local data into guards. `AuthGuard`,
+//! `ThrottlerGuard`, and `RolesGuard` are the small built-in slices that show
+//! the expected shape of future framework guards.
+//!
+//! ```rust
+//! use nivasa_common::RequestContext;
+//! use nivasa_guards::{AuthGuard, ExecutionContext, Guard, RolesGuard, ThrottlerGuard};
+//! use std::time::Duration;
+//!
+//! # fn block_on<F: std::future::Future>(future: F) -> F::Output {
+//! #     use std::{
+//! #         future::Future,
+//! #         pin::Pin,
+//! #         task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
+//! #     };
+//! #     fn raw_waker() -> RawWaker {
+//! #         fn clone(_: *const ()) -> RawWaker { raw_waker() }
+//! #         fn no_op(_: *const ()) {}
+//! #         static VTABLE: RawWakerVTable =
+//! #             RawWakerVTable::new(clone, no_op, no_op, no_op);
+//! #         RawWaker::new(std::ptr::null(), &VTABLE)
+//! #     }
+//! #     let waker = unsafe { Waker::from_raw(raw_waker()) };
+//! #     let mut future = Box::pin(future);
+//! #     let mut context = Context::from_waker(&waker);
+//! #     match Future::poll(Pin::as_mut(&mut future), &mut context) {
+//! #         Poll::Ready(output) => output,
+//! #         Poll::Pending => panic!("future unexpectedly pending"),
+//! #     }
+//! # }
+//!
+//! let mut request_context = RequestContext::new();
+//! request_context.set_custom_data("authorization", "Bearer header.payload.signature");
+//! request_context.set_handler_metadata("roles", ["admin"]);
+//!
+//! let context = ExecutionContext::new(())
+//!     .with_request_context(request_context)
+//!     .with_custom_data("roles", vec!["admin"]);
+//!
+//! assert!(matches!(
+//!     block_on(AuthGuard::new().can_activate(&context)),
+//!     Ok(true)
+//! ));
+//! assert!(matches!(
+//!     block_on(RolesGuard::new().can_activate(&context)),
+//!     Ok(true)
+//! ));
+//! assert!(matches!(
+//!     block_on(ThrottlerGuard::new(1, Duration::from_secs(1)).can_activate(&context)),
+//!     Ok(true)
+//! ));
+//! ```
 
 use std::{
     any::Any,
@@ -16,12 +69,43 @@ use nivasa_common::{HttpException, RequestContext};
 type ContextValue = Arc<dyn Any + Send + Sync>;
 
 /// Metadata/custom data shared with guards during request execution.
+///
+/// Keys are plain strings. Values stay opaque until a guard downcasts them.
 pub type ContextDataMap = BTreeMap<String, ContextValue>;
 
 /// Runtime context passed into guards.
 ///
 /// The request is intentionally stored as an opaque typed value so this crate
 /// can define the surface before the HTTP integration is wired in.
+///
+/// ```rust
+/// use nivasa_guards::ExecutionContext;
+///
+/// # fn block_on<F: std::future::Future>(future: F) -> F::Output {
+/// #     use std::{
+/// #         future::Future,
+/// #         pin::Pin,
+/// #         task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
+/// #     };
+/// #     fn raw_waker() -> RawWaker {
+/// #         fn clone(_: *const ()) -> RawWaker { raw_waker() }
+/// #         fn no_op(_: *const ()) {}
+/// #         static VTABLE: RawWakerVTable =
+/// #             RawWakerVTable::new(clone, no_op, no_op, no_op);
+/// #         RawWaker::new(std::ptr::null(), &VTABLE)
+/// #     }
+/// #     let waker = unsafe { Waker::from_raw(raw_waker()) };
+/// #     let mut future = Box::pin(future);
+/// #     let mut context = Context::from_waker(&waker);
+/// #     match Future::poll(Pin::as_mut(&mut future), &mut context) {
+/// #         Poll::Ready(output) => output,
+/// #         Poll::Pending => panic!("future unexpectedly pending"),
+/// #     }
+/// # }
+///
+/// let context = ExecutionContext::new(123_u32);
+/// assert_eq!(context.request::<u32>(), Some(&123));
+/// ```
 #[derive(Clone)]
 pub struct ExecutionContext {
     request: ContextValue,
@@ -53,6 +137,7 @@ impl ExecutionContext {
         self
     }
 
+    /// Shared request context, when HTTP integration attached one.
     pub fn request_context(&self) -> Option<&RequestContext> {
         self.request_context.as_deref()
     }
@@ -69,6 +154,7 @@ impl ExecutionContext {
     }
 
     /// Return the raw request value for integration layers that need to downcast manually.
+    /// Raw request value for manual downcast paths.
     pub fn request_value(&self) -> &(dyn Any + Send + Sync) {
         self.request.as_ref()
     }
@@ -162,6 +248,9 @@ impl ExecutionContext {
 pub type GuardFuture<'a> = Pin<Box<dyn Future<Output = Result<bool, HttpException>> + Send + 'a>>;
 
 /// Request guard surface.
+///
+/// Implement `can_activate` and return `true` to allow request through.
+/// Returning `false` blocks request before later pipeline stages.
 pub trait Guard: Send + Sync {
     fn can_activate<'a>(&'a self, context: &'a ExecutionContext) -> GuardFuture<'a>;
 }
@@ -171,6 +260,39 @@ pub trait Guard: Send + Sync {
 /// This is intentionally shallow: it only checks for a bearer token that
 /// looks JWT-shaped (`Bearer <header.payload.signature>`). Real JWT parsing,
 /// signature verification, and claims validation remain future work.
+///
+/// ```rust
+/// use nivasa_common::RequestContext;
+/// use nivasa_guards::{AuthGuard, ExecutionContext, Guard};
+///
+/// # fn block_on<F: std::future::Future>(future: F) -> F::Output {
+/// #     use std::{
+/// #         future::Future,
+/// #         pin::Pin,
+/// #         task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
+/// #     };
+/// #     fn raw_waker() -> RawWaker {
+/// #         fn clone(_: *const ()) -> RawWaker { raw_waker() }
+/// #         fn no_op(_: *const ()) {}
+/// #         static VTABLE: RawWakerVTable =
+/// #             RawWakerVTable::new(clone, no_op, no_op, no_op);
+/// #         RawWaker::new(std::ptr::null(), &VTABLE)
+/// #     }
+/// #     let waker = unsafe { Waker::from_raw(raw_waker()) };
+/// #     let mut future = Box::pin(future);
+/// #     let mut context = Context::from_waker(&waker);
+/// #     match Future::poll(Pin::as_mut(&mut future), &mut context) {
+/// #         Poll::Ready(output) => output,
+/// #         Poll::Pending => panic!("future unexpectedly pending"),
+/// #     }
+/// # }
+///
+/// let mut request_context = RequestContext::new();
+/// request_context.set_custom_data("authorization", "Bearer header.payload.signature");
+///
+/// let context = ExecutionContext::new(()).with_request_context(request_context);
+/// assert!(block_on(AuthGuard::new().can_activate(&context)).unwrap());
+/// ```
 #[derive(Debug, Default, Clone, Copy)]
 pub struct AuthGuard;
 
@@ -234,6 +356,38 @@ impl Guard for AuthGuard {
 /// This keeps only the guard shape and the configured rate-limit metadata.
 /// Cross-request counters, storage backends, and true rate enforcement remain
 /// future work in the throttling module slice.
+///
+/// ```rust
+/// use nivasa_guards::{ExecutionContext, Guard, ThrottlerGuard};
+/// use std::time::Duration;
+///
+/// # fn block_on<F: std::future::Future>(future: F) -> F::Output {
+/// #     use std::{
+/// #         future::Future,
+/// #         pin::Pin,
+/// #         task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
+/// #     };
+/// #     fn raw_waker() -> RawWaker {
+/// #         fn clone(_: *const ()) -> RawWaker { raw_waker() }
+/// #         fn no_op(_: *const ()) {}
+/// #         static VTABLE: RawWakerVTable =
+/// #             RawWakerVTable::new(clone, no_op, no_op, no_op);
+/// #         RawWaker::new(std::ptr::null(), &VTABLE)
+/// #     }
+/// #     let waker = unsafe { Waker::from_raw(raw_waker()) };
+/// #     let mut future = Box::pin(future);
+/// #     let mut context = Context::from_waker(&waker);
+/// #     match Future::poll(Pin::as_mut(&mut future), &mut context) {
+/// #         Poll::Ready(output) => output,
+/// #         Poll::Pending => panic!("future unexpectedly pending"),
+/// #     }
+/// # }
+///
+/// let guard = ThrottlerGuard::new(5, Duration::from_secs(60));
+/// assert_eq!(guard.limit(), 5);
+/// assert_eq!(guard.ttl(), Duration::from_secs(60));
+/// assert!(block_on(guard.can_activate(&ExecutionContext::new(()))).unwrap());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThrottlerGuard {
     limit: u32,
@@ -269,6 +423,40 @@ impl Guard for ThrottlerGuard {
 
 /// Guard that authorizes requests by comparing required `roles` metadata from
 /// the request context against the roles attached to the current request.
+///
+/// ```rust
+/// use nivasa_common::RequestContext;
+/// use nivasa_guards::{ExecutionContext, Guard, RolesGuard};
+///
+/// # fn block_on<F: std::future::Future>(future: F) -> F::Output {
+/// #     use std::{
+/// #         future::Future,
+/// #         pin::Pin,
+/// #         task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
+/// #     };
+/// #     fn raw_waker() -> RawWaker {
+/// #         fn clone(_: *const ()) -> RawWaker { raw_waker() }
+/// #         fn no_op(_: *const ()) {}
+/// #         static VTABLE: RawWakerVTable =
+/// #             RawWakerVTable::new(clone, no_op, no_op, no_op);
+/// #         RawWaker::new(std::ptr::null(), &VTABLE)
+/// #     }
+/// #     let waker = unsafe { Waker::from_raw(raw_waker()) };
+/// #     let mut future = Box::pin(future);
+/// #     let mut context = Context::from_waker(&waker);
+/// #     match Future::poll(Pin::as_mut(&mut future), &mut context) {
+/// #         Poll::Ready(output) => output,
+/// #         Poll::Pending => panic!("future unexpectedly pending"),
+/// #     }
+/// # }
+///
+/// let mut request_context = RequestContext::new();
+/// request_context.set_handler_metadata("roles", ["admin"]);
+/// request_context.set_custom_data("roles", ["admin"]);
+///
+/// let context = ExecutionContext::new(()).with_request_context(request_context);
+/// assert!(block_on(RolesGuard::new().can_activate(&context)).unwrap());
+/// ```
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RolesGuard;
 
