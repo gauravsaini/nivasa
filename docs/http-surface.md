@@ -37,7 +37,7 @@ These pieces are still intentionally out of scope or only partially wired:
 1. Request body size limits.
 1. Request timeouts.
 1. TLS via `rustls`.
-1. The remaining SCXML pipeline stages that still need runtime wiring.
+1. `ErrorHandling` as the remaining SCXML future-stage caveat.
 1. App-level `VersioningOptions`.
 1. Filesystem-backed or streaming download responses, range handling, and other richer attachment behavior.
 
