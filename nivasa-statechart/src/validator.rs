@@ -6,12 +6,38 @@
 //! - Determinism (no ambiguous transitions)
 //! - Well-formedness (compound states have children, etc.)
 //! - Target validity (all transition targets exist)
+//!
+//! ```rust
+//! use nivasa_statechart::parser::ScxmlDocument;
+//! use nivasa_statechart::validator::{validate, ValidationRule};
+//!
+//! let scxml = r#"<?xml version="1.0"?>
+//! <scxml version="1.0" initial="idle" xmlns="http://www.w3.org/2005/07/scxml">
+//!   <state id="idle">
+//!     <transition event="go" target="done"/>
+//!   </state>
+//!   <final id="done"/>
+//! </scxml>"#;
+//!
+//! let doc = ScxmlDocument::from_str(scxml).unwrap();
+//! let result = validate(&doc);
+//!
+//! assert!(result.is_valid());
+//! assert!(result.errors.is_empty());
+//! assert!(result
+//!     .warnings
+//!     .iter()
+//!     .all(|warning| warning.rule != ValidationRule::InvalidTarget));
+//! ```
 
 use crate::parser::ScxmlDocument;
 use crate::types::*;
 use std::collections::HashSet;
 
 /// A validation error with context.
+///
+/// Each error or warning is tagged with the rule that produced it, a human-readable
+/// message, and the state that triggered it when one is available.
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ValidationError {
@@ -41,6 +67,9 @@ pub enum ValidationRule {
 }
 
 /// Result of validating an SCXML document.
+///
+/// A result is valid when it has no errors. Warnings may still be present for
+/// recoverable issues such as unreachable or dead-end states.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct ValidationResult {
@@ -50,12 +79,43 @@ pub struct ValidationResult {
 
 #[allow(dead_code)]
 impl ValidationResult {
+    /// Returns `true` when validation found no errors.
+    ///
+    /// ```rust
+    /// use nivasa_statechart::parser::ScxmlDocument;
+    /// use nivasa_statechart::validator::validate;
+    ///
+    /// let scxml = r#"<?xml version="1.0"?>
+    /// <scxml version="1.0" initial="idle" xmlns="http://www.w3.org/2005/07/scxml">
+    ///   <state id="idle"><transition event="go" target="done"/></state>
+    ///   <final id="done"/>
+    /// </scxml>"#;
+    /// let doc = ScxmlDocument::from_str(scxml).unwrap();
+    /// assert!(validate(&doc).is_valid());
+    /// ```
     pub fn is_valid(&self) -> bool {
         self.errors.is_empty()
     }
 }
 
 /// Validate an SCXML document against all rules.
+///
+/// ```rust
+/// use nivasa_statechart::parser::ScxmlDocument;
+/// use nivasa_statechart::validator::{validate, ValidationRule};
+///
+/// let scxml = r#"<?xml version="1.0"?>
+/// <scxml version="1.0" initial="idle" xmlns="http://www.w3.org/2005/07/scxml">
+///   <state id="idle"><transition event="go" target="done"/></state>
+///   <final id="done"/>
+/// </scxml>"#;
+/// let doc = ScxmlDocument::from_str(scxml).unwrap();
+/// let result = validate(&doc);
+///
+/// assert!(result.is_valid());
+/// assert!(result.errors.is_empty());
+/// assert!(!result.warnings.iter().any(|warning| warning.rule == ValidationRule::InvalidTarget));
+/// ```
 pub fn validate(doc: &ScxmlDocument) -> ValidationResult {
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
