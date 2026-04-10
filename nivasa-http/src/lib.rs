@@ -55,6 +55,13 @@ use tower::{Layer, Service};
 use uuid::Uuid;
 
 /// Minimal response/request body abstraction for the HTTP wrapper layer.
+///
+/// ```rust
+/// use nivasa_http::Body;
+///
+/// let body = Body::text("hello");
+/// assert_eq!(body.as_bytes(), b"hello");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Body {
     Empty,
@@ -329,6 +336,15 @@ where
 }
 
 /// Request wrapper used by the HTTP layer.
+///
+/// ```rust
+/// use http::Method;
+/// use nivasa_http::{Body, NivasaRequest};
+///
+/// let request = NivasaRequest::new(Method::GET, "/users?limit=10", Body::empty());
+/// assert_eq!(request.path(), "/users");
+/// assert_eq!(request.query("limit"), Some("10"));
+/// ```
 #[derive(Debug, Clone)]
 pub struct NivasaRequest {
     inner: Request<Body>,
@@ -620,12 +636,32 @@ where
 }
 
 /// Response wrapper used by the HTTP layer.
+///
+/// ```rust
+/// use http::StatusCode;
+/// use nivasa_http::NivasaResponse;
+///
+/// let response = NivasaResponse::new(StatusCode::CREATED, "saved");
+/// assert_eq!(response.status(), StatusCode::CREATED);
+/// assert_eq!(response.body().as_bytes(), b"saved");
+/// ```
 #[derive(Debug, Clone)]
 pub struct NivasaResponse {
     inner: Response<Body>,
 }
 
 /// Mutable controller response handle for the first `#[res]` runtime slice.
+///
+/// ```rust
+/// use http::StatusCode;
+/// use nivasa_http::ControllerResponse;
+///
+/// let mut response = ControllerResponse::new();
+/// response
+///     .status(StatusCode::NO_CONTENT)
+///     .header("x-trace-id", "abc123")
+///     .body("done");
+/// ```
 #[derive(Debug, Clone)]
 pub struct ControllerResponse {
     status: StatusCode,
@@ -798,6 +834,18 @@ impl IntoResponse for StatusCode {
 }
 
 /// Builder for `NivasaResponse`.
+///
+/// ```rust
+/// use http::StatusCode;
+/// use nivasa_http::NivasaResponse;
+///
+/// let response = NivasaResponse::builder()
+///     .status(StatusCode::ACCEPTED)
+///     .header("x-powered-by", "nivasa")
+///     .body("queued");
+///
+/// assert_eq!(response.status(), StatusCode::ACCEPTED);
+/// ```
 #[derive(Debug, Clone)]
 pub struct NivasaResponseBuilder {
     status: StatusCode,
@@ -1678,6 +1726,13 @@ fn infer_stream_content_type(chunks: &[Body]) -> Option<&'static str> {
 
 /// Buffered streaming response helper.
 ///
+/// ```rust
+/// use nivasa_http::NivasaResponse;
+///
+/// let response = NivasaResponse::stream(["part one", "part two"]);
+/// assert!(!response.body().is_empty());
+/// ```
+///
 /// This collects chunked bodies into a single wrapper-layer response without
 /// requiring transport-level streaming support.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1760,6 +1815,13 @@ impl IntoResponse for StreamBody {
 }
 
 /// Buffered server-sent events response helper.
+///
+/// ```rust
+/// use nivasa_http::{NivasaResponse, SseEvent};
+///
+/// let response = NivasaResponse::sse([SseEvent::data("ready").event("status")]);
+/// assert_eq!(response.status(), http::StatusCode::OK);
+/// ```
 ///
 /// This frames SSE payloads into a `text/event-stream` body without introducing
 /// transport-level streaming requirements in the wrapper layer.
@@ -1904,6 +1966,13 @@ impl IntoResponse for Sse {
 }
 
 /// File download response helper backed by the existing byte body surface.
+///
+/// ```rust
+/// use nivasa_http::{Download, IntoResponse};
+///
+/// let response = Download::attachment("report.txt", b"contents".to_vec()).into_response();
+/// assert_eq!(response.status(), http::StatusCode::OK);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Download {
     filename: String,
@@ -1984,6 +2053,13 @@ impl ExceptionFilterMetadata for HttpExceptionFilter {
 }
 
 /// Redirect response helper with common HTTP redirect statuses.
+///
+/// ```rust
+/// use nivasa_http::{IntoResponse, Redirect};
+///
+/// let response = Redirect::temporary("/login").into_response();
+/// assert_eq!(response.status(), http::StatusCode::FOUND);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Redirect {
     status: StatusCode,
