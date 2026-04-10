@@ -14,6 +14,17 @@ use nivasa_common::{HttpException, RequestContext};
 pub type ExceptionFilterFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Transport-agnostic filter host backed by the shared request context.
+///
+/// ```rust
+/// use nivasa_common::RequestContext;
+/// use nivasa_filters::ArgumentsHost;
+///
+/// let mut context = RequestContext::new();
+/// context.insert_request_data::<u32>(42);
+///
+/// let host = ArgumentsHost::new().with_request_context(context);
+/// assert_eq!(host.request::<u32>(), Some(&42));
+/// ```
 #[derive(Clone, Default)]
 pub struct ArgumentsHost {
     request_context: Option<Arc<RequestContext>>,
@@ -55,6 +66,13 @@ impl ArgumentsHost {
 }
 
 /// HTTP-specific alias for the default arguments host.
+///
+/// ```rust
+/// use nivasa_filters::{ArgumentsHost, HttpArgumentsHost};
+///
+/// let host: HttpArgumentsHost = ArgumentsHost::new();
+/// assert!(host.request_context().is_none());
+/// ```
 pub type HttpArgumentsHost = ArgumentsHost;
 
 /// WebSocket-specific alias for the default arguments host.
@@ -77,6 +95,14 @@ pub trait ExceptionFilterMetadata {
 }
 
 /// Transport-neutral summary of an HTTP exception.
+///
+/// ```rust
+/// use nivasa_common::HttpException;
+/// use nivasa_filters::http_exception_summary;
+///
+/// let summary = http_exception_summary(&HttpException::not_found("missing"));
+/// assert_eq!(summary.status_code, 404);
+/// ```
 ///
 /// This keeps the filters crate free of any response type coupling while still
 /// providing a stable default shape that HTTP adapters can turn into a response
@@ -105,11 +131,38 @@ impl fmt::Display for HttpExceptionSummary {
 }
 
 /// Build the default HTTP exception summary used by adapters and filters.
+///
+/// ```rust
+/// use nivasa_common::HttpException;
+/// use nivasa_filters::http_exception_summary;
+///
+/// let summary = http_exception_summary(&HttpException::bad_request("oops"));
+/// assert_eq!(summary.error, "Bad Request");
+/// ```
 pub fn http_exception_summary(exception: &HttpException) -> HttpExceptionSummary {
     HttpExceptionSummary::from(exception)
 }
 
 /// Request exception filter surface.
+///
+/// ```rust
+/// use std::{future::Future, pin::Pin};
+///
+/// use nivasa_common::HttpException;
+/// use nivasa_filters::{ArgumentsHost, ExceptionFilter, ExceptionFilterFuture};
+///
+/// struct PassthroughFilter;
+///
+/// impl ExceptionFilter<HttpException> for PassthroughFilter {
+///     fn catch<'a>(
+///         &'a self,
+///         exception: HttpException,
+///         _host: ArgumentsHost,
+///     ) -> ExceptionFilterFuture<'a, HttpException> {
+///         Box::pin(async move { exception })
+///     }
+/// }
+/// ```
 ///
 /// The runtime hook is intentionally lightweight for now so the umbrella crate
 /// can expose the API surface without coupling the filters crate to the HTTP
