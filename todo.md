@@ -1011,8 +1011,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Each example: include README with explanation and how to run
 
 ### 9.2 — Documentation
-- [ ] Write "Getting Started" quickstart guide (install, hello world, run)
-- [ ] Write "First Steps" tutorial (controllers, services, modules from scratch)
+- [x] Write "Getting Started" quickstart guide (install, hello world, run)
+- [x] Write "First Steps" tutorial (controllers, services, modules from scratch)
 - [ ] Write module system deep-dive documentation
 - [ ] Write DI container documentation (scopes, custom providers, lifecycle)
 - [ ] Write controllers & routing documentation (all extractors, response types)
@@ -1022,10 +1022,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Write pipes documentation (built-in pipes, custom pipes)
 - [x] Write exception filters documentation
 - [x] Write middleware documentation (including Tower compatibility)
-- [ ] Write configuration documentation (env loading, type-safe config)
-- [ ] Write testing documentation (TestingModule, TestClient, mocking)
+- [x] Write configuration documentation (env loading, type-safe config)
+- [x] Write testing documentation (TestingModule, TestClient, mocking)
 - [ ] Write CLI documentation (all generators, options)
-- [ ] Write WebSocket documentation
+- [x] Write WebSocket documentation
 - [ ] Write OpenAPI/Swagger documentation
 - [ ] Write "Migration from NestJS" guide (NestJS pattern → Nivasa equivalent)
 - [ ] Write "Comparison with other Rust frameworks" page
