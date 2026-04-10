@@ -4,6 +4,55 @@
 //!
 //! This crate provides the validation core used by later DTO and pipe
 //! integrations. It stays crate-local for now: no macros, no HTTP wiring.
+//!
+//! # Quick Start
+//!
+//! ```rust
+//! use nivasa_validation::{Validate, ValidationContext, ValidationError, ValidationErrors};
+//!
+//! #[derive(Debug)]
+//! struct SignupForm {
+//!     username: String,
+//!     email: String,
+//! }
+//!
+//! impl Validate for SignupForm {
+//!     fn validate(&self) -> Result<(), ValidationErrors> {
+//!         let mut errors = ValidationErrors::new();
+//!
+//!         if self.username.trim().len() < 3 {
+//!             errors.push(
+//!                 ValidationError::new("username")
+//!                     .with_constraint("min_length", "must be at least 3 characters"),
+//!             );
+//!         }
+//!
+//!         if !self.email.contains('@') {
+//!             errors.push(
+//!                 ValidationError::new("email")
+//!                     .with_constraint("is_email", "must contain an @ symbol"),
+//!             );
+//!         }
+//!
+//!         if errors.is_empty() {
+//!             Ok(())
+//!         } else {
+//!             Err(errors)
+//!         }
+//!     }
+//!
+//!     fn validate_with(&self, _context: &ValidationContext) -> Result<(), ValidationErrors> {
+//!         self.validate()
+//!     }
+//! }
+//!
+//! let form = SignupForm {
+//!     username: "alice".into(),
+//!     email: "alice@example.com".into(),
+//! };
+//!
+//! assert!(form.validate().is_ok());
+//! ```
 
 use serde::Serialize;
 use serde::Deserialize;
@@ -17,6 +66,30 @@ use std::{
 /// Trait for types that can validate their own invariants.
 pub trait Validate {
     /// Validate the current value.
+    ///
+    /// ```
+    /// use nivasa_validation::{Validate, ValidationError, ValidationErrors};
+    ///
+    /// struct Profile {
+    ///     name: String,
+    /// }
+    ///
+    /// impl Validate for Profile {
+    ///     fn validate(&self) -> Result<(), ValidationErrors> {
+    ///         if self.name.trim().is_empty() {
+    ///             Err(ValidationErrors::from_error(
+    ///                 ValidationError::new("name")
+    ///                     .with_constraint("required", "must not be empty"),
+    ///             ))
+    ///         } else {
+    ///             Ok(())
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// let profile = Profile { name: "alice".into() };
+    /// assert!(profile.validate().is_ok());
+    /// ```
     fn validate(&self) -> Result<(), ValidationErrors>;
 
     /// Validate the current value with validation context.
@@ -36,6 +109,13 @@ pub trait Validate {
 /// The helper intentionally stays small and reusable so later macro wiring can
 /// attach the appropriate field-level validation error without changing the
 /// core contract.
+///
+/// ```
+/// use nivasa_validation::is_url;
+///
+/// assert!(is_url("https://example.com"));
+/// assert!(!is_url("/relative/path"));
+/// ```
 pub fn is_url(value: &str) -> bool {
     value
         .parse::<http::Uri>()
@@ -47,6 +127,13 @@ pub fn is_url(value: &str) -> bool {
 ///
 /// The helper keeps regex compilation and matching encapsulated so later macro
 /// wiring can reuse the same core behavior without inventing a new contract.
+///
+/// ```
+/// use nivasa_validation::matches_regex;
+///
+/// assert!(matches_regex("alice@example.com", r"^[^@\s]+@[^@\s]+\.[^@\s]+$"));
+/// assert!(!matches_regex("alice@example.com", r"^[0-9]+$"));
+/// ```
 pub fn matches_regex(value: &str, pattern: &str) -> bool {
     regex::Regex::new(pattern)
         .map(|regex| regex.is_match(value))
@@ -84,11 +171,25 @@ impl<T> IsNotEmpty for Vec<T> {
 }
 
 /// Return whether a string or vec-like value is non-empty.
+///
+/// ```
+/// use nivasa_validation::is_not_empty;
+///
+/// assert!(is_not_empty("hello"));
+/// assert!(!is_not_empty(""));
+/// ```
 pub fn is_not_empty<T: ?Sized + IsNotEmpty>(value: &T) -> bool {
     value.is_not_empty()
 }
 
 /// Named validation group active for a validation pass.
+///
+/// ```
+/// use nivasa_validation::ValidationGroup;
+///
+/// let group = ValidationGroup::from("create");
+/// assert_eq!(group.as_str(), "create");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ValidationGroup(String);
@@ -134,6 +235,17 @@ impl Borrow<str> for ValidationGroup {
 /// This core-only slice currently tracks the set of active validation groups.
 /// Later macro and HTTP integrations can thread this context through derived
 /// validators without changing the core contract.
+///
+/// ```
+/// use nivasa_validation::ValidationContext;
+///
+/// let context = ValidationContext::new()
+///     .with_group("create")
+///     .with_group("update");
+///
+/// assert!(context.has_group("create"));
+/// assert!(context.has_group("update"));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ValidationContext {
     active_groups: BTreeSet<ValidationGroup>,
@@ -193,6 +305,15 @@ impl ValidationContext {
 }
 
 /// A single field-level validation error with structured constraint messages.
+///
+/// ```
+/// use nivasa_validation::ValidationError;
+///
+/// let error = ValidationError::new("email")
+///     .with_constraint("is_email", "must contain an @ symbol");
+///
+/// assert_eq!(error.field, "email");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ValidationError {
     /// The field or property name that failed validation.
@@ -218,6 +339,14 @@ impl ValidationError {
 }
 
 /// Aggregate of one or more validation errors.
+///
+/// ```
+/// use nivasa_validation::{ValidationError, ValidationErrors};
+///
+/// let mut errors = ValidationErrors::new();
+/// errors.push(ValidationError::new("name"));
+/// assert_eq!(errors.len(), 1);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
 pub struct ValidationErrors {
     errors: Vec<ValidationError>,
