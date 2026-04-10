@@ -370,6 +370,41 @@ impl RequestPipeline {
     /// through the existing SCXML error transitions.
     ///
     /// ```rust,no_run
+    /// use http::Method;
+    /// use nivasa_guards::{ExecutionContext, Guard, GuardFuture};
+    /// use nivasa_http::{Body, GuardExecutionOutcome, NivasaRequest, RequestPipeline};
+    /// use nivasa_routing::RouteDispatchRegistry;
+    /// use nivasa_statechart::NivasaRequestState;
+    ///
+    /// struct DenyGuard;
+    ///
+    /// impl Guard for DenyGuard {
+    ///     fn can_activate<'a>(&'a self, _: &'a ExecutionContext) -> GuardFuture<'a> {
+    ///         Box::pin(async { Ok(false) })
+    ///     }
+    /// }
+    ///
+    /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+    /// let request = NivasaRequest::new(Method::GET, "/health", Body::empty());
+    /// let mut pipeline = RequestPipeline::new(request);
+    /// let mut routes = RouteDispatchRegistry::new();
+    ///
+    /// routes.register_static("GET", "/health", ()).unwrap();
+    /// pipeline.parse_request().unwrap();
+    /// pipeline.complete_middleware().unwrap();
+    /// pipeline.match_route(&routes).unwrap();
+    ///
+    /// let outcome = pipeline
+    ///     .evaluate_guard_chain(&[&DenyGuard], &ExecutionContext::new(()))
+    ///     .await
+    ///     .unwrap();
+    ///
+    /// assert!(matches!(outcome, GuardExecutionOutcome::Denied));
+    /// assert_eq!(pipeline.current_state(), NivasaRequestState::ErrorHandling);
+    /// # });
+    /// ```
+    ///
+    /// ```rust,no_run
     /// use nivasa_guards::ExecutionContext;
     /// use nivasa_http::{Body, GuardExecutionOutcome, NivasaRequest, RequestPipeline};
     /// use http::Method;
@@ -453,6 +488,29 @@ impl RequestPipeline {
     }
 
     /// Mark handler execution as complete.
+    ///
+    /// ```rust
+    /// use http::Method;
+    /// use nivasa_http::{Body, NivasaRequest, RequestPipeline};
+    /// use nivasa_routing::RouteDispatchRegistry;
+    /// use nivasa_statechart::NivasaRequestState;
+    ///
+    /// let request = NivasaRequest::new(Method::GET, "/health", Body::empty());
+    /// let mut pipeline = RequestPipeline::new(request);
+    /// let mut routes = RouteDispatchRegistry::new();
+    ///
+    /// routes.register_static("GET", "/health", ()).unwrap();
+    /// pipeline.parse_request().unwrap();
+    /// pipeline.complete_middleware().unwrap();
+    /// pipeline.match_route(&routes).unwrap();
+    /// pipeline.pass_guards().unwrap();
+    /// pipeline.complete_interceptors_pre().unwrap();
+    /// pipeline.complete_pipes().unwrap();
+    ///
+    /// assert_eq!(pipeline.current_state(), NivasaRequestState::HandlerExecution);
+    /// pipeline.complete_handler().unwrap();
+    /// assert_eq!(pipeline.current_state(), NivasaRequestState::InterceptorPost);
+    /// ```
     pub fn complete_handler(
         &mut self,
     ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {
