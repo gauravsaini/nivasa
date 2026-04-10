@@ -20,6 +20,35 @@
 //!     email: String,
 //! }
 //! ```
+//!
+//! ```rust
+//! use nivasa_macros::{controller, get};
+//! use nivasa_routing::Controller;
+//!
+//! #[controller("/users")]
+//! struct UsersController;
+//!
+//! impl UsersController {
+//!     #[get("/")]
+//!     fn list(&self) {}
+//! }
+//!
+//! assert_eq!(UsersController::__nivasa_controller_path(), "/users");
+//! assert_eq!(UsersController::__nivasa_controller_version(), None);
+//! assert_eq!(UsersController.metadata().path(), "/users");
+//! ```
+//!
+//! ```rust
+//! use nivasa_macros::websocket_gateway;
+//!
+//! #[websocket_gateway({ path: "/ws", namespace: "/chat" })]
+//! struct ChatGateway;
+//!
+//! assert_eq!(
+//!     ChatGateway::__nivasa_websocket_gateway_metadata(),
+//!     ("/ws", Some("/chat"))
+//! );
+//! ```
 
 mod controller;
 mod filter;
@@ -138,6 +167,19 @@ pub fn scxml_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
     )
 )]
 /// Derive validation metadata for required DTO fields.
+///
+/// ```rust
+/// use nivasa_macros::Dto;
+///
+/// #[derive(Dto)]
+/// struct SignupForm {
+///     #[is_email]
+///     email: String,
+///
+///     #[min_length(8)]
+///     password: String,
+/// }
+/// ```
 pub fn dto(input: TokenStream) -> TokenStream {
     validation::dto_impl(input)
 }
@@ -169,6 +211,17 @@ pub fn dto(input: TokenStream) -> TokenStream {
     )
 )]
 /// Derive validation metadata for optional DTO fields.
+///
+/// ```rust
+/// use nivasa_macros::PartialDto;
+///
+/// #[derive(PartialDto)]
+/// struct ProfilePatch {
+///     #[is_optional]
+///     #[is_string]
+///     display_name: Option<String>,
+/// }
+/// ```
 pub fn partial_dto(input: TokenStream) -> TokenStream {
     validation::partial_dto_impl(input)
 }
@@ -223,6 +276,15 @@ pub fn middleware(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 /// Mark a websocket gateway type.
+///
+/// ```rust
+/// use nivasa_macros::websocket_gateway;
+///
+/// #[websocket_gateway("/ws")]
+/// struct ChatGateway;
+///
+/// assert_eq!(ChatGateway::__nivasa_websocket_gateway_metadata(), ("/ws", None));
+/// ```
 pub fn websocket_gateway(attr: TokenStream, item: TokenStream) -> TokenStream {
     websocket_gateway::websocket_gateway(attr, item)
 }
