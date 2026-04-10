@@ -1028,7 +1028,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Write WebSocket documentation
 - [x] Write OpenAPI/Swagger documentation
 - [ ] Write "Migration from NestJS" guide (NestJS pattern → Nivasa equivalent)
-- [ ] Write "Comparison with other Rust frameworks" page
+- [x] Write "Comparison with other Rust frameworks" page
 - [x] Generate `rustdoc` for all public APIs (`cargo doc --workspace --no-deps`)
 - [ ] Set up documentation website (mdBook or similar)
 - [ ] Add search to documentation site
