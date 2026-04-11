@@ -2,22 +2,32 @@
 //!
 //! Shared types for the Nivasa framework.
 //!
-//! This crate provides the foundational types used across all Nivasa crates:
-//! - `HttpException` and all standard HTTP exception types (400, 401, 403, 404, 500, etc.)
-//! - Common result types and error handling utilities
-//! - DTO marker traits
+//! This crate re-exports the most common framework helpers from one place:
+//! - `RequestContext` for request-scoped metadata and typed request data
+//! - `HttpStatus` for typed HTTP status handling
+//! - `HttpException` for serializable framework errors
+//!
+//! Import those types from `nivasa_common` directly when you need to work with
+//! request context, HTTP status codes, or framework errors.
 //!
 //! # Example
 //!
 //! ```rust
-//! use nivasa_common::RequestContext;
+//! use nivasa_common::{HttpException, HttpStatus, RequestContext};
+//! use serde_json::json;
 //!
 //! let mut context = RequestContext::new();
-//! context.set_handler_metadata("roles", serde_json::json!(["admin"]));
-//! context.set_custom_data("request_id", serde_json::json!("req-123"));
+//! context.set_handler_metadata("roles", json!(["admin"]));
+//! context.insert_request_data(String::from("req-123"));
 //!
-//! assert_eq!(context.handler_metadata("roles").unwrap(), &serde_json::json!(["admin"]));
-//! assert_eq!(context.custom_data("request_id").unwrap(), &serde_json::json!("req-123"));
+//! let err = HttpStatus::BadRequest
+//!     .into_exception("invalid payload")
+//!     .with_details(json!({ "field": "email" }));
+//!
+//! assert_eq!(context.handler_metadata("roles").unwrap(), &json!(["admin"]));
+//! assert_eq!(context.request_data::<String>().unwrap(), "req-123");
+//! assert_eq!(err.status_code, 400);
+//! assert_eq!(err.error, "Bad Request");
 //! ```
 
 use std::any::{Any, TypeId};
