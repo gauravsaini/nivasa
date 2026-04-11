@@ -24,8 +24,9 @@
 //! assert_eq!(response.body().as_bytes(), b"ready");
 //! ```
 //!
-//! For the transport side, [`server`] exposes `NivasaServer` and
-//! `CorsOptions`, while [`upload`] contains the focused multipart helpers.
+//! For the transport side, [`NivasaServer`] and [`CorsOptions`] cover the
+//! server builder path, while [`upload`] contains the focused multipart
+//! helpers.
 
 mod health;
 mod pipeline;
