@@ -1,6 +1,31 @@
 //! # nivasa-http
 //!
-//! Nivasa framework HTTP primitives.
+//! HTTP wrapper primitives for Nivasa.
+//!
+//! Start here if you want the small wrapper layer around requests, responses,
+//! upload helpers, or the higher-level server and health surfaces.
+//!
+//! The most common entry points are:
+//! - [`Body`], [`NivasaRequest`], and [`NivasaResponse`] for wrapper-layer HTTP values
+//! - [`ControllerResponse`] for the first `#[res]` runtime slice
+//! - [`CorsOptions`] and [`GlobalFilterBinding`] for server wiring
+//! - [`HealthCheckService`] and [`TerminusModule`] for health checks
+//!
+//! ```rust
+//! use http::{Method, StatusCode};
+//! use nivasa_http::{Body, NivasaRequest, NivasaResponse};
+//!
+//! let request = NivasaRequest::new(Method::GET, "/users?limit=10", Body::empty());
+//! assert_eq!(request.path(), "/users");
+//! assert_eq!(request.query("limit"), Some("10"));
+//!
+//! let response = NivasaResponse::new(StatusCode::OK, Body::text("ready"));
+//! assert_eq!(response.status(), StatusCode::OK);
+//! assert_eq!(response.body().as_bytes(), b"ready");
+//! ```
+//!
+//! For the transport side, [`server`] exposes `NivasaServer` and
+//! `CorsOptions`, while [`upload`] contains the focused multipart helpers.
 
 mod health;
 mod pipeline;

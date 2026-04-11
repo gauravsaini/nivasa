@@ -14,7 +14,37 @@
 //! machines. Build-time code generation produces Rust types from those files,
 //! and `StatechartEngine` is the only runtime way to move between states.
 //!
-//! ## Quick Start
+//! ## Start Here
+//!
+//! Parse an SCXML document, validate it, and generate Rust from the same source
+//! of truth before you wire the generated state and event types into the
+//! runtime engine.
+//!
+//! ```rust,no_run
+//! use nivasa_statechart::{
+//!     codegen::generate_rust,
+//!     parser::ScxmlDocument,
+//!     validate_scxml_schema,
+//! };
+//! use nivasa_statechart::validator::validate;
+//!
+//! let scxml = r#"
+//! <scxml xmlns="http://www.w3.org/2005/07/scxml" initial="idle">
+//!   <state id="idle" />
+//! </scxml>
+//! "#;
+//!
+//! let doc = ScxmlDocument::from_str(scxml).unwrap();
+//! validate_scxml_schema("statecharts/example.scxml").unwrap();
+//! assert!(validate(&doc).is_valid());
+//! let generated = generate_rust(&doc);
+//! assert!(generated.contains("enum ExampleState"));
+//! ```
+//!
+//! When you already have generated state and event types, the runtime engine is
+//! the only supported way to drive transitions.
+//!
+//! ## Runtime Example
 //!
 //! ```rust
 //! use nivasa_statechart::{StatechartEngine, StatechartSpec};
@@ -68,14 +98,6 @@
 //! let mut engine = StatechartEngine::<DoorSpec>::new(DoorState::Closed);
 //! assert_eq!(engine.current_state(), DoorState::Closed);
 //! assert_eq!(engine.send_event(DoorEvent::Open).unwrap(), DoorState::Open);
-//! ```
-//!
-//! ## SCXML Validation
-//!
-//! ```rust,no_run
-//! use nivasa_statechart::validate_scxml_schema;
-//!
-//! validate_scxml_schema("statecharts/example.scxml").unwrap();
 //! ```
 //!
 //! ## SCXML Compliance
