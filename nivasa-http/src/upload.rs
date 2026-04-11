@@ -1,13 +1,88 @@
 //! Upload contract types for future multipart support.
 //!
-//! This module intentionally models uploaded files without performing any
-//! request parsing. Multipart decoding still belongs to the SCXML-driven HTTP
-//! pipeline once the multipart dependency and interceptor wiring are landed.
+//! This module models uploaded files, multipart limits, and upload-layer
+//! interceptors without wiring multipart decoding into the main request
+//! pipeline. Parsing still stays at the upload helper layer so the SCXML-driven
+//! HTTP flow keeps control of request execution.
+//!
+//! # Examples
+//!
+//! ```rust
+//! use nivasa_http::upload::{FileInterceptor, MultipartLimits, UploadedFile};
+//!
+//! let file = UploadedFile::new("avatar.png", Some("image/png".to_string()), vec![1, 2, 3]);
+//! assert_eq!(file.filename(), "avatar.png");
+//! assert_eq!(file.len(), 3);
+//!
+//! let limits = MultipartLimits::new()
+//!     .allowed_fields(["avatar"])
+//!     .allowed_mime_types(["image/png"])
+//!     .whole_stream(1024)
+//!     .per_field(256);
+//!
+//! let _interceptor = FileInterceptor::new("avatar").with_limits(limits);
+//! ```
+//!
+//! ```rust
+//! use nivasa_http::upload::{FileInterceptor, FilesInterceptor};
+//!
+//! fn multipart_body(parts: &[(&str, &str, Option<&str>, &[u8])]) -> (String, Vec<u8>) {
+//!     let boundary = "X-BOUNDARY";
+//!     let mut body = Vec::new();
+//!
+//!     for (field_name, filename, content_type, bytes) in parts {
+//!         body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+//!         body.extend_from_slice(
+//!             format!(
+//!                 "Content-Disposition: form-data; name=\"{field_name}\"; filename=\"{filename}\"\r\n"
+//!             )
+//!             .as_bytes(),
+//!         );
+//!         if let Some(content_type) = content_type {
+//!             body.extend_from_slice(format!("Content-Type: {content_type}\r\n").as_bytes());
+//!         }
+//!         body.extend_from_slice(b"\r\n");
+//!         body.extend_from_slice(bytes);
+//!         body.extend_from_slice(b"\r\n");
+//!     }
+//!
+//!     body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+//!     (format!("multipart/form-data; boundary={boundary}"), body)
+//! }
+//!
+//! let (content_type, body) =
+//!     multipart_body(&[("avatar", "avatar.png", Some("image/png"), b"png-data")]);
+//!
+//! let file = FileInterceptor::new("avatar")
+//!     .extract_from_bytes(&content_type, &body)
+//!     .expect("single file should parse");
+//! assert_eq!(file.filename(), "avatar.png");
+//!
+//! let (content_type, body) = multipart_body(&[
+//!     ("attachments", "one.txt", Some("text/plain"), b"first"),
+//!     ("attachments", "two.txt", Some("text/plain"), b"second"),
+//! ]);
+//!
+//! let files = FilesInterceptor::new("attachments")
+//!     .extract_from_bytes(&content_type, &body)
+//!     .expect("multiple files should parse");
+//! assert_eq!(files.len(), 2);
+//! ```
 
 use std::collections::BTreeMap;
 use std::fmt;
 
 /// Buffered file payload extracted from a multipart request.
+///
+/// ```rust
+/// use nivasa_http::upload::UploadedFile;
+///
+/// let file = UploadedFile::new("avatar.png", Some("image/png".to_string()), vec![1, 2, 3]);
+/// assert_eq!(file.filename(), "avatar.png");
+/// assert_eq!(file.content_type(), Some("image/png"));
+/// assert_eq!(file.len(), 3);
+/// assert_eq!(file.into_parts(), ("avatar.png".to_string(), Some("image/png".to_string()), vec![1, 2, 3]));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UploadedFile {
     filename: String,
@@ -70,6 +145,21 @@ impl UploadedFile {
 
 /// Configurable multipart size limits that can be converted into `multer`
 /// constraints later in the request pipeline.
+///
+/// ```rust
+/// use nivasa_http::upload::MultipartLimits;
+///
+/// let limits = MultipartLimits::new()
+///     .allowed_fields(["avatar", "attachments"])
+///     .allowed_mime_types(["image/png", "image/jpeg"])
+///     .whole_stream(1024)
+///     .per_field(256)
+///     .field_limit("avatar", 128);
+///
+/// assert_eq!(limits.allowed_fields_list(), &["avatar".to_string(), "attachments".to_string()]);
+/// assert!(limits.allows_mime_type(Some("image/png")));
+/// assert!(!limits.allows_mime_type(Some("text/plain")));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MultipartLimits {
     whole_stream: Option<u64>,
@@ -260,6 +350,43 @@ struct ParsedMultipartFile {
 }
 
 /// Upload-layer helper for extracting a single file from a multipart payload.
+///
+/// ```rust
+/// use nivasa_http::upload::FileInterceptor;
+///
+/// fn multipart_body(parts: &[(&str, &str, Option<&str>, &[u8])]) -> (String, Vec<u8>) {
+///     let boundary = "X-BOUNDARY";
+///     let mut body = Vec::new();
+///
+///     for (field_name, filename, content_type, bytes) in parts {
+///         body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+///         body.extend_from_slice(
+///             format!(
+///                 "Content-Disposition: form-data; name=\"{field_name}\"; filename=\"{filename}\"\r\n"
+///             )
+///             .as_bytes(),
+///         );
+///         if let Some(content_type) = content_type {
+///             body.extend_from_slice(format!("Content-Type: {content_type}\r\n").as_bytes());
+///         }
+///         body.extend_from_slice(b"\r\n");
+///         body.extend_from_slice(bytes);
+///         body.extend_from_slice(b"\r\n");
+///     }
+///
+///     body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+///     (format!("multipart/form-data; boundary={boundary}"), body)
+/// }
+///
+/// let (content_type, body) =
+///     multipart_body(&[("avatar", "avatar.png", Some("image/png"), b"png-data")]);
+///
+/// let file = FileInterceptor::new("avatar")
+///     .extract_from_bytes(&content_type, &body)
+///     .expect("single file should parse");
+///
+/// assert_eq!(file.filename(), "avatar.png");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileInterceptor {
     field_name: String,
@@ -307,6 +434,45 @@ impl FileInterceptor {
 }
 
 /// Upload-layer helper for extracting multiple files from a multipart payload.
+///
+/// ```rust
+/// use nivasa_http::upload::FilesInterceptor;
+///
+/// fn multipart_body(parts: &[(&str, &str, Option<&str>, &[u8])]) -> (String, Vec<u8>) {
+///     let boundary = "X-BOUNDARY";
+///     let mut body = Vec::new();
+///
+///     for (field_name, filename, content_type, bytes) in parts {
+///         body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+///         body.extend_from_slice(
+///             format!(
+///                 "Content-Disposition: form-data; name=\"{field_name}\"; filename=\"{filename}\"\r\n"
+///             )
+///             .as_bytes(),
+///         );
+///         if let Some(content_type) = content_type {
+///             body.extend_from_slice(format!("Content-Type: {content_type}\r\n").as_bytes());
+///         }
+///         body.extend_from_slice(b"\r\n");
+///         body.extend_from_slice(bytes);
+///         body.extend_from_slice(b"\r\n");
+///     }
+///
+///     body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+///     (format!("multipart/form-data; boundary={boundary}"), body)
+/// }
+///
+/// let (content_type, body) = multipart_body(&[
+///     ("attachments", "one.txt", Some("text/plain"), b"first"),
+///     ("attachments", "two.txt", Some("text/plain"), b"second"),
+/// ]);
+///
+/// let files = FilesInterceptor::new("attachments")
+///     .extract_from_bytes(&content_type, &body)
+///     .expect("multiple files should parse");
+///
+/// assert_eq!(files.len(), 2);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilesInterceptor {
     field_name: String,
