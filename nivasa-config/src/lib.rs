@@ -106,6 +106,67 @@ impl std::fmt::Display for ConfigException {
 
 impl std::error::Error for ConfigException {}
 
+/// One validation issue found in loaded config values.
+///
+/// This surface stays intentionally narrow for now. It only reports missing
+/// required keys for already-loaded config maps and does not imply automatic
+/// startup or module-init validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigValidationIssue {
+    /// A required key was missing from the loaded config map.
+    MissingRequiredKey { key: String },
+}
+
+impl std::fmt::Display for ConfigValidationIssue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingRequiredKey { key } => write!(f, "missing required config key: {key}"),
+        }
+    }
+}
+
+/// Aggregated validation error for loaded config values.
+///
+/// This is a manual validation helper result, not a startup/runtime hook.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigValidationError {
+    issues: Vec<ConfigValidationIssue>,
+}
+
+impl ConfigValidationError {
+    /// Build a validation error from collected issues.
+    pub fn new(issues: Vec<ConfigValidationIssue>) -> Self {
+        Self { issues }
+    }
+
+    /// Borrow collected validation issues.
+    pub fn issues(&self) -> &[ConfigValidationIssue] {
+        &self.issues
+    }
+
+    /// True when no validation issues were collected.
+    pub fn is_empty(&self) -> bool {
+        self.issues.is_empty()
+    }
+}
+
+impl std::fmt::Display for ConfigValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut issues = self.issues.iter();
+        if let Some(first) = issues.next() {
+            write!(f, "{first}")?;
+            for issue in issues {
+                write!(f, "; {issue}")?;
+            }
+            Ok(())
+        } else {
+            write!(f, "config validation failed")
+        }
+    }
+}
+
+impl std::error::Error for ConfigValidationError {}
+
 /// Thin config service surface for in-crate provider metadata.
 ///
 /// This stays intentionally small: it only wraps an in-memory config map and
@@ -307,6 +368,53 @@ impl ConfigModule {
 
         Ok(loaded)
     }
+
+    /// Validate that a loaded config map contains all required keys.
+    ///
+    /// This helper validates an already-loaded map only. It does not wire
+    /// validation into startup, module init, or `for_root`.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use nivasa_config::ConfigModule;
+    ///
+    /// let loaded = BTreeMap::from([
+    ///     ("HOST".to_string(), "127.0.0.1".to_string()),
+    ///     ("PORT".to_string(), "3000".to_string()),
+    /// ]);
+    ///
+    /// ConfigModule::validate_required_keys(&loaded, ["HOST", "PORT"]).unwrap();
+    /// ```
+    pub fn validate_required_keys<I, S>(
+        loaded: &BTreeMap<String, String>,
+        required_keys: I,
+    ) -> Result<(), ConfigValidationError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut missing = Vec::new();
+
+        for key in required_keys {
+            let key = key.as_ref().trim();
+            if key.is_empty() || loaded.contains_key(key) || missing.iter().any(|item| item == key) {
+                continue;
+            }
+
+            missing.push(key.to_string());
+        }
+
+        if missing.is_empty() {
+            return Ok(());
+        }
+
+        Err(ConfigValidationError::new(
+            missing
+                .into_iter()
+                .map(|key| ConfigValidationIssue::MissingRequiredKey { key })
+                .collect(),
+        ))
+    }
 }
 
 impl ConfigurableModule for ConfigModule {
@@ -486,7 +594,7 @@ fn parse_env_line(line: &str) -> Option<(String, String)> {
 mod tests {
     use super::{
         config_export_types, config_provider_types, ConfigLoadError, ConfigModule, ConfigOptions,
-        ConfigService,
+        ConfigService, ConfigValidationError, ConfigValidationIssue,
     };
     use std::any::TypeId;
     use std::collections::BTreeMap;
@@ -868,6 +976,57 @@ mod tests {
         let error = ConfigModule::load_env(&options).expect_err("missing file should error");
 
         assert!(matches!(error, ConfigLoadError::EnvFile(_)));
+    }
+
+    #[test]
+    fn validate_required_keys_accepts_loaded_keys() {
+        let loaded = BTreeMap::from([
+            ("HOST".to_string(), "127.0.0.1".to_string()),
+            ("PORT".to_string(), "3000".to_string()),
+        ]);
+
+        let result = ConfigModule::validate_required_keys(&loaded, ["HOST", "PORT"]);
+
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn validate_required_keys_aggregates_missing_keys() {
+        let loaded = BTreeMap::from([("HOST".to_string(), "127.0.0.1".to_string())]);
+
+        let error = ConfigModule::validate_required_keys(&loaded, ["HOST", "PORT", "API_KEY"])
+            .expect_err("missing keys should fail validation");
+
+        assert_eq!(
+            error,
+            ConfigValidationError::new(vec![
+                ConfigValidationIssue::MissingRequiredKey {
+                    key: "PORT".to_string(),
+                },
+                ConfigValidationIssue::MissingRequiredKey {
+                    key: "API_KEY".to_string(),
+                },
+            ])
+        );
+        assert_eq!(
+            error.to_string(),
+            "missing required config key: PORT; missing required config key: API_KEY"
+        );
+    }
+
+    #[test]
+    fn validate_required_keys_ignores_blank_and_duplicate_required_entries() {
+        let loaded = BTreeMap::new();
+
+        let error = ConfigModule::validate_required_keys(&loaded, ["", "PORT", " PORT ", "   "])
+            .expect_err("missing key should fail validation");
+
+        assert_eq!(
+            error.issues(),
+            &[ConfigValidationIssue::MissingRequiredKey {
+                key: "PORT".to_string(),
+            }]
+        );
     }
 
     fn write_temp_env_file(contents: &str) -> PathBuf {
