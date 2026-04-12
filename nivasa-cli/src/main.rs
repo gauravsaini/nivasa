@@ -52,16 +52,25 @@ enum GenerateAction {
     Module {
         /// Module name
         name: String,
+        /// Parent module file to update with the generated module import
+        #[arg(long = "parent-module-file")]
+        parent_module_file: Option<PathBuf>,
     },
     /// Generate a controller file
     Controller {
         /// Controller name
         name: String,
+        /// Module file to update with the generated controller
+        #[arg(long = "module-file")]
+        module_file: Option<PathBuf>,
     },
     /// Generate a service file
     Service {
         /// Service name
         name: String,
+        /// Module file to update with the generated service
+        #[arg(long = "module-file")]
+        module_file: Option<PathBuf>,
     },
     /// Generate a guard file
     Guard {
@@ -145,9 +154,16 @@ fn run() -> Result<(), String> {
         Commands::Info => info_command(),
         Commands::New { project_name } => new_command(&project_name),
         Commands::Generate { action } => match action {
-            GenerateAction::Module { name } => generate_module_command(&name),
-            GenerateAction::Controller { name } => generate_controller_command(&name),
-            GenerateAction::Service { name } => generate_service_command(&name),
+            GenerateAction::Module {
+                name,
+                parent_module_file,
+            } => generate_module_command(&name, parent_module_file.as_deref()),
+            GenerateAction::Controller { name, module_file } => {
+                generate_controller_command(&name, module_file.as_deref())
+            }
+            GenerateAction::Service { name, module_file } => {
+                generate_service_command(&name, module_file.as_deref())
+            }
             GenerateAction::Guard { name } => generate_guard_command(&name),
             GenerateAction::Interceptor { name } => generate_interceptor_command(&name),
             GenerateAction::Pipe { name } => generate_pipe_command(&name),
@@ -184,64 +200,118 @@ fn info_command() -> Result<(), String> {
 }
 
 fn new_command(project_name: &str) -> Result<(), String> {
-    scaffold_new_project(&std::env::current_dir().map_err(|err| err.to_string())?, project_name)?;
+    scaffold_new_project(
+        &std::env::current_dir().map_err(|err| err.to_string())?,
+        project_name,
+    )?;
     println!("created {}", project_name);
     Ok(())
 }
 
-fn generate_module_command(name: &str) -> Result<(), String> {
-    let path = generate_module(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+fn generate_module_command(name: &str, parent_module_file: Option<&Path>) -> Result<(), String> {
+    let cwd = std::env::current_dir().map_err(|err| err.to_string())?;
+    let path = generate_module(&cwd, name)?;
+    if let Some(parent_module_file) = parent_module_file {
+        if let Err(err) = register_generated_item(
+            &resolve_target_file(&cwd, parent_module_file)?,
+            &path,
+            &generated_type_name(name, "Module")?,
+            "imports",
+        ) {
+            let _ = fs::remove_file(&path);
+            return Err(err);
+        }
+    }
     println!("created {}", path.display());
     Ok(())
 }
 
-fn generate_controller_command(name: &str) -> Result<(), String> {
-    let path =
-        generate_controller(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+fn generate_controller_command(name: &str, module_file: Option<&Path>) -> Result<(), String> {
+    let cwd = std::env::current_dir().map_err(|err| err.to_string())?;
+    let path = generate_controller(&cwd, name)?;
+    if let Some(module_file) = module_file {
+        if let Err(err) = register_generated_item(
+            &resolve_target_file(&cwd, module_file)?,
+            &path,
+            &generated_type_name(name, "Controller")?,
+            "controllers",
+        ) {
+            let _ = fs::remove_file(&path);
+            return Err(err);
+        }
+    }
     println!("created {}", path.display());
     Ok(())
 }
 
-fn generate_service_command(name: &str) -> Result<(), String> {
-    let path = generate_service(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+fn generate_service_command(name: &str, module_file: Option<&Path>) -> Result<(), String> {
+    let cwd = std::env::current_dir().map_err(|err| err.to_string())?;
+    let path = generate_service(&cwd, name)?;
+    if let Some(module_file) = module_file {
+        if let Err(err) = register_generated_item(
+            &resolve_target_file(&cwd, module_file)?,
+            &path,
+            &generated_type_name(name, "Service")?,
+            "providers",
+        ) {
+            let _ = fs::remove_file(&path);
+            return Err(err);
+        }
+    }
     println!("created {}", path.display());
     Ok(())
 }
 
 fn generate_guard_command(name: &str) -> Result<(), String> {
-    let path = generate_guard(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    let path = generate_guard(
+        &std::env::current_dir().map_err(|err| err.to_string())?,
+        name,
+    )?;
     println!("created {}", path.display());
     Ok(())
 }
 
 fn generate_interceptor_command(name: &str) -> Result<(), String> {
-    let path =
-        generate_interceptor(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    let path = generate_interceptor(
+        &std::env::current_dir().map_err(|err| err.to_string())?,
+        name,
+    )?;
     println!("created {}", path.display());
     Ok(())
 }
 
 fn generate_pipe_command(name: &str) -> Result<(), String> {
-    let path = generate_pipe(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    let path = generate_pipe(
+        &std::env::current_dir().map_err(|err| err.to_string())?,
+        name,
+    )?;
     println!("created {}", path.display());
     Ok(())
 }
 
 fn generate_filter_command(name: &str) -> Result<(), String> {
-    let path = generate_filter(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    let path = generate_filter(
+        &std::env::current_dir().map_err(|err| err.to_string())?,
+        name,
+    )?;
     println!("created {}", path.display());
     Ok(())
 }
 
 fn generate_middleware_command(name: &str) -> Result<(), String> {
-    let path =
-        generate_middleware(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    let path = generate_middleware(
+        &std::env::current_dir().map_err(|err| err.to_string())?,
+        name,
+    )?;
     println!("created {}", path.display());
     Ok(())
 }
 
 fn generate_resource_command(name: &str) -> Result<(), String> {
-    let path = generate_resource(&std::env::current_dir().map_err(|err| err.to_string())?, name)?;
+    let path = generate_resource(
+        &std::env::current_dir().map_err(|err| err.to_string())?,
+        name,
+    )?;
     println!("created {}", path.display());
     Ok(())
 }
@@ -416,14 +486,14 @@ fn generate_module(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
 
     let file_path = module_dir.join(format!("{module_name}_module.rs"));
     if file_path.exists() {
-        return Err(format!("module file already exists: {}", file_path.display()));
+        return Err(format!(
+            "module file already exists: {}",
+            file_path.display()
+        ));
     }
 
     let struct_name = to_pascal_case(&module_name);
-    write_project_file(
-        &file_path,
-        &new_module_template(&module_name, &struct_name),
-    )?;
+    write_project_file(&file_path, &new_module_template(&module_name, &struct_name))?;
 
     Ok(file_path)
 }
@@ -459,7 +529,10 @@ fn generate_service(base_dir: &Path, name: &str) -> Result<PathBuf, String> {
 
     let file_path = service_dir.join(format!("{service_name}_service.rs"));
     if file_path.exists() {
-        return Err(format!("service file already exists: {}", file_path.display()));
+        return Err(format!(
+            "service file already exists: {}",
+            file_path.display()
+        ));
     }
 
     let struct_name = to_pascal_case(&service_name);
@@ -558,12 +631,372 @@ fn generate_named_file(
 
     let file_path = target_dir.join(format!("{normalized_name}_{suffix}.rs"));
     if file_path.exists() {
-        return Err(format!("{suffix} file already exists: {}", file_path.display()));
+        return Err(format!(
+            "{suffix} file already exists: {}",
+            file_path.display()
+        ));
     }
 
     let struct_name = to_pascal_case(&normalized_name);
     write_project_file(&file_path, &template(&normalized_name, &struct_name))?;
     Ok(file_path)
+}
+
+fn resolve_target_file(base_dir: &Path, target: &Path) -> Result<PathBuf, String> {
+    let resolved = if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        base_dir.join(target)
+    };
+
+    if !resolved.is_file() {
+        return Err(format!("module file not found: {}", resolved.display()));
+    }
+
+    Ok(resolved)
+}
+
+fn generated_type_name(name: &str, suffix: &str) -> Result<String, String> {
+    let normalized = normalize_generator_name(name)?;
+    Ok(format!("{}{}", to_pascal_case(&normalized), suffix))
+}
+
+fn register_generated_item(
+    target_module_file: &Path,
+    generated_file: &Path,
+    type_name: &str,
+    module_field: &str,
+) -> Result<(), String> {
+    let module_ident = generated_file
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or_else(|| format!("invalid generated file name: {}", generated_file.display()))?;
+
+    let relative_path = relative_path_string(
+        target_module_file.parent().ok_or_else(|| {
+            format!(
+                "module file has no parent: {}",
+                target_module_file.display()
+            )
+        })?,
+        generated_file,
+    )?;
+
+    let source = fs::read_to_string(target_module_file)
+        .map_err(|err| format!("failed to read {}: {err}", target_module_file.display()))?;
+    let source = ensure_import_block(&source, &relative_path, module_ident, type_name);
+    let source = upsert_module_metadata(&source, module_field, type_name)?;
+
+    fs::write(target_module_file, source)
+        .map_err(|err| format!("failed to write {}: {err}", target_module_file.display()))
+}
+
+fn ensure_import_block(
+    source: &str,
+    relative_path: &str,
+    module_ident: &str,
+    type_name: &str,
+) -> String {
+    let mod_line = format!("#[path = \"{relative_path}\"]\nmod {module_ident};\n");
+    let use_line = format!("use {module_ident}::{type_name};\n");
+    let mut updated = String::new();
+
+    if !source.contains(&mod_line) {
+        updated.push_str(&mod_line);
+    }
+    if !source.contains(&use_line) {
+        updated.push_str(&use_line);
+    }
+    if !updated.is_empty() {
+        updated.push('\n');
+    }
+    updated.push_str(source);
+    updated
+}
+
+fn upsert_module_metadata(
+    source: &str,
+    field_name: &str,
+    item_name: &str,
+) -> Result<String, String> {
+    let (body_start, body_end) = find_module_body(source)?;
+    let body = &source[body_start..body_end];
+    let mut fields = parse_module_fields(body)?;
+
+    let mut updated_existing = false;
+    for (name, value) in &mut fields {
+        if name == field_name {
+            let mut items = parse_array_items(value)?;
+            if !items.iter().any(|item| item == item_name) {
+                items.push(item_name.to_string());
+            }
+            *value = render_array_items(&items);
+            updated_existing = true;
+            break;
+        }
+    }
+
+    if !updated_existing {
+        fields.push((
+            field_name.to_string(),
+            render_array_items(&[item_name.to_string()]),
+        ));
+    }
+
+    let rendered = render_module_fields(&fields);
+    let mut updated = String::with_capacity(source.len() + rendered.len() + 32);
+    updated.push_str(&source[..body_start]);
+    updated.push_str(&rendered);
+    updated.push_str(&source[body_end..]);
+    Ok(updated)
+}
+
+fn find_module_body(source: &str) -> Result<(usize, usize), String> {
+    let module_start = source
+        .find("#[module(")
+        .ok_or_else(|| "target file missing #[module(...)] attribute".to_string())?;
+    let brace_start = source[module_start..]
+        .find('{')
+        .map(|offset| module_start + offset + 1)
+        .ok_or_else(|| "module attribute missing `{` body".to_string())?;
+    let mut depth = 1usize;
+    for (offset, ch) in source[brace_start..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok((brace_start, brace_start + offset));
+                }
+            }
+            _ => {}
+        }
+    }
+    Err("module attribute missing closing `}`".to_string())
+}
+
+fn parse_module_fields(body: &str) -> Result<Vec<(String, String)>, String> {
+    let mut fields = Vec::new();
+    let bytes = body.as_bytes();
+    let mut index = 0usize;
+
+    while index < bytes.len() {
+        while index < bytes.len() && matches!(bytes[index], b' ' | b'\n' | b'\t' | b',') {
+            index += 1;
+        }
+        if index >= bytes.len() {
+            break;
+        }
+
+        let field_start = index;
+        while index < bytes.len()
+            && matches!(bytes[index], b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'0'..=b'9')
+        {
+            index += 1;
+        }
+        if field_start == index {
+            return Err("failed to parse module metadata field name".to_string());
+        }
+        let field_name = body[field_start..index].trim().to_string();
+
+        while index < bytes.len() && matches!(bytes[index], b' ' | b'\n' | b'\t') {
+            index += 1;
+        }
+        if index >= bytes.len() || bytes[index] != b':' {
+            return Err(format!("module metadata field `{field_name}` missing `:`"));
+        }
+        index += 1;
+
+        let value_start = index;
+        let mut bracket_depth = 0usize;
+        let mut brace_depth = 0usize;
+        let mut paren_depth = 0usize;
+        let mut in_string = false;
+        let mut prev_escape = false;
+
+        while index < bytes.len() {
+            let ch = body[index..]
+                .chars()
+                .next()
+                .ok_or_else(|| "invalid utf-8 while parsing module metadata".to_string())?;
+            let ch_len = ch.len_utf8();
+
+            if in_string {
+                if ch == '"' && !prev_escape {
+                    in_string = false;
+                }
+                prev_escape = ch == '\\' && !prev_escape;
+                index += ch_len;
+                continue;
+            }
+
+            match ch {
+                '"' => {
+                    in_string = true;
+                    prev_escape = false;
+                }
+                '[' => bracket_depth += 1,
+                ']' => bracket_depth = bracket_depth.saturating_sub(1),
+                '{' => brace_depth += 1,
+                '}' => brace_depth = brace_depth.saturating_sub(1),
+                '(' => paren_depth += 1,
+                ')' => paren_depth = paren_depth.saturating_sub(1),
+                ',' if bracket_depth == 0 && brace_depth == 0 && paren_depth == 0 => {
+                    break;
+                }
+                _ => {}
+            }
+
+            index += ch_len;
+        }
+
+        let value = body[value_start..index].trim().to_string();
+        fields.push((field_name, value));
+
+        if index < bytes.len() && bytes[index] == b',' {
+            index += 1;
+        }
+    }
+
+    Ok(fields)
+}
+
+fn parse_array_items(value: &str) -> Result<Vec<String>, String> {
+    let trimmed = value.trim();
+    if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
+        return Err(format!("expected array value, found `{trimmed}`"));
+    }
+    let inner = &trimmed[1..trimmed.len() - 1];
+    let mut items = Vec::new();
+    let mut current = String::new();
+    let mut bracket_depth = 0usize;
+    let mut brace_depth = 0usize;
+    let mut paren_depth = 0usize;
+
+    for ch in inner.chars() {
+        match ch {
+            '[' => {
+                bracket_depth += 1;
+                current.push(ch);
+            }
+            ']' => {
+                bracket_depth = bracket_depth.saturating_sub(1);
+                current.push(ch);
+            }
+            '{' => {
+                brace_depth += 1;
+                current.push(ch);
+            }
+            '}' => {
+                brace_depth = brace_depth.saturating_sub(1);
+                current.push(ch);
+            }
+            '(' => {
+                paren_depth += 1;
+                current.push(ch);
+            }
+            ')' => {
+                paren_depth = paren_depth.saturating_sub(1);
+                current.push(ch);
+            }
+            ',' if bracket_depth == 0 && brace_depth == 0 && paren_depth == 0 => {
+                let item = current.trim();
+                if !item.is_empty() {
+                    items.push(item.to_string());
+                }
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    let tail = current.trim();
+    if !tail.is_empty() {
+        items.push(tail.to_string());
+    }
+
+    Ok(items)
+}
+
+fn render_array_items(items: &[String]) -> String {
+    let mut rendered = String::from("[\n");
+    for item in items {
+        rendered.push_str("        ");
+        rendered.push_str(item);
+        rendered.push_str(",\n");
+    }
+    rendered.push_str("    ]");
+    rendered
+}
+
+fn render_module_fields(fields: &[(String, String)]) -> String {
+    if fields.is_empty() {
+        return String::new();
+    }
+
+    let mut rendered = String::from("\n");
+    for (name, value) in fields {
+        if value.contains('\n') {
+            rendered.push_str("    ");
+            rendered.push_str(name);
+            rendered.push_str(": ");
+            rendered.push_str(value);
+            rendered.push_str(",\n");
+        } else {
+            rendered.push_str("    ");
+            rendered.push_str(name);
+            rendered.push_str(": ");
+            rendered.push_str(value.trim());
+            rendered.push_str(",\n");
+        }
+    }
+    rendered
+}
+
+fn relative_path_string(from_dir: &Path, to_file: &Path) -> Result<String, String> {
+    use std::path::Component;
+
+    let from_abs = if from_dir.is_absolute() {
+        from_dir.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|err| err.to_string())?
+            .join(from_dir)
+    };
+    let to_abs = if to_file.is_absolute() {
+        to_file.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|err| err.to_string())?
+            .join(to_file)
+    };
+
+    let from_components: Vec<_> = from_abs.components().collect();
+    let to_components: Vec<_> = to_abs.components().collect();
+    let mut common = 0usize;
+
+    while common < from_components.len()
+        && common < to_components.len()
+        && from_components[common] == to_components[common]
+    {
+        common += 1;
+    }
+
+    if common == 0 {
+        return Ok(to_abs.to_string_lossy().replace('\\', "/"));
+    }
+
+    let mut relative = PathBuf::new();
+    for component in &from_components[common..] {
+        if matches!(component, Component::Normal(_)) {
+            relative.push("..");
+        }
+    }
+    for component in &to_components[common..] {
+        relative.push(component.as_os_str());
+    }
+
+    Ok(relative.to_string_lossy().replace('\\', "/"))
 }
 
 fn write_project_file(path: &Path, contents: &str) -> Result<(), String> {
@@ -772,9 +1205,7 @@ fn to_pascal_case(name: &str) -> String {
         .map(|segment| {
             let mut chars = segment.chars();
             match chars.next() {
-                Some(first) => {
-                    first.to_ascii_uppercase().to_string() + chars.as_str()
-                }
+                Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
                 None => String::new(),
             }
         })
@@ -786,11 +1217,11 @@ mod tests {
     use super::{
         generate_controller, generate_filter, generate_guard, generate_interceptor,
         generate_middleware, generate_module, generate_pipe, generate_resource, generate_service,
-        new_controller_template, new_filter_template, new_guard_template,
-        new_interceptor_template, new_middleware_template, new_module_template,
+        new_controller_template, new_create_dto_template, new_filter_template, new_guard_template,
+        new_interceptor_template, new_middleware_template, new_module_template, new_pipe_template,
         new_project_app_module_rs, new_project_cargo_toml, new_project_main_rs,
-        new_pipe_template, new_service_template, new_create_dto_template,
-        new_update_dto_template, normalize_generator_name, scaffold_new_project, to_pascal_case,
+        new_service_template, new_update_dto_template, normalize_generator_name,
+        register_generated_item, scaffold_new_project, to_pascal_case,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -811,11 +1242,15 @@ mod tests {
         assert!(project_dir
             .join("statecharts/nivasa.application.scxml")
             .is_file());
-        assert!(project_dir.join("statecharts/nivasa.module.scxml").is_file());
+        assert!(project_dir
+            .join("statecharts/nivasa.module.scxml")
+            .is_file());
         assert!(project_dir
             .join("statecharts/nivasa.provider.scxml")
             .is_file());
-        assert!(project_dir.join("statecharts/nivasa.request.scxml").is_file());
+        assert!(project_dir
+            .join("statecharts/nivasa.request.scxml")
+            .is_file());
 
         assert_eq!(
             fs::read_to_string(project_dir.join("Cargo.toml")).unwrap(),
@@ -854,7 +1289,10 @@ mod tests {
 
     #[test]
     fn normalize_generator_name_and_pascal_case_work() {
-        assert_eq!(normalize_generator_name(" User Profile ").unwrap(), "user_profile");
+        assert_eq!(
+            normalize_generator_name(" User Profile ").unwrap(),
+            "user_profile"
+        );
         assert_eq!(to_pascal_case("user_profile"), "UserProfile");
     }
 
@@ -882,6 +1320,77 @@ mod tests {
             fs::read_to_string(&file_path).unwrap(),
             new_service_template("users", "Users")
         );
+    }
+
+    #[test]
+    fn module_generation_can_register_into_parent_module_file() {
+        let root = temp_dir("generate-module-register");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+        let parent_module_file = src_dir.join("app_module.rs");
+        fs::write(&parent_module_file, new_project_app_module_rs()).unwrap();
+
+        let generated_file =
+            generate_module(&root, "users").expect("module generation should succeed");
+        register_generated_item(
+            &parent_module_file,
+            &generated_file,
+            "UsersModule",
+            "imports",
+        )
+        .expect("module registration should succeed");
+
+        let updated = fs::read_to_string(&parent_module_file).unwrap();
+        assert!(updated.contains("#[path = \"../users/users_module.rs\"]"));
+        assert!(updated.contains("mod users_module;"));
+        assert!(updated.contains("use users_module::UsersModule;"));
+        assert!(updated.contains("imports: ["));
+        assert!(updated.contains("UsersModule,"));
+    }
+
+    #[test]
+    fn controller_generation_can_register_into_module_file() {
+        let root = temp_dir("generate-controller-register");
+        let module_file =
+            generate_module(&root, "users").expect("module generation should succeed");
+        let generated_file =
+            generate_controller(&root, "users").expect("controller generation should succeed");
+
+        register_generated_item(
+            &module_file,
+            &generated_file,
+            "UsersController",
+            "controllers",
+        )
+        .expect("controller registration should succeed");
+
+        let updated = fs::read_to_string(&module_file).unwrap();
+        assert!(updated.contains("#[path = \"users_controller.rs\"]"));
+        assert!(updated.contains("mod users_controller;"));
+        assert!(updated.contains("use users_controller::UsersController;"));
+        assert!(updated.contains("controllers: ["));
+        assert!(updated.contains("UsersController,"));
+    }
+
+    #[test]
+    fn service_generation_can_register_into_module_file_without_duplicates() {
+        let root = temp_dir("generate-service-register");
+        let module_file =
+            generate_module(&root, "users").expect("module generation should succeed");
+        let generated_file =
+            generate_service(&root, "users").expect("service generation should succeed");
+
+        register_generated_item(&module_file, &generated_file, "UsersService", "providers")
+            .expect("service registration should succeed");
+        register_generated_item(&module_file, &generated_file, "UsersService", "providers")
+            .expect("service registration should stay idempotent");
+
+        let updated = fs::read_to_string(&module_file).unwrap();
+        assert_eq!(
+            updated.matches("use users_service::UsersService;").count(),
+            1
+        );
+        assert_eq!(updated.matches("UsersService,").count(), 1);
     }
 
     #[test]
@@ -924,8 +1433,7 @@ mod tests {
     #[test]
     fn generate_filter_creates_expected_file() {
         let root = temp_dir("generate-filter");
-        let file_path =
-            generate_filter(&root, "http").expect("filter generation should succeed");
+        let file_path = generate_filter(&root, "http").expect("filter generation should succeed");
 
         assert_eq!(file_path, root.join("http/http_filter.rs"));
         assert_eq!(
@@ -937,8 +1445,8 @@ mod tests {
     #[test]
     fn generate_middleware_creates_expected_file() {
         let root = temp_dir("generate-middleware");
-        let file_path = generate_middleware(&root, "auth")
-            .expect("middleware generation should succeed");
+        let file_path =
+            generate_middleware(&root, "auth").expect("middleware generation should succeed");
 
         assert_eq!(file_path, root.join("auth/auth_middleware.rs"));
         assert_eq!(

@@ -858,16 +858,16 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Use `askama` or string templates for code generation
 
 #### 6.4.3 — CLI Auto-Registration
-- [ ] After generating a module, auto-add import to parent module's `imports` list
-- [ ] After generating a controller, auto-add to module's `controllers` list
-- [ ] After generating a service, auto-add to module's `providers` list
-- [ ] Handle file parsing to find insertion point (regex or syn-based)
+- [x] After generating a module, auto-add import to parent module's `imports` list via explicit `--parent-module-file`
+- [x] After generating a controller, auto-add to module's `controllers` list via explicit `--module-file`
+- [x] After generating a service, auto-add to module's `providers` list via explicit `--module-file`
+- [x] Handle file parsing to find insertion point with targeted module-attribute parsing
 
 #### 6.4.4 — CLI Tests
 - [x] Test `nivasa new myapp` creates correct project structure
 - [x] Test `nivasa g module users` creates `users/users_module.rs`
 - [x] Test `nivasa g resource users` creates module + controller + service + DTOs
-- [ ] Test auto-registration modifies parent module correctly
+- [x] Test auto-registration modifies parent/module file correctly
 - [x] Test `nivasa info` outputs version information
 
 ---
