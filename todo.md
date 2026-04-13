@@ -912,27 +912,27 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 7.2 — Event Emitter Module
 
-- [ ] Implement `EventEmitterModule`
-- [ ] Implement `EventEmitter` injectable service
-- [ ] Implement `#[on_event("event_name")]` decorator on handler methods
-- [ ] Implement `event_emitter.emit("event_name", payload)` — fire event
-- [ ] Support async event handlers
-- [ ] Support wildcard listeners (`#[on_event("user.*")]`)
-- [ ] Test event emission and handler invocation
-- [ ] Test multiple handlers for same event
-- [ ] Test wildcard matching
+- [x] Implement `EventEmitterModule`
+- [x] Implement `EventEmitter` injectable service
+- [x] Implement `#[on_event("event_name")]` decorator on handler methods
+- [x] Implement `event_emitter.emit("event_name", payload)` — fire event
+- [x] Support async event handlers
+- [x] Support wildcard listeners (`#[on_event("user.*")]`)
+- [x] Test event emission and handler invocation
+- [x] Test multiple handlers for same event
+- [x] Test wildcard matching
 
 ### 7.3 — Scheduling Module
 
-- [ ] Implement `ScheduleModule`
-- [ ] Implement `#[cron("0 */5 * * * *")]` decorator — cron-based scheduling
-- [ ] Implement `#[interval(5000)]` decorator — run every N ms
-- [ ] Implement `#[timeout(3000)]` decorator — run once after N ms
-- [ ] Add `cron` crate dependency for cron expression parsing
-- [ ] Support dynamic scheduling (add/remove jobs at runtime)
-- [ ] Test cron job fires at expected times
-- [ ] Test interval job fires repeatedly
-- [ ] Test timeout job fires once
+- [x] Implement `ScheduleModule`
+- [x] Implement `#[cron("0 */5 * * * *")]` decorator — cron-based scheduling
+- [x] Implement `#[interval(5000)]` decorator — run every N ms
+- [x] Implement `#[timeout(3000)]` decorator — run once after N ms
+- [x] Add `cron` crate dependency for cron expression parsing
+- [x] Support dynamic scheduling (add/remove jobs at runtime)
+- [x] Test cron job fires at expected times
+- [x] Test interval job fires repeatedly
+- [x] Test timeout job fires once
 
 ### 7.4 — Health Checks
 
@@ -971,11 +971,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 7.6 — GraphQL Support (Optional, Deferred)
 
+- [x] Implement minimal GraphQL HTTP endpoint and playground wrapper
 - [ ] Evaluate `async-graphql` crate for integration
 - [ ] Implement `GraphQLModule` wrapping async-graphql
 - [ ] Implement `#[resolver]` decorator
 - [ ] Implement `#[query]`, `#[mutation]`, `#[subscription]` decorators
-- [ ] Implement playground UI endpoint
+- [x] Implement playground UI endpoint
 - [ ] Implement federation support (stretch)
 
 ---

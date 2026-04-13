@@ -5,6 +5,9 @@
 //! - HTTP/controller wiring: `#[controller]`, `#[get]`, `#[post]`, `#[guard]`, `#[interceptor]`, `#[pipe]`
 //! - validation derives: `#[derive(Dto)]`, `#[derive(PartialDto)]`, `#[derive(ConfigSchema)]`
 //! - websocket wiring: `#[websocket_gateway]`, `#[subscribe_message]`
+//! - event emitter wiring: `#[on_event]`
+//! - GraphQL wiring: `#[query]`, `#[resolver]`, `#[mutation]`, `#[subscription]`
+//! - scheduling wiring: `#[cron]`, `#[interval]`, `#[timeout]`
 //!
 //! # Example
 //!
@@ -50,18 +53,23 @@
 //! );
 //! ```
 
-mod controller;
 mod config_schema;
+mod controller;
 mod filter;
 mod injectable;
 mod middleware;
+mod graphql;
 mod module_macro;
+mod on_event;
+mod schedule;
 mod scxml_handler;
 mod subscribe_message;
 mod validation;
 mod websocket_gateway;
 
 use proc_macro::TokenStream;
+use quote::{format_ident, quote};
+use syn::{Error, FnArg, ImplItemFn, LitStr};
 
 #[proc_macro_attribute]
 /// Mark a module container for Nivasa's DI graph.
@@ -255,6 +263,18 @@ pub fn guard(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+/// Apply a throttle window to a controller or handler.
+pub fn throttle(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::throttle(attr, item)
+}
+
+#[proc_macro_attribute]
+/// Exempt a controller or handler from throttling.
+pub fn skip_throttle(attr: TokenStream, item: TokenStream) -> TokenStream {
+    controller::skip_throttle(attr, item)
+}
+
+#[proc_macro_attribute]
 /// Mark route roles or permissions.
 pub fn roles(attr: TokenStream, item: TokenStream) -> TokenStream {
     controller::roles(attr, item)
@@ -318,6 +338,102 @@ pub fn subscribe_message(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+/// Register an event emitter handler method.
+pub fn on_event(attr: TokenStream, item: TokenStream) -> TokenStream {
+    on_event::on_event(attr, item)
+}
+
+#[proc_macro_attribute]
+/// Register a GraphQL resolver method.
+pub fn resolver(attr: TokenStream, item: TokenStream) -> TokenStream {
+    graphql::resolver(attr, item)
+}
+
+#[proc_macro_attribute]
+/// Register a GraphQL mutation method.
+pub fn mutation(attr: TokenStream, item: TokenStream) -> TokenStream {
+    graphql::mutation(attr, item)
+}
+
+#[proc_macro_attribute]
+/// Register a GraphQL subscription method.
+pub fn subscription(attr: TokenStream, item: TokenStream) -> TokenStream {
+    graphql::subscription(attr, item)
+}
+
+#[proc_macro_attribute]
+/// Register a cron schedule handler method.
+pub fn cron(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let expression = match syn::parse::<LitStr>(attr) {
+        Ok(expression) if !expression.value().trim().is_empty() => expression,
+        Ok(expression) => {
+            return Error::new(
+                expression.span(),
+                "`#[cron]` expects a non-empty cron expression like `#[cron(\"0 */5 * * * *\")]`",
+            )
+            .to_compile_error()
+            .into();
+        }
+        Err(_) => {
+            return Error::new(
+                proc_macro2::Span::call_site(),
+                "`#[cron]` expects a cron expression like `#[cron(\"0 */5 * * * *\")]`",
+            )
+            .to_compile_error()
+            .into();
+        }
+    };
+
+    let method = match syn::parse::<ImplItemFn>(item) {
+        Ok(method) => method,
+        Err(_) => {
+            return Error::new(
+                proc_macro2::Span::call_site(),
+                "`#[cron]` only supports inherent methods",
+            )
+            .to_compile_error()
+            .into();
+        }
+    };
+
+    if !matches!(method.sig.inputs.first(), Some(FnArg::Receiver(_))) {
+        return Error::new(
+            method.sig.ident.span(),
+            "`#[cron]` only supports inherent methods",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let method_name = &method.sig.ident;
+    let helper_name = format_ident!("__nivasa_cron_metadata_for_{}", method_name);
+    let schedule_path = quote! {
+        ::nivasa_scheduling::SchedulePattern::cron(#expression)
+    };
+
+    quote! {
+        #method
+
+        pub fn #helper_name() -> ::nivasa_scheduling::SchedulePattern {
+            #schedule_path
+        }
+    }
+    .into()
+}
+
+#[proc_macro_attribute]
+/// Register a repeating schedule handler method.
+pub fn interval(attr: TokenStream, item: TokenStream) -> TokenStream {
+    schedule::interval(attr, item)
+}
+
+#[proc_macro_attribute]
+/// Register a one-shot timeout handler method.
+pub fn timeout(attr: TokenStream, item: TokenStream) -> TokenStream {
+    schedule::timeout(attr, item)
+}
+
+#[proc_macro_attribute]
 /// Bind request body data into a controller parameter.
 pub fn body(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
@@ -342,9 +458,9 @@ pub fn param(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-/// Bind query data into a handler parameter.
-pub fn query(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    item
+/// Register a GraphQL query method.
+pub fn query(attr: TokenStream, item: TokenStream) -> TokenStream {
+    graphql::query(attr, item)
 }
 
 #[proc_macro_attribute]
