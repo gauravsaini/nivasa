@@ -1,5 +1,5 @@
 use super::{
-    Module, ModuleLifecycleError, ModuleRegistry, ModuleRegistryError, ModuleRuntime,
+    DynamicModule, Module, ModuleLifecycleError, ModuleRegistry, ModuleRegistryError, ModuleRuntime,
     OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy, OnModuleInit,
 };
 use crate::di::DependencyContainer;
@@ -373,14 +373,34 @@ impl ModuleOrchestrator {
         Ok(&self.activation_order)
     }
 
+    /// Run a dynamic module's explicit pre-bootstrap callback.
+    ///
+    /// This is deliberately separate from module bootstrap so SCXML lifecycle
+    /// ordering remains unchanged.
+    pub fn run_dynamic_pre_bootstrap(module: &DynamicModule) -> Result<(), String> {
+        module.run_pre_bootstrap()
+    }
+
     /// Shut down modules in reverse activation order.
     pub async fn shutdown(&mut self) -> Result<(), ModuleOrchestratorError> {
-        for type_id in self.activation_order.iter().rev().copied().collect::<Vec<_>>() {
+        for type_id in self
+            .activation_order
+            .iter()
+            .rev()
+            .copied()
+            .collect::<Vec<_>>()
+        {
             let runtime = self.runtime_ref(type_id)?;
             runtime.on_application_shutdown().await;
         }
 
-        for type_id in self.activation_order.iter().rev().copied().collect::<Vec<_>>() {
+        for type_id in self
+            .activation_order
+            .iter()
+            .rev()
+            .copied()
+            .collect::<Vec<_>>()
+        {
             let runtime = self.runtime_mut(type_id)?;
             runtime.destroy().await?;
         }
@@ -388,10 +408,7 @@ impl ModuleOrchestrator {
         Ok(())
     }
 
-    async fn seed_imported_exports(
-        &self,
-        type_id: TypeId,
-    ) -> Result<(), ModuleOrchestratorError> {
+    async fn seed_imported_exports(&self, type_id: TypeId) -> Result<(), ModuleOrchestratorError> {
         let target_container = self.runtime_ref(type_id)?.container();
         let import_sources = self.registry.import_sources_by_id(type_id)?;
 
@@ -400,9 +417,12 @@ impl ModuleOrchestrator {
             let exported_surface = self.registry.exported_surface_for(source_type)?;
 
             for exported in exported_surface {
-                if let Some((metadata, value)) = source_container.export_singleton_value(exported).await
+                if let Some((metadata, value)) =
+                    source_container.export_singleton_value(exported).await
                 {
-                    target_container.import_singleton_value(metadata, value).await;
+                    target_container
+                        .import_singleton_value(metadata, value)
+                        .await;
                 }
             }
         }
@@ -434,8 +454,8 @@ impl ModuleOrchestrator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ModuleMetadata;
     use crate::module::lifecycle::NivasaModuleState;
+    use crate::ModuleMetadata;
     use std::sync::{Arc, Mutex};
 
     struct LeafModule {
@@ -615,9 +635,18 @@ mod tests {
                 TypeId::of::<RootModule>(),
             ],
         );
-        assert_eq!(orchestrator.state_for::<LeafModule>(), Some(NivasaModuleState::Active));
-        assert_eq!(orchestrator.state_for::<SharedModule>(), Some(NivasaModuleState::Active));
-        assert_eq!(orchestrator.state_for::<RootModule>(), Some(NivasaModuleState::Active));
+        assert_eq!(
+            orchestrator.state_for::<LeafModule>(),
+            Some(NivasaModuleState::Active)
+        );
+        assert_eq!(
+            orchestrator.state_for::<SharedModule>(),
+            Some(NivasaModuleState::Active)
+        );
+        assert_eq!(
+            orchestrator.state_for::<RootModule>(),
+            Some(NivasaModuleState::Active)
+        );
 
         assert_eq!(
             &*events.lock().unwrap(),
@@ -663,9 +692,18 @@ mod tests {
 
         orchestrator.shutdown().await.unwrap();
 
-        assert_eq!(orchestrator.state_for::<LeafModule>(), Some(NivasaModuleState::Destroyed));
-        assert_eq!(orchestrator.state_for::<SharedModule>(), Some(NivasaModuleState::Destroyed));
-        assert_eq!(orchestrator.state_for::<RootModule>(), Some(NivasaModuleState::Destroyed));
+        assert_eq!(
+            orchestrator.state_for::<LeafModule>(),
+            Some(NivasaModuleState::Destroyed)
+        );
+        assert_eq!(
+            orchestrator.state_for::<SharedModule>(),
+            Some(NivasaModuleState::Destroyed)
+        );
+        assert_eq!(
+            orchestrator.state_for::<RootModule>(),
+            Some(NivasaModuleState::Destroyed)
+        );
         assert_eq!(
             &*events.lock().unwrap(),
             &[

@@ -1,5 +1,7 @@
 use super::ModuleMetadata;
 use std::any::TypeId;
+use std::fmt;
+use std::sync::Arc;
 
 /// Dynamic module metadata plus additional provider registrations.
 ///
@@ -16,10 +18,52 @@ use std::any::TypeId;
 /// assert!(module.metadata.is_global);
 /// assert_eq!(module.providers, vec![TypeId::of::<CacheService>()]);
 /// ```
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub type DynamicModulePreBootstrap = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
+
 pub struct DynamicModule {
     pub metadata: ModuleMetadata,
     pub providers: Vec<TypeId>,
+    pre_bootstrap: Option<DynamicModulePreBootstrap>,
+}
+
+impl fmt::Debug for DynamicModule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DynamicModule")
+            .field("metadata", &self.metadata)
+            .field("providers", &self.providers)
+            .field("has_pre_bootstrap", &self.pre_bootstrap.is_some())
+            .finish()
+    }
+}
+
+impl Clone for DynamicModule {
+    fn clone(&self) -> Self {
+        Self {
+            metadata: self.metadata.clone(),
+            providers: self.providers.clone(),
+            pre_bootstrap: self.pre_bootstrap.clone(),
+        }
+    }
+}
+
+impl PartialEq for DynamicModule {
+    fn eq(&self, other: &Self) -> bool {
+        self.metadata == other.metadata
+            && self.providers == other.providers
+            && self.pre_bootstrap.is_some() == other.pre_bootstrap.is_some()
+    }
+}
+
+impl Eq for DynamicModule {}
+
+impl Default for DynamicModule {
+    fn default() -> Self {
+        Self {
+            metadata: ModuleMetadata::default(),
+            providers: Vec::new(),
+            pre_bootstrap: None,
+        }
+    }
 }
 
 impl DynamicModule {
@@ -36,6 +80,7 @@ impl DynamicModule {
         Self {
             metadata,
             providers: Vec::new(),
+            pre_bootstrap: None,
         }
     }
 
@@ -70,6 +115,28 @@ impl DynamicModule {
     pub fn with_global(mut self, is_global: bool) -> Self {
         self.metadata = self.metadata.with_global(is_global);
         self
+    }
+
+    /// Attach a callback that can run before module bootstrap.
+    ///
+    /// The callback is intentionally explicit and side-effect free from the
+    /// lifecycle engine's point of view. Callers decide when to run it, so SCXML
+    /// module init / activate semantics stay untouched.
+    pub fn with_pre_bootstrap<F>(mut self, pre_bootstrap: F) -> Self
+    where
+        F: Fn() -> Result<(), String> + Send + Sync + 'static,
+    {
+        self.pre_bootstrap = Some(Arc::new(pre_bootstrap));
+        self
+    }
+
+    /// Run the optional pre-bootstrap callback.
+    pub fn run_pre_bootstrap(&self) -> Result<(), String> {
+        if let Some(pre_bootstrap) = &self.pre_bootstrap {
+            pre_bootstrap()
+        } else {
+            Ok(())
+        }
     }
 
     /// Merges the attached provider list into the metadata snapshot.

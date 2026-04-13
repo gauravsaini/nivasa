@@ -768,7 +768,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 6.1.4 — Type-Safe Config (Config Schema)
 - [x] Support config schema definition via `#[derive(ConfigSchema)]`
-- [ ] Auto-validate loaded config against schema at module init
+- [x] Auto-validate loaded config against schema at module init
 - [x] Emit clear startup error listing all missing/invalid config keys
 - [x] Support default values in schema
 
@@ -789,7 +789,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `LoggerService` injectable provider wrapping `tracing`
 - [x] Support structured JSON logging (for production)
 - [x] Support pretty console logging (for development)
-- [ ] Support log context propagation (request ID, user ID, module name)
+- [x] Support log context propagation (request ID, user ID, module name)
 - [x] Implement request logging span (method, path, status, duration)
 - [x] Support configurable log levels per module
 - [x] Validate tracing directives

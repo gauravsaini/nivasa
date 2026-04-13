@@ -31,6 +31,7 @@ use nivasa_routing::{
 };
 use serde_json::{json, Value};
 use std::{
+    any::type_name,
     future::Future,
     io,
     net::SocketAddr,
@@ -45,6 +46,7 @@ use std::{
 use tokio::{net::TcpListener, sync::oneshot, task::JoinSet};
 #[cfg(feature = "tls")]
 use tokio_rustls::TlsAcceptor;
+use uuid::Uuid;
 
 type RouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
 type MiddlewareLayer = Arc<dyn NivasaMiddleware + Send + Sync + 'static>;
@@ -55,6 +57,11 @@ type GlobalFilterLayer =
     Arc<dyn ExceptionFilter<HttpException, NivasaResponse> + Send + Sync + 'static>;
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
+const MODULE_NAME_HEADER: &str = "x-module-name";
+const USER_ID_HEADER: &str = "x-user-id";
+const REQUEST_CONTEXT_REQUEST_ID_KEY: &str = "request_id";
+const REQUEST_CONTEXT_USER_ID_KEY: &str = "user_id";
+const REQUEST_CONTEXT_MODULE_NAME_KEY: &str = "module_name";
 
 #[derive(Clone)]
 pub struct GlobalFilterBinding {
@@ -84,6 +91,7 @@ impl GlobalFilterBinding {
 struct RouteHandlerBinding {
     handler: RouteHandler,
     module_middlewares: Vec<MiddlewareLayer>,
+    module_name: Option<String>,
     handler_filters: Vec<GlobalFilterBinding>,
     controller_filters: Vec<GlobalFilterBinding>,
 }
@@ -93,6 +101,7 @@ impl RouteHandlerBinding {
         Self {
             handler: Arc::new(handler),
             module_middlewares: Vec::new(),
+            module_name: None,
             handler_filters: Vec::new(),
             controller_filters: Vec::new(),
         }
@@ -100,6 +109,11 @@ impl RouteHandlerBinding {
 
     fn with_module_middlewares(mut self, middlewares: Vec<MiddlewareLayer>) -> Self {
         self.module_middlewares = middlewares;
+        self
+    }
+
+    fn with_module_name(mut self, module_name: impl Into<String>) -> Self {
+        self.module_name = Some(module_name.into());
         self
     }
 
@@ -441,10 +455,7 @@ impl NivasaServer {
         Ok(())
     }
 
-    pub(crate) async fn dispatch_for_test(
-        &self,
-        request: NivasaRequest,
-    ) -> Response<Full<Bytes>> {
+    pub(crate) async fn dispatch_for_test(&self, request: NivasaRequest) -> Response<Full<Bytes>> {
         let response = dispatch_nivasa_request(
             request,
             self.routes.clone(),
@@ -542,11 +553,14 @@ impl NivasaServerBuilder {
             .into_iter()
             .map(|middleware| Arc::new(middleware) as MiddlewareLayer)
             .collect::<Vec<_>>();
+        let module_name = short_type_name(type_name::<M>());
 
         self.routes.register_pattern(
             method,
             path,
-            RouteHandlerBinding::new(handler).with_module_middlewares(module_middlewares),
+            RouteHandlerBinding::new(handler)
+                .with_module_middlewares(module_middlewares)
+                .with_module_name(module_name),
         )?;
         Ok(self)
     }
@@ -855,6 +869,7 @@ async fn handle_request(
         .get(ORIGIN)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
+    let request_id = request_id_from_headers(&parts.headers);
 
     if cors.is_some() && is_cors_preflight(&parts.headers, &parts.method) {
         return Ok(build_cors_preflight_response(
@@ -874,7 +889,7 @@ async fn handle_request(
                 ),
                 cors.as_ref(),
                 request_origin.as_deref(),
-                None,
+                Some(request_id.as_str()),
             ));
         }
         Err(BodyCollectionError::Invalid) => {
@@ -882,7 +897,7 @@ async fn handle_request(
                 NivasaResponse::new(StatusCode::BAD_REQUEST, Body::text("invalid request body")),
                 cors.as_ref(),
                 request_origin.as_deref(),
-                None,
+                Some(request_id.as_str()),
             ));
         }
     };
@@ -894,14 +909,13 @@ async fn handle_request(
     };
 
     let request = NivasaRequest::from_http(Request::from_parts(parts, body));
+    let request = seed_request_identity(request, request_id.clone());
+    let request_module_name = module_name_for_request(&request, &routes);
+    let request = attach_module_name(request, request_module_name.as_deref());
     let request = match middleware {
         Some(middleware) => match execute_middleware(middleware, request).await {
             MiddlewareExecution::Forwarded(request) => request,
             MiddlewareExecution::ShortCircuited { request, response } => {
-                let request_id = request
-                    .header(REQUEST_ID_HEADER)
-                    .and_then(|value| value.to_str().ok())
-                    .map(str::to_owned);
                 let mut pipeline = RequestPipeline::new(request);
 
                 if pipeline.parse_request().is_err() || pipeline.fail_middleware().is_err() {
@@ -912,7 +926,7 @@ async fn handle_request(
                         ),
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        None,
+                        Some(request_id.as_str()),
                     ));
                 }
 
@@ -920,16 +934,12 @@ async fn handle_request(
                     response,
                     cors.as_ref(),
                     request_origin.as_deref(),
-                    request_id.as_deref(),
+                    Some(request_id.as_str()),
                 ));
             }
         },
         None => request,
     };
-    let request_id = request
-        .header(REQUEST_ID_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
     let mut pipeline = RequestPipeline::new(request);
 
     if pipeline.parse_request().is_err() {
@@ -940,7 +950,7 @@ async fn handle_request(
             ),
             cors.as_ref(),
             request_origin.as_deref(),
-            request_id.as_deref(),
+            Some(request_id.as_str()),
         ));
     }
 
@@ -952,7 +962,7 @@ async fn handle_request(
             ),
             cors.as_ref(),
             request_origin.as_deref(),
-            request_id.as_deref(),
+            Some(request_id.as_str()),
         ));
     }
 
@@ -963,6 +973,7 @@ async fn handle_request(
             let binding = entry.value.clone();
             let handler = Arc::clone(&binding.handler);
             let request = pipeline.request().clone();
+            let request = attach_module_name(request, binding.module_name.as_deref());
             let module_middlewares = module_middlewares.clone();
             let route_module_middlewares = binding.module_middlewares.clone();
             let route_middlewares =
@@ -974,7 +985,7 @@ async fn handle_request(
                         response,
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        request_id.as_deref(),
+                        Some(request_id.as_str()),
                     ));
                 }
             };
@@ -986,7 +997,7 @@ async fn handle_request(
                         response,
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        request_id.as_deref(),
+                        Some(request_id.as_str()),
                     ));
                 }
             };
@@ -997,7 +1008,7 @@ async fn handle_request(
                         response,
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        request_id.as_deref(),
+                        Some(request_id.as_str()),
                     ));
                 }
             };
@@ -1021,7 +1032,7 @@ async fn handle_request(
                         .into_response(),
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        request_id.as_deref(),
+                        Some(request_id.as_str()),
                     ));
                 }
                 Ok(GuardExecutionOutcome::Error(error)) => {
@@ -1036,7 +1047,7 @@ async fn handle_request(
                         .await,
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        request_id.as_deref(),
+                        Some(request_id.as_str()),
                     ));
                 }
                 Err(_) => {
@@ -1047,7 +1058,7 @@ async fn handle_request(
                         ),
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        request_id.as_deref(),
+                        Some(request_id.as_str()),
                     ));
                 }
             }
@@ -1060,7 +1071,7 @@ async fn handle_request(
                     ),
                     cors.as_ref(),
                     request_origin.as_deref(),
-                    request_id.as_deref(),
+                    Some(request_id.as_str()),
                 ));
             }
 
@@ -1075,7 +1086,7 @@ async fn handle_request(
                             ),
                             cors.as_ref(),
                             request_origin.as_deref(),
-                            request_id.as_deref(),
+                            Some(request_id.as_str()),
                         ));
                     }
 
@@ -1090,7 +1101,7 @@ async fn handle_request(
                         .await,
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        request_id.as_deref(),
+                        Some(request_id.as_str()),
                     ));
                 }
             };
@@ -1104,7 +1115,7 @@ async fn handle_request(
                     ),
                     cors.as_ref(),
                     request_origin.as_deref(),
-                    request_id.as_deref(),
+                    Some(request_id.as_str()),
                 ));
             }
 
@@ -1123,7 +1134,7 @@ async fn handle_request(
                         } else {
                             with_request_id(
                                 map_interceptor_response(response),
-                                request_id.as_deref(),
+                                Some(request_id.as_str()),
                             )
                         }
                     }
@@ -1136,7 +1147,7 @@ async fn handle_request(
                         } else {
                             with_request_id(
                                 map_interceptor_response(response),
-                                request_id.as_deref(),
+                                Some(request_id.as_str()),
                             )
                         }
                     }
@@ -1221,7 +1232,7 @@ async fn handle_request(
         response,
         cors.as_ref(),
         request_origin.as_deref(),
-        request_id.as_deref(),
+        Some(request_id.as_str()),
     ))
 }
 
@@ -1242,14 +1253,15 @@ async fn dispatch_nivasa_request(
         .header(ORIGIN)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
+    let request_id = request_header_value(&request, REQUEST_ID_HEADER)
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let request = seed_request_identity(request, request_id.clone());
+    let request_module_name = module_name_for_request(&request, &routes);
+    let request = attach_module_name(request, request_module_name.as_deref());
     let request = match middleware {
         Some(middleware) => match execute_middleware(middleware, request).await {
             MiddlewareExecution::Forwarded(request) => request,
             MiddlewareExecution::ShortCircuited { request, response } => {
-                let request_id = request
-                    .header(REQUEST_ID_HEADER)
-                    .and_then(|value| value.to_str().ok())
-                    .map(str::to_owned);
                 let mut pipeline = RequestPipeline::new(request);
 
                 if pipeline.parse_request().is_err() || pipeline.fail_middleware().is_err() {
@@ -1260,7 +1272,7 @@ async fn dispatch_nivasa_request(
                         ),
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        None,
+                        Some(request_id.as_str()),
                     );
                 }
 
@@ -1268,16 +1280,12 @@ async fn dispatch_nivasa_request(
                     response,
                     cors.as_ref(),
                     request_origin.as_deref(),
-                    request_id.as_deref(),
+                    Some(request_id.as_str()),
                 );
             }
         },
         None => request,
     };
-    let request_id = request
-        .header(REQUEST_ID_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
     let mut pipeline = RequestPipeline::new(request);
 
     if pipeline.parse_request().is_err() {
@@ -1288,7 +1296,7 @@ async fn dispatch_nivasa_request(
             ),
             cors.as_ref(),
             request_origin.as_deref(),
-            request_id.as_deref(),
+            Some(request_id.as_str()),
         );
     }
 
@@ -1300,7 +1308,7 @@ async fn dispatch_nivasa_request(
             ),
             cors.as_ref(),
             request_origin.as_deref(),
-            request_id.as_deref(),
+            Some(request_id.as_str()),
         );
     }
 
@@ -1311,6 +1319,7 @@ async fn dispatch_nivasa_request(
             let binding = entry.value.clone();
             let handler = Arc::clone(&binding.handler);
             let request = pipeline.request().clone();
+            let request = attach_module_name(request, binding.module_name.as_deref());
             let route_module_middlewares = binding.module_middlewares.clone();
             let route_middlewares =
                 matching_route_middlewares(request.path(), route_middlewares.as_slice());
@@ -1321,7 +1330,7 @@ async fn dispatch_nivasa_request(
                         response,
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        request_id.as_deref(),
+                        Some(request_id.as_str()),
                     );
                 }
             };
@@ -1333,7 +1342,7 @@ async fn dispatch_nivasa_request(
                         response,
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        request_id.as_deref(),
+                        Some(request_id.as_str()),
                     );
                 }
             };
@@ -1344,7 +1353,7 @@ async fn dispatch_nivasa_request(
                         response,
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        request_id.as_deref(),
+                        Some(request_id.as_str()),
                     );
                 }
             };
@@ -1368,7 +1377,7 @@ async fn dispatch_nivasa_request(
                         .into_response(),
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        request_id.as_deref(),
+                        Some(request_id.as_str()),
                     );
                 }
                 Ok(GuardExecutionOutcome::Error(error)) => {
@@ -1383,7 +1392,7 @@ async fn dispatch_nivasa_request(
                         .await,
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        request_id.as_deref(),
+                        Some(request_id.as_str()),
                     );
                 }
                 Err(_) => {
@@ -1394,7 +1403,7 @@ async fn dispatch_nivasa_request(
                         ),
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        request_id.as_deref(),
+                        Some(request_id.as_str()),
                     );
                 }
             }
@@ -1407,7 +1416,7 @@ async fn dispatch_nivasa_request(
                     ),
                     cors.as_ref(),
                     request_origin.as_deref(),
-                    request_id.as_deref(),
+                    Some(request_id.as_str()),
                 );
             }
 
@@ -1422,7 +1431,7 @@ async fn dispatch_nivasa_request(
                             ),
                             cors.as_ref(),
                             request_origin.as_deref(),
-                            request_id.as_deref(),
+                            Some(request_id.as_str()),
                         );
                     }
 
@@ -1437,7 +1446,7 @@ async fn dispatch_nivasa_request(
                         .await,
                         cors.as_ref(),
                         request_origin.as_deref(),
-                        request_id.as_deref(),
+                        Some(request_id.as_str()),
                     );
                 }
             };
@@ -1451,7 +1460,7 @@ async fn dispatch_nivasa_request(
                     ),
                     cors.as_ref(),
                     request_origin.as_deref(),
-                    request_id.as_deref(),
+                    Some(request_id.as_str()),
                 );
             }
 
@@ -1562,7 +1571,7 @@ async fn dispatch_nivasa_request(
         response,
         cors.as_ref(),
         request_origin.as_deref(),
-        request_id.as_deref(),
+        Some(request_id.as_str()),
     )
 }
 
@@ -1666,9 +1675,7 @@ async fn handle_http_exception(
         .or_else(|| select_exception_filter(global_filters))
     {
         Some(filter) => {
-            let mut request_context = RequestContext::new();
-            request_context.insert_request_data(request.clone());
-            let host = ArgumentsHost::new().with_request_context(request_context);
+            let host = ArgumentsHost::new().with_request_context(request_context_from_request(request));
             let fallback_error = error.clone();
 
             let filter_future =
@@ -1984,6 +1991,87 @@ fn with_request_id(response: NivasaResponse, request_id: Option<&str>) -> Nivasa
         Some(request_id) => response.with_header(REQUEST_ID_HEADER, request_id),
         None => response,
     }
+}
+
+fn attach_module_name(mut request: NivasaRequest, module_name: Option<&str>) -> NivasaRequest {
+    if let Some(module_name) = module_name {
+        request.set_header(MODULE_NAME_HEADER, module_name);
+    }
+
+    request
+}
+
+fn request_header_value(request: &NivasaRequest, name: &str) -> Option<String> {
+    request
+        .header(name)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn request_id_from_headers(headers: &http::HeaderMap) -> String {
+    headers
+        .get(REQUEST_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| Uuid::new_v4().to_string())
+}
+
+fn seed_request_identity(mut request: NivasaRequest, request_id: impl Into<String>) -> NivasaRequest {
+    let request_id = request_id.into();
+    request.set_header(REQUEST_ID_HEADER, &request_id);
+    request
+}
+
+fn request_context_from_request(request: &NivasaRequest) -> RequestContext {
+    let mut request_context = RequestContext::new();
+    request_context.insert_request_data(request.clone());
+
+    if let Some(request_id) = request_header_value(request, REQUEST_ID_HEADER) {
+        request_context.set_custom_data(REQUEST_CONTEXT_REQUEST_ID_KEY, json!(request_id));
+    }
+    if let Some(user_id) = request_header_value(request, USER_ID_HEADER) {
+        request_context.set_custom_data(REQUEST_CONTEXT_USER_ID_KEY, json!(user_id));
+    }
+    if let Some(module_name) = request_header_value(request, MODULE_NAME_HEADER) {
+        request_context.set_custom_data(REQUEST_CONTEXT_MODULE_NAME_KEY, json!(module_name));
+    }
+
+    request_context
+}
+
+fn module_name_for_request(
+    request: &NivasaRequest,
+    routes: &RouteDispatchRegistry<RouteHandlerBinding>,
+) -> Option<String> {
+    let version = request
+        .headers()
+        .get("X-API-Version")
+        .and_then(|value| value.to_str().ok())
+        .and_then(parse_api_version_header)
+        .or_else(|| {
+            request
+                .headers()
+                .get(http::header::ACCEPT)
+                .and_then(|value| value.to_str().ok())
+                .and_then(parse_api_version_accept)
+        });
+
+    routes
+        .select_versioned(request.path(), version.as_deref())
+        .resolve_entry(request.method().as_str())
+        .and_then(|entry| entry.value.module_name.clone())
+}
+
+fn short_type_name(type_name: &str) -> String {
+    type_name
+        .rsplit("::")
+        .next()
+        .unwrap_or(type_name)
+        .to_string()
 }
 
 fn finalize_response(
