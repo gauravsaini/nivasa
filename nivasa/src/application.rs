@@ -4,20 +4,20 @@
 //! gives the Phase 2 bootstrap work a stable place for server and versioning
 //! configuration without pulling transport details into the main crate yet.
 
+use crate::openapi::{
+    swagger_ui_index_html, OpenApiComponents, OpenApiDocument, OpenApiMediaType, OpenApiOperation,
+    OpenApiParameter, OpenApiRequestBody, OpenApiResponse, OpenApiSecurityRequirement,
+};
 use nivasa_common::HttpException;
 use nivasa_core::{
     module::ModuleControllerRegistration, DependencyContainer, DiError, Module, ModuleMetadata,
 };
 use nivasa_filters::{ExceptionFilter, ExceptionFilterMetadata};
-use nivasa_http::{NivasaMiddleware, NivasaResponse, NivasaServer, NivasaServerBuilder};
 use nivasa_guards::Guard;
+use nivasa_http::{NivasaMiddleware, NivasaResponse, NivasaServer, NivasaServerBuilder};
 use nivasa_interceptors::Interceptor;
-use nivasa_routing::{RouteDispatchError, RouteMethod};
 use nivasa_pipes::Pipe;
-use crate::openapi::{
-    OpenApiComponents, OpenApiDocument, OpenApiMediaType, OpenApiOperation, OpenApiParameter,
-    OpenApiRequestBody, OpenApiResponse, OpenApiSecurityRequirement, swagger_ui_index_html,
-};
+use nivasa_routing::{RouteDispatchError, RouteMethod};
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::future::Future;
@@ -186,13 +186,12 @@ pub struct AppBootstrapConfig {
 
 /// Minimal application shell for the umbrella crate.
 ///
-/// This stays intentionally data-only until the wider application bootstrap
-/// surface lands. It preserves the root module and bootstrap configuration
-/// without claiming build, listen, or shutdown behavior yet.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// The shell can carry an explicit preflight hook so startup validation can
+/// fail fast before module configure or any SCXML-backed lifecycle work.
 pub struct NestApplication<T> {
     app_module: T,
     bootstrap: AppBootstrapConfig,
+    preflight: Option<AppPreflightHook<T>>,
 }
 
 /// A built application shell that has resolved bootstrap-owned metadata.
@@ -216,6 +215,7 @@ pub struct AppRoute {
 /// Errors raised while assembling the minimal application shell.
 #[derive(Debug)]
 pub enum AppBuildError {
+    PreflightValidation { message: String },
     DependencyInjection(DiError),
     DuplicateRoute { method: String, path: String },
 }
@@ -223,6 +223,9 @@ pub enum AppBuildError {
 impl std::fmt::Display for AppBuildError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::PreflightValidation { message } => {
+                write!(f, "preflight validation failed: {message}")
+            }
             Self::DependencyInjection(error) => write!(f, "{error}"),
             Self::DuplicateRoute { method, path } => {
                 write!(f, "duplicate route `{method} {path}` while building app")
@@ -246,6 +249,7 @@ impl<T> NestApplication<T> {
         Self {
             app_module,
             bootstrap: AppBootstrapConfig::default(),
+            preflight: None,
         }
     }
 
@@ -258,12 +262,29 @@ impl<T> NestApplication<T> {
     pub fn bootstrap(&self) -> &AppBootstrapConfig {
         &self.bootstrap
     }
+
+    /// Attach an explicit startup preflight gate.
+    ///
+    /// The hook runs before module configure and before any SCXML-backed
+    /// lifecycle work. It is meant for fail-fast validation such as config
+    /// required-key checks.
+    pub fn with_preflight<F>(mut self, preflight: F) -> Self
+    where
+        F: Fn(&T, &AppBootstrapConfig) -> Result<(), AppBuildError> + Send + Sync + 'static,
+    {
+        self.preflight = Some(Box::new(preflight));
+        self
+    }
 }
 
 impl<T: Module> NestApplication<T> {
     /// Build an application shell by resolving the root module's metadata,
     /// dependency container registrations, and controller route metadata.
     pub fn build(self) -> Result<App<T>, AppBuildError> {
+        if let Some(preflight) = self.preflight.as_ref() {
+            preflight(&self.app_module, &self.bootstrap)?;
+        }
+
         let module_metadata = self.app_module.metadata();
         let controller_registrations = self.app_module.controller_registrations();
         let container = DependencyContainer::new();
@@ -379,8 +400,10 @@ impl AppBootstrapConfig {
         &self,
         document: &OpenApiDocument,
     ) -> Result<NivasaServerBuilder, RouteDispatchError> {
-        self.server_builder()
-            .openapi_spec_json(self.openapi_spec_path.clone(), openapi_document_to_value(document))
+        self.server_builder().openapi_spec_json(
+            self.openapi_spec_path.clone(),
+            openapi_document_to_value(document),
+        )
     }
 
     /// Register the Swagger UI shell at the configured mount path.
@@ -541,18 +564,27 @@ impl From<ServerOptions> for AppBootstrapConfig {
 
 fn openapi_document_to_value(document: &OpenApiDocument) -> Value {
     Value::Object(Map::from_iter([
-        ("openapi".to_string(), Value::String(document.openapi.clone())),
-        ("info".to_string(), Value::Object(Map::from_iter([
-            (
-                "title".to_string(),
-                Value::String(document.info.title.clone()),
-            ),
-            (
-                "version".to_string(),
-                Value::String(document.info.version.clone()),
-            ),
-        ]))),
-        ("paths".to_string(), Value::Object(openapi_paths_to_value(&document.paths))),
+        (
+            "openapi".to_string(),
+            Value::String(document.openapi.clone()),
+        ),
+        (
+            "info".to_string(),
+            Value::Object(Map::from_iter([
+                (
+                    "title".to_string(),
+                    Value::String(document.info.title.clone()),
+                ),
+                (
+                    "version".to_string(),
+                    Value::String(document.info.version.clone()),
+                ),
+            ])),
+        ),
+        (
+            "paths".to_string(),
+            Value::Object(openapi_paths_to_value(&document.paths)),
+        ),
         (
             "components".to_string(),
             Value::Object(openapi_components_to_value(&document.components)),
@@ -561,7 +593,10 @@ fn openapi_document_to_value(document: &OpenApiDocument) -> Value {
 }
 
 fn openapi_paths_to_value(
-    paths: &std::collections::BTreeMap<String, std::collections::BTreeMap<String, OpenApiOperation>>,
+    paths: &std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, OpenApiOperation>,
+    >,
 ) -> Map<String, Value> {
     paths
         .iter()
@@ -585,14 +620,7 @@ fn openapi_operation_to_value(operation: &OpenApiOperation) -> Value {
     Value::Object(Map::from_iter([
         (
             "tags".to_string(),
-            Value::Array(
-                operation
-                    .tags
-                    .iter()
-                    .cloned()
-                    .map(Value::String)
-                    .collect(),
-            ),
+            Value::Array(operation.tags.iter().cloned().map(Value::String).collect()),
         ),
         (
             "summary".to_string(),
@@ -672,7 +700,10 @@ fn openapi_request_body_to_value(request_body: &OpenApiRequestBody) -> Value {
                     .content
                     .iter()
                     .map(|(content_type, media_type)| {
-                        (content_type.clone(), openapi_media_type_to_value(media_type))
+                        (
+                            content_type.clone(),
+                            openapi_media_type_to_value(media_type),
+                        )
                     })
                     .collect(),
             ),
@@ -693,7 +724,10 @@ fn openapi_response_to_value(response: &OpenApiResponse) -> Value {
                     .content
                     .iter()
                     .map(|(content_type, media_type)| {
-                        (content_type.clone(), openapi_media_type_to_value(media_type))
+                        (
+                            content_type.clone(),
+                            openapi_media_type_to_value(media_type),
+                        )
                     })
                     .collect(),
             ),
@@ -759,10 +793,7 @@ fn openapi_components_to_value(components: &OpenApiComponents) -> Map<String, Va
                                     "type".to_string(),
                                     Value::String(scheme.scheme_type.clone()),
                                 ),
-                                (
-                                    "scheme".to_string(),
-                                    Value::String(scheme.scheme.clone()),
-                                ),
+                                ("scheme".to_string(), Value::String(scheme.scheme.clone())),
                                 (
                                     "bearerFormat".to_string(),
                                     scheme
@@ -795,7 +826,9 @@ fn normalize_swagger_ui_path(path: String) -> String {
 #[cfg(test)]
 mod openapi_tests {
     use super::*;
-    use crate::openapi::{build_openapi_document, OpenApiControllerMetadata, OpenApiControllerMetadataProvider};
+    use crate::openapi::{
+        build_openapi_document, OpenApiControllerMetadata, OpenApiControllerMetadataProvider,
+    };
 
     struct DocsController;
 
@@ -1039,6 +1072,9 @@ fn noop_waker() -> Waker {
     // the immediate-future DI work exercised by the current app shell.
     unsafe { Waker::from_raw(noop_raw_waker()) }
 }
+
+type AppPreflightHook<T> =
+    Box<dyn Fn(&T, &AppBootstrapConfig) -> Result<(), AppBuildError> + Send + Sync + 'static>;
 
 fn noop_raw_waker() -> RawWaker {
     RawWaker::new(std::ptr::null(), &NOOP_WAKER_VTABLE)

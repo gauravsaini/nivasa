@@ -14,6 +14,10 @@ use nivasa::prelude::{
 use std::any::TypeId;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 #[test]
 fn crate_root_reexports_app_config_builders() {
@@ -147,9 +151,72 @@ fn crate_root_reexports_nest_application_build_as_runtime_shell() {
 }
 
 #[test]
+fn nest_application_preflight_fails_before_module_configure() {
+    let configure_calls = Arc::new(AtomicUsize::new(0));
+    let module = PreflightModule {
+        configure_calls: Arc::clone(&configure_calls),
+    };
+
+    let result = nivasa::NestApplication::create(module)
+        .with_preflight(|module, _bootstrap| {
+            assert_eq!(module.metadata(), ModuleMetadata::default());
+            Err(AppBuildError::PreflightValidation {
+                message: "missing HOST and PORT".to_string(),
+            })
+        })
+        .build();
+
+    match result {
+        Err(error) => match error {
+            AppBuildError::PreflightValidation { message } => {
+                assert_eq!(message, "missing HOST and PORT");
+            }
+            other => panic!("unexpected error: {other}"),
+        },
+        Ok(_) => panic!("preflight should stop build early"),
+    }
+
+    assert_eq!(configure_calls.load(Ordering::SeqCst), 0);
+}
+
+#[cfg(feature = "config")]
+#[test]
+fn nest_application_preflight_can_validate_required_config_keys() {
+    use std::collections::BTreeMap;
+
+    use nivasa::config::ConfigModule;
+
+    let loaded = BTreeMap::from([("HOST".to_string(), "127.0.0.1".to_string())]);
+    let module = PreflightModule {
+        configure_calls: Arc::new(AtomicUsize::new(0)),
+    };
+
+    let result = nivasa::NestApplication::create(module)
+        .with_preflight(move |_module, _bootstrap| {
+            ConfigModule::validate_required_keys(&loaded, ["HOST", "PORT"]).map_err(|error| {
+                AppBuildError::PreflightValidation {
+                    message: error.to_string(),
+                }
+            })
+        })
+        .build();
+
+    match result {
+        Err(error) => match error {
+            AppBuildError::PreflightValidation { message } => {
+                assert!(message.contains("missing required config key"));
+                assert!(message.contains("PORT"));
+            }
+            other => panic!("unexpected error: {other}"),
+        },
+        Ok(_) => panic!("missing config keys should fail fast"),
+    }
+}
+
+#[test]
 fn crate_root_reexports_global_pipe_bootstrap_surface() {
-    let builder = nivasa::AppBootstrapConfig::default()
-        .use_global_pipe(pipes_crate::TrimPipe::new());
+    let builder =
+        nivasa::AppBootstrapConfig::default().use_global_pipe(pipes_crate::TrimPipe::new());
 
     fn _assert_builder_is_in_scope(_: Option<NivasaServerBuilder>) {}
     let _ = builder;
@@ -212,7 +279,9 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
 #[test]
 #[allow(unused_imports)]
 fn crate_root_reexports_pipe_surface_as_placeholder_crate() {
-    use nivasa::{pipes as pipes_crate, ArgumentMetadata as RootArgumentMetadata, Pipe as RootPipe};
+    use nivasa::{
+        pipes as pipes_crate, ArgumentMetadata as RootArgumentMetadata, Pipe as RootPipe,
+    };
 
     fn _assert_pipes_namespace_is_in_scope(_: Option<pipes_crate::ArgumentMetadata>) {}
     fn _assert_pipes_namespace_pipe_is_in_scope<T: pipes_crate::Pipe>() {}
@@ -330,6 +399,37 @@ impl Module for DemoModule {
             vec![ControllerRouteRegistration::new("GET", "health", "health")],
             Vec::new(),
         )]
+    }
+}
+
+struct PreflightModule {
+    configure_calls: Arc<AtomicUsize>,
+}
+
+impl Module for PreflightModule {
+    fn metadata(&self) -> ModuleMetadata {
+        ModuleMetadata::default()
+    }
+
+    fn configure<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        _container: &'life1 DependencyContainer,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DiError>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        let configure_calls = Arc::clone(&self.configure_calls);
+
+        Box::pin(async move {
+            configure_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+    }
+
+    fn controller_registrations(&self) -> Vec<ModuleControllerRegistration> {
+        Vec::new()
     }
 }
 
@@ -505,7 +605,9 @@ fn bootstrap_config_can_enable_versioning_without_runtime_wiring() {
 
     assert_eq!(bootstrap.versioning(), Some(&versioning));
     assert_eq!(
-        bootstrap.versioning().and_then(|options| options.default_version.as_deref()),
+        bootstrap
+            .versioning()
+            .and_then(|options| options.default_version.as_deref()),
         Some("v2")
     );
     assert_eq!(bootstrap.server.versioning, Some(versioning));
@@ -516,6 +618,8 @@ fn bootstrap_config_can_enable_versioning_without_runtime_wiring() {
 #[allow(unused_imports)]
 fn optional_crate_features_reexport_placeholder_crates_when_enabled() {
     use nivasa::config as config_crate;
+    #[cfg(feature = "validation")]
     use nivasa::validation as validation_crate;
+    #[cfg(feature = "websocket")]
     use nivasa::websocket as websocket_crate;
 }
