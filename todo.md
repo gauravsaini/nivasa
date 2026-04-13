@@ -824,7 +824,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 #### 6.3.4 — Testing Tests
 - [x] Test creating a testing module with mock providers
 - [ ] Test HTTP test client sends and receives correctly
-- [x] Test provider override replaces real provider with mock
+- [ ] Test provider override replaces real provider with mock
 - [ ] Test e2e test flow: create module → HTTP client → assert response
 
 ### 6.4 — CLI Tool (`nivasa-cli`)
