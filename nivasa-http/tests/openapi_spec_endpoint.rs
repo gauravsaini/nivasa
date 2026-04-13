@@ -39,10 +39,7 @@ fn spawn_server(
     tokio::spawn(async move { server.listen("127.0.0.1", port).await })
 }
 
-async fn fetch_json(
-    path: &str,
-    expected: serde_json::Value,
-) -> Result<(), Box<dyn Error>> {
+async fn fetch_json(path: &str, expected: serde_json::Value) -> Result<(), Box<dyn Error>> {
     let port = free_port();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 

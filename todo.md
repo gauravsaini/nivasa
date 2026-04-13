@@ -779,18 +779,20 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test `get::<bool>` type coercion
 - [x] Test `get_or_throw` with missing key → startup error
 - [x] Test global config is accessible from any module
+- [x] Test required-key validation helper semantics
 - [ ] Test config schema validation at startup
 
 ### 6.2 — Structured Logging (`tracing` integration)
 
 - [x] Add `tracing` + `tracing-subscriber` as workspace dependencies
-- [ ] Implement `LoggerModule` with configurable log levels
-- [ ] Implement `LoggerService` injectable provider wrapping `tracing`
-- [ ] Support structured JSON logging (for production)
-- [ ] Support pretty console logging (for development)
+- [x] Implement `LoggerModule` with configurable log levels
+- [x] Implement `LoggerService` injectable provider wrapping `tracing`
+- [x] Support structured JSON logging (for production)
+- [x] Support pretty console logging (for development)
 - [ ] Support log context propagation (request ID, user ID, module name)
 - [x] Implement request logging span (method, path, status, duration)
-- [ ] Support configurable log levels per module
+- [x] Support configurable log levels per module
+- [x] Validate tracing directives
 - [x] Test log output contains expected fields
 - [x] Test log level filtering
 
@@ -804,15 +806,15 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `testing_module.get::<T>()` to resolve providers in tests
 
 #### 6.3.2 — HTTP Test Client
-- [ ] Implement `TestClient` struct wrapping in-memory HTTP dispatch (no TCP)
-- [ ] Implement `.get("/path")`, `.post("/path")`, `.put("/path")`, `.delete("/path")`
-- [ ] Implement `.header("key", "value")` — set request headers
-- [ ] Implement `.body(json)` — set request body
-- [ ] Implement `.send() -> TestResponse`
-- [ ] Implement `TestResponse::status() -> u16`
-- [ ] Implement `TestResponse::json::<T>() -> T`
-- [ ] Implement `TestResponse::text() -> String`
-- [ ] Implement `TestResponse::header("key") -> Option<String>`
+- [x] Implement `TestClient` struct wrapping in-memory HTTP dispatch (no TCP)
+- [x] Implement `.get("/path")`, `.post("/path")`, `.put("/path")`, `.delete("/path")`
+- [x] Implement `.header("key", "value")` — set request headers
+- [x] Implement `.body(json)` — set request body
+- [x] Implement `.send() -> TestResponse`
+- [x] Implement `TestResponse::status() -> u16`
+- [x] Implement `TestResponse::json::<T>() -> T`
+- [x] Implement `TestResponse::text() -> String`
+- [x] Implement `TestResponse::header("key") -> Option<String>`
 
 #### 6.3.3 — Mock Providers
 - [ ] Implement `MockProvider<T>` utility
@@ -823,7 +825,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 6.3.4 — Testing Tests
 - [x] Test creating a testing module with mock providers
-- [ ] Test HTTP test client sends and receives correctly
+- [x] Test HTTP test client sends and receives correctly
 - [ ] Test provider override replaces real provider with mock
 - [ ] Test e2e test flow: create module → HTTP client → assert response
 

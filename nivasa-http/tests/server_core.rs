@@ -2,20 +2,20 @@ use bytes::Bytes;
 use http::{
     header::{
         ACCESS_CONTROL_ALLOW_CREDENTIALS, ACCESS_CONTROL_ALLOW_HEADERS,
-        ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN,
-        ACCESS_CONTROL_REQUEST_HEADERS, ACCESS_CONTROL_REQUEST_METHOD, ORIGIN,
+        ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_REQUEST_HEADERS,
+        ACCESS_CONTROL_REQUEST_METHOD, ORIGIN,
     },
     Method, Request,
 };
 use http_body_util::{BodyExt, Empty, Full};
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use hyper_util::rt::TokioExecutor;
+use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 use nivasa_http::{
     run_controller_action, run_controller_action_with_body, Body, ControllerResponse, CorsOptions,
     Json, NivasaRequest, NivasaResponse, NivasaServer,
 };
 use nivasa_macros::{controller, impl_controller};
-use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 use nivasa_pipes::TrimPipe;
 use nivasa_routing::RouteMethod;
 use serde::Deserialize;
@@ -164,8 +164,7 @@ async fn server_dispatches_through_request_pipeline() -> Result<(), Box<dyn Erro
 }
 
 #[tokio::test]
-async fn server_applies_global_guards_to_multiple_routes(
-) -> Result<(), Box<dyn Error>> {
+async fn server_applies_global_guards_to_multiple_routes() -> Result<(), Box<dyn Error>> {
     let port = free_port();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let guard_calls = Arc::new(AtomicUsize::new(0));
@@ -226,8 +225,7 @@ async fn server_applies_global_guards_to_multiple_routes(
 }
 
 #[tokio::test]
-async fn server_applies_global_pipes_before_handler_execution(
-) -> Result<(), Box<dyn Error>> {
+async fn server_applies_global_pipes_before_handler_execution() -> Result<(), Box<dyn Error>> {
     let port = free_port();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
@@ -444,8 +442,8 @@ async fn server_returns_bad_request_for_controller_body_runtime_extraction_failu
 }
 
 #[tokio::test]
-async fn server_returns_internal_server_error_for_panicking_handlers(
-) -> Result<(), Box<dyn Error>> {
+async fn server_returns_internal_server_error_for_panicking_handlers() -> Result<(), Box<dyn Error>>
+{
     let port = free_port();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
@@ -871,8 +869,8 @@ async fn server_does_not_add_cors_headers_when_disabled() -> Result<(), Box<dyn 
 }
 
 #[tokio::test]
-async fn server_applies_configured_cors_options_to_preflight_and_responses()
--> Result<(), Box<dyn Error>> {
+async fn server_applies_configured_cors_options_to_preflight_and_responses(
+) -> Result<(), Box<dyn Error>> {
     let port = free_port();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let handler_called = Arc::new(AtomicBool::new(false));

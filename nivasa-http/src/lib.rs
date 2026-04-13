@@ -10,6 +10,7 @@
 //! - [`ControllerResponse`] for the first `#[res]` runtime slice
 //! - [`CorsOptions`] and [`GlobalFilterBinding`] for server wiring
 //! - [`HealthCheckService`] and [`TerminusModule`] for health checks
+//! - [`LoggerModule`] and [`LoggerService`] for structured logging setup
 //!
 //! ```rust
 //! use http::{Method, StatusCode};
@@ -17,7 +18,7 @@
 //!
 //! let request = NivasaRequest::new(Method::GET, "/users?limit=10", Body::empty());
 //! assert_eq!(request.path(), "/users");
-//! assert_eq!(request.query("limit"), Some("10"));
+//! assert_eq!(request.query("limit"), Some("10".to_string()));
 //!
 //! let response = NivasaResponse::new(StatusCode::OK, Body::text("ready"));
 //! assert_eq!(response.status(), StatusCode::OK);
@@ -29,16 +30,21 @@
 //! helpers.
 
 mod health;
+mod logging;
 mod pipeline;
 mod server;
+pub mod testing;
 pub mod upload;
 
-pub use http::header::HeaderMap;
 pub use health::{
     DatabaseHealthIndicator, DiskHealthIndicator, HealthCheckResult, HealthCheckService,
     HealthIndicator, HealthIndicatorResult, HealthStatus, HttpHealthIndicator,
-    MemoryHealthIndicator,
-    TerminusModule,
+    MemoryHealthIndicator, TerminusModule,
+};
+pub use http::header::HeaderMap;
+pub use logging::{
+    LogContext, LoggerFormat, LoggerInitError, LoggerModule, LoggerOptions, LoggerOptionsProvider,
+    LoggerService,
 };
 pub use server::{CorsOptions, GlobalFilterBinding};
 
@@ -77,6 +83,7 @@ use std::{
 };
 use tokio::sync::Mutex;
 use tower::{Layer, Service};
+use url::form_urlencoded;
 use uuid::Uuid;
 
 /// Minimal response/request body abstraction for the HTTP wrapper layer.
@@ -360,6 +367,25 @@ where
     deserialize_path_value(raw)
 }
 
+fn query_pairs(uri: &Uri) -> impl Iterator<Item = (String, String)> + '_ {
+    uri.query()
+        .into_iter()
+        .flat_map(|query| form_urlencoded::parse(query.as_bytes()))
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+}
+
+fn query_values(uri: &Uri) -> serde_json::Map<String, serde_json::Value> {
+    let mut values = serde_json::Map::new();
+
+    for (key, raw_value) in query_pairs(uri) {
+        let value = serde_json::from_str::<serde_json::Value>(&raw_value)
+            .unwrap_or_else(|_| serde_json::Value::String(raw_value));
+        values.insert(key, value);
+    }
+
+    values
+}
+
 /// Request wrapper used by the HTTP layer.
 ///
 /// ```rust
@@ -368,7 +394,7 @@ where
 ///
 /// let request = NivasaRequest::new(Method::GET, "/users?limit=10", Body::empty());
 /// assert_eq!(request.path(), "/users");
-/// assert_eq!(request.query("limit"), Some("10"));
+/// assert_eq!(request.query("limit"), Some("10".to_string()));
 /// ```
 #[derive(Debug, Clone)]
 pub struct NivasaRequest {
@@ -458,18 +484,11 @@ impl NivasaRequest {
     }
 
     /// Look up a single query parameter by name.
-    pub fn query(&self, name: impl AsRef<str>) -> Option<&str> {
+    pub fn query(&self, name: impl AsRef<str>) -> Option<String> {
         let name = name.as_ref();
-        self.inner.uri().query().and_then(|query| {
-            query.split('&').find_map(|pair| {
-                let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-                if key == name {
-                    Some(value)
-                } else {
-                    None
-                }
-            })
-        })
+        query_pairs(self.inner.uri())
+            .filter_map(|(key, value)| (key == name).then_some(value))
+            .last()
     }
 
     /// Look up and coerce a single query parameter by name.
@@ -482,7 +501,7 @@ impl NivasaRequest {
             return Err(RequestExtractError::MissingQueryParameter { name });
         };
 
-        deserialize_scalar_value(raw)
+        deserialize_scalar_value(&raw)
             .map_err(|error| RequestExtractError::InvalidQueryParameter { name, error })
     }
 
@@ -644,19 +663,23 @@ where
     T: DeserializeOwned,
 {
     fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
-        let mut values = serde_json::Map::new();
-        if let Some(query) = request.uri().query() {
-            for pair in query.split('&').filter(|segment| !segment.is_empty()) {
-                let (key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
-                let value = serde_json::from_str::<serde_json::Value>(raw_value)
-                    .unwrap_or_else(|_| serde_json::Value::String(raw_value.to_string()));
-                values.insert(key.to_string(), value);
-            }
-        }
+        let value = serde_json::Value::Object(query_values(request.uri()));
+        let payload = serde_json::to_vec(&value)
+            .map_err(|err| RequestExtractError::InvalidQuery(err.to_string()))?;
+        let mut deserializer = serde_json::Deserializer::from_slice(&payload);
 
-        serde_json::from_value(serde_json::Value::Object(values))
+        serde_path_to_error::deserialize(&mut deserializer)
             .map(Query)
-            .map_err(|err| RequestExtractError::InvalidQuery(err.to_string()))
+            .map_err(|err| {
+                let path = err.path().to_string();
+                let error = err.into_inner();
+                let message = if path.is_empty() {
+                    error.to_string()
+                } else {
+                    format!("field `{path}`: {error}")
+                };
+                RequestExtractError::InvalidQuery(message)
+            })
     }
 }
 
@@ -1455,7 +1478,11 @@ fn accepts_compression(request: &NivasaRequest) -> Option<CompressionFormat> {
         .and_then(|value| {
             value.split(',').find_map(|encoding| {
                 let encoding = encoding.trim();
-                let encoding = encoding.split(';').next().map(str::trim).unwrap_or(encoding);
+                let encoding = encoding
+                    .split(';')
+                    .next()
+                    .map(str::trim)
+                    .unwrap_or(encoding);
 
                 match encoding {
                     "br" => {
@@ -1493,7 +1520,10 @@ fn accepts_compression(request: &NivasaRequest) -> Option<CompressionFormat> {
                         {
                             Some(CompressionFormat::Brotli)
                         }
-                        #[cfg(all(not(feature = "compression-brotli"), feature = "compression-gzip"))]
+                        #[cfg(all(
+                            not(feature = "compression-brotli"),
+                            feature = "compression-gzip"
+                        ))]
                         {
                             Some(CompressionFormat::Gzip)
                         }
@@ -1584,9 +1614,7 @@ fn compress_response(response: NivasaResponse, format: CompressionFormat) -> Niv
             encoder
                 .write_all(&body)
                 .expect("deflate compression must succeed");
-            encoder
-                .finish()
-                .expect("deflate compression must finish")
+            encoder.finish().expect("deflate compression must finish")
         }
     };
 
@@ -2160,6 +2188,7 @@ where
 
 pub use pipeline::{GuardExecutionOutcome, RequestPipeline};
 pub use server::{NivasaServer, NivasaServerBuilder};
+pub use testing::{TestClient, TestResponse};
 pub use upload::UploadedFile;
 
 #[cfg(debug_assertions)]

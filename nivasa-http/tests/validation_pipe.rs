@@ -4,7 +4,9 @@ use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use hyper_util::rt::TokioExecutor;
 use nivasa_common::HttpException;
-use nivasa_filters::{ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, ExceptionFilterMetadata};
+use nivasa_filters::{
+    ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, ExceptionFilterMetadata,
+};
 use nivasa_http::{NivasaResponse, NivasaServer};
 use nivasa_macros::Dto;
 use nivasa_pipes::ValidationPipe;
@@ -80,15 +82,17 @@ async fn wait_for_server(port: u16) {
 }
 
 #[tokio::test]
-async fn validation_pipe_rejects_invalid_dto_with_field_level_details(
-) -> Result<(), Box<dyn Error>> {
+async fn validation_pipe_rejects_invalid_dto_with_field_level_details() -> Result<(), Box<dyn Error>>
+{
     let port = free_port();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
     let server = NivasaServer::builder()
         .use_global_filter(DetailedHttpExceptionFilter)
         .use_global_pipe(ValidationPipe::<SignupDto>::new())
-        .route(RouteMethod::Post, "/validate", |_| NivasaResponse::text("ok"))?
+        .route(RouteMethod::Post, "/validate", |_| {
+            NivasaResponse::text("ok")
+        })?
         .shutdown_signal(shutdown_rx)
         .build();
 
