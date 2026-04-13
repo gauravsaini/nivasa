@@ -3,12 +3,13 @@
 //! Nivasa framework — config.
 //!
 //! This crate currently exposes the bootstrap-facing `ConfigModule` marker
-//! type. Runtime config loading, `for_root`/`for_feature`, env parsing, and
-//! richer config services land in later slices.
+//! type plus a manual `ConfigSchema` validation helper. Runtime config
+//! loading, `for_root`/`for_feature`, env parsing, and richer config services
+//! land in later slices.
 
 use nivasa_core::module::{ConfigurableModule, DynamicModule, ModuleMetadata};
-use std::collections::BTreeMap;
 use std::any::TypeId;
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -166,6 +167,23 @@ impl std::fmt::Display for ConfigValidationError {
 }
 
 impl std::error::Error for ConfigValidationError {}
+
+/// Static schema contract for already-loaded config maps.
+///
+/// This trait is intentionally explicit and read-only. It lets callers define
+/// required keys and optional defaults, then validate an in-memory config map
+/// without implying startup-time or module-init validation.
+pub trait ConfigSchema {
+    /// Required keys for this schema.
+    fn required_keys() -> &'static [&'static str] {
+        &[]
+    }
+
+    /// Optional default key/value pairs for missing entries.
+    fn defaults() -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
+}
 
 /// Thin config service surface for in-crate provider metadata.
 ///
@@ -397,7 +415,8 @@ impl ConfigModule {
 
         for key in required_keys {
             let key = key.as_ref().trim();
-            if key.is_empty() || loaded.contains_key(key) || missing.iter().any(|item| item == key) {
+            if key.is_empty() || loaded.contains_key(key) || missing.iter().any(|item| item == key)
+            {
                 continue;
             }
 
@@ -414,6 +433,50 @@ impl ConfigModule {
                 .map(|key| ConfigValidationIssue::MissingRequiredKey { key })
                 .collect(),
         ))
+    }
+
+    /// Validate a loaded config map against a static schema contract.
+    ///
+    /// Defaults are applied first, then required keys are checked on the
+    /// merged in-memory map. This helper is explicit and does not imply any
+    /// startup or module-init validation path.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use nivasa_config::{ConfigModule, ConfigSchema};
+    ///
+    /// struct AppConfig;
+    ///
+    /// impl ConfigSchema for AppConfig {
+    ///     fn required_keys() -> &'static [&'static str] {
+    ///         &["HOST", "PORT"]
+    ///     }
+    ///
+    ///     fn defaults() -> &'static [(&'static str, &'static str)] {
+    ///         &[("PORT", "3000")]
+    ///     }
+    /// }
+    ///
+    /// let loaded = BTreeMap::from([("HOST".to_string(), "127.0.0.1".to_string())]);
+    /// let validated = ConfigModule::validate_schema::<AppConfig>(&loaded).unwrap();
+    /// assert_eq!(validated.get("HOST").map(String::as_str), Some("127.0.0.1"));
+    /// assert_eq!(validated.get("PORT").map(String::as_str), Some("3000"));
+    /// ```
+    pub fn validate_schema<S>(
+        loaded: &BTreeMap<String, String>,
+    ) -> Result<BTreeMap<String, String>, ConfigValidationError>
+    where
+        S: ConfigSchema,
+    {
+        let mut merged = loaded.clone();
+        for (key, value) in S::defaults() {
+            merged
+                .entry((*key).to_string())
+                .or_insert_with(|| (*value).to_string());
+        }
+
+        Self::validate_required_keys(&merged, S::required_keys())?;
+        Ok(merged)
     }
 }
 
@@ -474,11 +537,7 @@ fn expand_env_values(values: &BTreeMap<String, String>) -> BTreeMap<String, Stri
     expanded
 }
 
-fn expand_env_value(
-    value: &str,
-    values: &BTreeMap<String, String>,
-    depth: usize,
-) -> String {
+fn expand_env_value(value: &str, values: &BTreeMap<String, String>, depth: usize) -> String {
     if depth > 8 {
         return value.to_string();
     }
@@ -594,7 +653,7 @@ fn parse_env_line(line: &str) -> Option<(String, String)> {
 mod tests {
     use super::{
         config_export_types, config_provider_types, ConfigLoadError, ConfigModule, ConfigOptions,
-        ConfigService, ConfigValidationError, ConfigValidationIssue,
+        ConfigSchema, ConfigService, ConfigValidationError, ConfigValidationIssue,
     };
     use std::any::TypeId;
     use std::collections::BTreeMap;
@@ -721,7 +780,10 @@ mod tests {
         ]));
 
         assert_eq!(service.get_raw("database.host"), Some("localhost"));
-        assert_eq!(service.get::<String>("database.host"), Some("localhost".to_string()));
+        assert_eq!(
+            service.get::<String>("database.host"),
+            Some("localhost".to_string())
+        );
         assert_eq!(
             service.get_or_throw("database.port"),
             Ok("5432".to_string())
@@ -750,8 +812,13 @@ mod tests {
 
     #[test]
     fn config_options_support_multiple_env_file_paths() {
-        let options = ConfigOptions::new()
-            .with_env_file_paths([" .env ", "", " .env.local ", "   ", ".env.production"]);
+        let options = ConfigOptions::new().with_env_file_paths([
+            " .env ",
+            "",
+            " .env.local ",
+            "   ",
+            ".env.production",
+        ]);
 
         assert_eq!(
             options.env_file_paths,
@@ -776,9 +843,8 @@ mod tests {
     #[test]
     fn for_feature_preserves_env_file_path_options_surface() {
         let options = ConfigOptions::new().with_env_file_paths([".env", ".env.test"]);
-        let module = <ConfigModule as nivasa_core::module::ConfigurableModule>::for_feature(
-            options.clone(),
-        );
+        let module =
+            <ConfigModule as nivasa_core::module::ConfigurableModule>::for_feature(options.clone());
 
         assert_eq!(options.env_file_paths, vec![".env", ".env.test"]);
         assert_eq!(module.merged_metadata().providers, config_provider_types());
@@ -812,9 +878,8 @@ mod tests {
     #[test]
     fn for_feature_preserves_ignore_env_file_options_surface() {
         let options = ConfigOptions::new().with_ignore_env_file(true);
-        let module = <ConfigModule as nivasa_core::module::ConfigurableModule>::for_feature(
-            options.clone(),
-        );
+        let module =
+            <ConfigModule as nivasa_core::module::ConfigurableModule>::for_feature(options.clone());
 
         assert!(options.ignore_env_file);
         assert_eq!(module.merged_metadata().providers, config_provider_types());
@@ -833,9 +898,8 @@ mod tests {
             _container: &'life1 nivasa_core::di::DependencyContainer,
         ) -> std::pin::Pin<
             Box<
-                dyn std::future::Future<
-                        Output = Result<(), nivasa_core::di::error::DiError>,
-                    > + Send
+                dyn std::future::Future<Output = Result<(), nivasa_core::di::error::DiError>>
+                    + Send
                     + 'async_trait,
             >,
         >
@@ -865,7 +929,9 @@ mod tests {
 
     #[test]
     fn load_env_reads_the_first_configured_env_file() {
-        let path = write_temp_env_file("NIVASA_CONFIG_TEST_PORT=3000\nNIVASA_CONFIG_TEST_HOST=127.0.0.1\n");
+        let path = write_temp_env_file(
+            "NIVASA_CONFIG_TEST_PORT=3000\nNIVASA_CONFIG_TEST_HOST=127.0.0.1\n",
+        );
         let options = ConfigOptions::new().with_env_file_path(path.to_string_lossy().to_string());
 
         let loaded = ConfigModule::load_env(&options).expect("env file should load");
@@ -964,7 +1030,8 @@ mod tests {
 
     #[test]
     fn load_env_returns_empty_when_no_env_file_is_configured() {
-        let loaded = ConfigModule::load_env(&ConfigOptions::new()).expect("missing path should no-op");
+        let loaded =
+            ConfigModule::load_env(&ConfigOptions::new()).expect("missing path should no-op");
 
         assert!(loaded.is_empty());
     }
@@ -1029,15 +1096,65 @@ mod tests {
         );
     }
 
+    struct DemoConfigSchema;
+
+    impl ConfigSchema for DemoConfigSchema {
+        fn required_keys() -> &'static [&'static str] {
+            &["HOST", "PORT"]
+        }
+
+        fn defaults() -> &'static [(&'static str, &'static str)] {
+            &[("PORT", "3000"), ("SCHEME", "http")]
+        }
+    }
+
+    #[test]
+    fn validate_schema_applies_defaults_without_overriding_loaded_values() {
+        let loaded = BTreeMap::from([("HOST".to_string(), "127.0.0.1".to_string())]);
+
+        let validated = ConfigModule::validate_schema::<DemoConfigSchema>(&loaded)
+            .expect("schema validation should succeed");
+
+        assert_eq!(validated.get("HOST").map(String::as_str), Some("127.0.0.1"));
+        assert_eq!(validated.get("PORT").map(String::as_str), Some("3000"));
+        assert_eq!(validated.get("SCHEME").map(String::as_str), Some("http"));
+    }
+
+    #[test]
+    fn validate_schema_preserves_loaded_values_over_defaults() {
+        let loaded = BTreeMap::from([
+            ("HOST".to_string(), "localhost".to_string()),
+            ("PORT".to_string(), "8080".to_string()),
+        ]);
+
+        let validated = ConfigModule::validate_schema::<DemoConfigSchema>(&loaded)
+            .expect("schema validation should succeed");
+
+        assert_eq!(validated.get("PORT").map(String::as_str), Some("8080"));
+    }
+
+    #[test]
+    fn validate_schema_reports_missing_required_keys_after_defaults() {
+        let loaded = BTreeMap::new();
+
+        let error = ConfigModule::validate_schema::<DemoConfigSchema>(&loaded)
+            .expect_err("missing required key should fail");
+
+        assert_eq!(
+            error,
+            ConfigValidationError::new(vec![ConfigValidationIssue::MissingRequiredKey {
+                key: "HOST".to_string(),
+            }])
+        );
+    }
+
     fn write_temp_env_file(contents: &str) -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock should be after unix epoch")
             .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "nivasa-config-{unique}-{}.env",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("nivasa-config-{unique}-{}.env", std::process::id()));
         fs::write(&path, contents).expect("temp env file should write");
         path
     }
