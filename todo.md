@@ -797,11 +797,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 6.3 — Testing Utilities (`nivasa-testing` or `nivasa` main crate)
 
 #### 6.3.1 — Test Application Builder
-- [ ] Implement `Test::create_testing_module(metadata)` builder
-- [ ] Implement `.override_provider::<T>().use_value(mock)` for mock injection
-- [ ] Implement `.override_provider::<T>().use_factory(|| mock)` for factory mock
-- [ ] Implement `.compile() -> TestingModule` to build test DI container
-- [ ] Implement `testing_module.get::<T>()` to resolve providers in tests
+- [x] Implement `Test::create_testing_module(metadata)` builder
+- [x] Implement `.override_provider::<T>().use_value(mock)` for mock injection
+- [x] Implement `.override_provider::<T>().use_factory(|| mock)` for factory mock
+- [x] Implement `.compile() -> TestingModule` to build test DI container
+- [x] Implement `testing_module.get::<T>()` to resolve providers in tests
 
 #### 6.3.2 — HTTP Test Client
 - [ ] Implement `TestClient` struct wrapping in-memory HTTP dispatch (no TCP)
@@ -822,9 +822,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Support asserting call arguments
 
 #### 6.3.4 — Testing Tests
-- [ ] Test creating a testing module with mock providers
+- [x] Test creating a testing module with mock providers
 - [ ] Test HTTP test client sends and receives correctly
-- [ ] Test provider override replaces real provider with mock
+- [x] Test provider override replaces real provider with mock
 - [ ] Test e2e test flow: create module → HTTP client → assert response
 
 ### 6.4 — CLI Tool (`nivasa-cli`)
