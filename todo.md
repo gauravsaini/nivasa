@@ -1052,7 +1052,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] **SCXML compliance tests:** verify every state in every statechart is reachable by integration tests
 - [x] **SCXML compliance tests:** verify every error transition is exercised (guard denied, validation error, handler error, etc.)
 - [x] **SCXML compliance tests:** verify StatechartTracer log exactly matches expected transition sequence for each test scenario
-- [ ] Set up mutation testing (cargo-mutants) for critical paths
+- [x] Set up mutation testing (cargo-mutants) for critical paths
 - [x] Run `cargo clippy` with all warnings as errors
 - [x] Run `cargo deny check` for license/vulnerability issues
 - [x] Run `cargo audit` for security advisories

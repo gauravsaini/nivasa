@@ -78,3 +78,7 @@ clap = { version = "4", features = ["derive"] }
 
 # Testing
 tokio-test = "0.4"
+
+[profile.mutants]
+inherits = "test"
+debug = 0
