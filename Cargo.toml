@@ -18,6 +18,7 @@ members = [
     "nivasa-cli",
     "nivasa-scheduling",
     "nivasa-graphql",
+    "benches",
 ]
 
 [workspace.package]

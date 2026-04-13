@@ -1058,14 +1058,14 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Run `cargo audit` for security advisories
 
 ### 10.2 — Benchmarking
-- [ ] Set up benchmark harness (criterion or divan)
+- [x] Set up benchmark harness (criterion or divan)
 - [ ] Benchmark hello-world GET (JSON response) vs Actix Web
 - [ ] Benchmark hello-world GET (JSON response) vs Axum
 - [ ] Benchmark DI container resolution overhead (1, 10, 100 providers)
 - [ ] Benchmark routing performance (10, 100, 1000 routes)
 - [ ] Benchmark full middleware + guard + interceptor pipeline overhead
 - [ ] Benchmark startup time with many modules
-- [ ] Document benchmark results in `BENCHMARKS.md`
+- [x] Document benchmark results in `BENCHMARKS.md`
 - [ ] Set up CI benchmark regression detection
 
 ### 10.3 — Release Preparation
