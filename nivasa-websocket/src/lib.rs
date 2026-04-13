@@ -362,6 +362,26 @@ where
         removed
     }
 
+    /// Remove a client from every room in every namespace.
+    pub fn disconnect(&mut self, client: &ClientId) -> bool {
+        let mut removed_any = false;
+
+        self.namespaces.retain(|_, registry| {
+            let mut namespace_removed = false;
+
+            registry.rooms.retain(|_, members| {
+                let removed = members.remove(client);
+                namespace_removed |= removed;
+                !members.is_empty()
+            });
+
+            removed_any |= namespace_removed;
+            !registry.is_empty()
+        });
+
+        removed_any
+    }
+
     /// Return room members inside namespace.
     pub fn members(&self, namespace: &str, room: &str) -> Vec<ClientId> {
         self.namespaces
@@ -496,7 +516,9 @@ where
 
     /// Remove connected client and room memberships.
     pub fn disconnect(&mut self, client: &ClientId) -> bool {
-        self.clients.remove(client).is_some()
+        let removed_client = self.clients.remove(client).is_some();
+        let removed_rooms = self.rooms.disconnect(client);
+        removed_client || removed_rooms
     }
 
     /// Add connected client to room.
@@ -567,7 +589,11 @@ where
 {
     /// Emit one event for scoped client.
     pub fn emit(&mut self, event: impl Into<String>, data: impl Into<String>) -> usize {
-        let entry = self.registry.clients.entry(self.client.clone()).or_default();
+        let entry = self
+            .registry
+            .clients
+            .entry(self.client.clone())
+            .or_default();
         entry.push((event.into(), data.into()));
         entry.len()
     }
@@ -697,10 +723,9 @@ mod tests {
             registry.events_for(&"client-2"),
             vec![("message".to_string(), "other".to_string())]
         );
-        assert!(!registry.events_for(&"client-1").contains(&(
-            "message".to_string(),
-            "other".to_string()
-        )));
+        assert!(!registry
+            .events_for(&"client-1")
+            .contains(&("message".to_string(), "other".to_string())));
     }
 
     #[test]
@@ -751,7 +776,10 @@ mod tests {
             registry.events_for(&"client-1"),
             vec![("notice".to_string(), "hello room".to_string())]
         );
-        assert_eq!(registry.events_for(&"client-2"), Vec::<(String, String)>::new());
+        assert_eq!(
+            registry.events_for(&"client-2"),
+            Vec::<(String, String)>::new()
+        );
         assert_eq!(
             registry.events_for(&"client-3"),
             vec![("notice".to_string(), "hello room".to_string())]
@@ -932,8 +960,7 @@ mod tests {
         fn assert_helper_type<T>(_value: &T) {}
 
         let mut namespaces = NamespaceRegistry::new();
-        let client: ClientRoomMembership<'_, &'static str> =
-            namespaces.client("/chat", "client-1");
+        let client: ClientRoomMembership<'_, &'static str> = namespaces.client("/chat", "client-1");
         assert_helper_type(&client);
     }
 }
