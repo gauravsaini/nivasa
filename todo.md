@@ -1046,7 +1046,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
 - [x] Write integration tests: module composition (nested modules, imports/exports)
 - [x] Write integration tests: error handling pipeline (exception → filter → response)
-- [ ] Write integration tests: authentication flow (login → JWT → protected route)
+- [x] Write integration tests: authentication flow (login → JWT → protected route)
 - [x] Write integration tests: validation flow (invalid DTO → ValidationPipe → 400 response)
 - [x] Write integration tests: WebSocket lifecycle
 - [x] **SCXML compliance tests:** verify every state in every statechart is reachable by integration tests
