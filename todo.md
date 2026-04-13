@@ -567,14 +567,14 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 3.4 — Rate Limiting / Throttling
 
-- [ ] Implement `ThrottlerModule` (configurable: TTL, limit per window)
+- [x] Implement `ThrottlerModule` (configurable: TTL, limit per window)
 - [x] Implement `ThrottlerGuard` (apply via `#[guard(ThrottlerGuard)]`)
-- [ ] Implement in-memory store (default)
-- [ ] Define `ThrottlerStorage` trait for pluggable backends (Redis, etc.)
-- [ ] Implement `#[throttle(limit = 10, ttl = 60)]` per-route override
-- [ ] Implement `#[skip_throttle]` to exempt specific routes
-- [ ] Test rate limit enforcement (N+1th request returns 429)
-- [ ] Test per-route override
+- [x] Implement in-memory store (default)
+- [x] Define `ThrottlerStorage` trait for pluggable backends (Redis, etc.)
+- [x] Implement `#[throttle(limit = 10, ttl = 60)]` per-route override
+- [x] Implement `#[skip_throttle]` to exempt specific routes
+- [x] Test rate limit enforcement (N+1th request returns 429)
+- [x] Test per-route override
 
 ---
 
@@ -977,14 +977,14 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `#[resolver]` decorator
 - [x] Implement `#[query]`, `#[mutation]`, `#[subscription]` decorators
 - [x] Implement playground UI endpoint
-- [ ] Implement federation support (stretch)
+- [x] Implement federation support (stretch)
 
 ---
 
 ## Phase 8: NestApplication Entry Point (`nivasa` main crate)
 
 - [x] Implement `NestApplication::create(AppModule)` factory method
-- [ ] Implement `.build() -> Result<App>` — resolve all modules, DI, and routes
+- [x] Implement `.build() -> Result<App>` — resolve all modules, DI, and routes
 - [ ] Implement `.listen(ServerOptions) -> Result<()>` — start HTTP server
 - [x] Implement `ServerOptions` struct: `port`, `host`, `cors`, `global_prefix`, `versioning`
 - [x] Introduce `AppBootstrapConfig` boundary for server-only bootstrap config
@@ -998,7 +998,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `.use_(Middleware)` — apply global middleware (bootstrap-only facade via `AppBootstrapConfig::use_middleware(...)`)
 - [ ] Implement startup banner with ASCII art + version
 - [ ] Implement startup logging: routes registered, modules loaded, listen address
-- [ ] Implement `.close()` — graceful shutdown API (for testing)
+- [x] Implement `.close()` — graceful shutdown API (for testing)
 
 ---
 

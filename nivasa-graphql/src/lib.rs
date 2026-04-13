@@ -63,7 +63,18 @@ where
         }
     }
 
+    /// Build a GraphQL module with Apollo Federation enabled.
+    #[must_use]
+    pub fn federated(query: Q, mutation: M, subscription: S) -> Self {
+        Self {
+            schema: GraphQLSchema::build(query, mutation, subscription)
+                .enable_federation()
+                .finish(),
+        }
+    }
+
     /// Wrap an existing async-graphql schema.
+    #[must_use]
     pub fn from_schema(schema: GraphQLSchema<Q, M, S>) -> Self {
         Self { schema }
     }
