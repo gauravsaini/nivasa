@@ -789,7 +789,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `LoggerService` injectable provider wrapping `tracing`
 - [x] Support structured JSON logging (for production)
 - [x] Support pretty console logging (for development)
-- [ ] Support log context propagation (request ID, user ID, module name)
+- [x] Support log context propagation (request ID, user ID, module name)
 - [x] Implement request logging span (method, path, status, duration)
 - [x] Support configurable log levels per module
 - [x] Validate tracing directives

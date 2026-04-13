@@ -1404,11 +1404,16 @@ impl NivasaMiddleware for LoggerMiddleware {
     async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
         let method = req.method().clone();
         let path = req.path().to_owned();
+        let request = req.clone();
         let start = Instant::now();
         let response = next.run(req).await;
         let duration = start.elapsed();
+        let log_context = log_context_from_request_and_response(&request, &response);
 
         tracing::info!(
+            request_id = %log_context.request_id.as_deref().unwrap_or(""),
+            user_id = %log_context.user_id.as_deref().unwrap_or(""),
+            module_name = %log_context.module_name.as_deref().unwrap_or(""),
             method = %method,
             path = %path,
             status = response.status().as_u16(),
@@ -1713,15 +1718,59 @@ impl RequestIdMiddleware {
 }
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
+const USER_ID_HEADER: &str = "x-user-id";
+const MODULE_NAME_HEADER: &str = "x-module-name";
 
-fn resolve_request_id(request: &NivasaRequest) -> String {
+fn request_id_from_request(request: &NivasaRequest) -> Option<String> {
+    header_value_from_request(request, REQUEST_ID_HEADER)
+}
+
+fn header_value_from_request(request: &NivasaRequest, name: &str) -> Option<String> {
     request
-        .header(REQUEST_ID_HEADER)
+        .header(name)
         .and_then(|value| value.to_str().ok())
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
-        .unwrap_or_else(|| Uuid::new_v4().to_string())
+}
+
+fn header_value_from_response(response: &NivasaResponse, name: &str) -> Option<String> {
+    response
+        .headers()
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn log_context_from_request_and_response(
+    request: &NivasaRequest,
+    response: &NivasaResponse,
+) -> LogContext {
+    let request_id = header_value_from_request(request, REQUEST_ID_HEADER)
+        .or_else(|| header_value_from_response(response, REQUEST_ID_HEADER));
+    let user_id = header_value_from_request(request, USER_ID_HEADER)
+        .or_else(|| header_value_from_response(response, USER_ID_HEADER));
+    let module_name = header_value_from_request(request, MODULE_NAME_HEADER)
+        .or_else(|| header_value_from_response(response, MODULE_NAME_HEADER));
+
+    let mut context = LogContext::new();
+    if let Some(request_id) = request_id {
+        context = context.with_request_id(request_id);
+    }
+    if let Some(user_id) = user_id {
+        context = context.with_user_id(user_id);
+    }
+    if let Some(module_name) = module_name {
+        context = context.with_module_name(module_name);
+    }
+
+    context
+}
+
+fn resolve_request_id(request: &NivasaRequest) -> String {
+    request_id_from_request(request).unwrap_or_else(|| Uuid::new_v4().to_string())
 }
 
 #[async_trait]
