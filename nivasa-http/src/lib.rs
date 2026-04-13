@@ -11,6 +11,7 @@
 //! - [`CorsOptions`] and [`GlobalFilterBinding`] for server wiring
 //! - [`HealthCheckService`] and [`TerminusModule`] for health checks
 //! - [`LoggerModule`] and [`LoggerService`] for structured logging setup
+//! - [`GraphQLModule`] for the minimal GraphQL HTTP envelope and playground
 //!
 //! ```rust
 //! use http::{Method, StatusCode};
@@ -29,13 +30,16 @@
 //! server builder path, while [`upload`] contains the focused multipart
 //! helpers.
 
+pub mod graphql;
 mod health;
 mod logging;
 mod pipeline;
 mod server;
 pub mod testing;
+mod throttling;
 pub mod upload;
 
+pub use graphql::{GraphQLError, GraphQLModule, GraphQLRequest, GraphQLResponse};
 pub use health::{
     DatabaseHealthIndicator, DiskHealthIndicator, HealthCheckResult, HealthCheckService,
     HealthIndicator, HealthIndicatorResult, HealthStatus, HttpHealthIndicator,
@@ -46,7 +50,12 @@ pub use logging::{
     LogContext, LoggerFormat, LoggerInitError, LoggerModule, LoggerOptions, LoggerOptionsProvider,
     LoggerService,
 };
+pub use nivasa_core::module::RouteThrottleRegistration;
 pub use server::{CorsOptions, GlobalFilterBinding};
+pub use throttling::{
+    InMemoryThrottlerStorage, ThrottlerGuard, ThrottlerModule, ThrottlerOptions,
+    ThrottlerOptionsProvider, ThrottlerStorage,
+};
 
 use async_trait::async_trait;
 #[cfg(feature = "compression-brotli")]
