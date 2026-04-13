@@ -770,7 +770,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Support config schema definition via `#[derive(ConfigSchema)]`
 - [ ] Auto-validate loaded config against schema at module init
 - [ ] Emit clear startup error listing all missing/invalid config keys
-- [ ] Support default values in schema
+- [x] Support default values in schema
 
 #### 6.1.5 — Config Tests
 - [x] Test loading from .env file
@@ -817,11 +817,11 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `TestResponse::header("key") -> Option<String>`
 
 #### 6.3.3 — Mock Providers
-- [ ] Implement `MockProvider<T>` utility
-- [ ] Support recording calls (method name, arguments)
-- [ ] Support returning predefined values
-- [ ] Support asserting call counts
-- [ ] Support asserting call arguments
+- [x] Implement `MockProvider<T>` utility
+- [x] Support recording calls (method name, arguments)
+- [x] Support returning predefined values
+- [x] Support asserting call counts
+- [x] Support asserting call arguments
 
 #### 6.3.4 — Testing Tests
 - [x] Test creating a testing module with mock providers

@@ -1,10 +1,105 @@
+use std::collections::VecDeque;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use async_trait::async_trait;
 
 use crate::di::{DependencyContainer, DiError, ProviderScope, ValueProvider};
 use crate::module::ModuleMetadata;
+
+/// Shared mock provider for tests.
+///
+/// The mock records every call and returns queued responses in FIFO order.
+///
+/// ```rust
+/// use nivasa_core::MockProvider;
+///
+/// let mock = MockProvider::with_response("ok");
+/// let value = mock.call("request");
+/// assert_eq!(value, "ok");
+/// mock.assert_call_count(1);
+/// ```
+#[derive(Clone)]
+pub struct MockProvider<Args, Output> {
+    state: Arc<Mutex<MockState<Args, Output>>>,
+}
+
+struct MockState<Args, Output> {
+    calls: Vec<Args>,
+    responses: VecDeque<Output>,
+}
+
+impl<Args, Output> MockProvider<Args, Output>
+where
+    Args: Clone + PartialEq + Debug,
+{
+    /// Create a mock with no queued responses.
+    pub fn new() -> Self {
+        Self {
+            state: Arc::new(Mutex::new(MockState {
+                calls: Vec::new(),
+                responses: VecDeque::new(),
+            })),
+        }
+    }
+
+    /// Create a mock with one queued response.
+    pub fn with_response(response: Output) -> Self {
+        let mock = Self::new();
+        mock.enqueue_response(response);
+        mock
+    }
+
+    /// Queue a response for the next call.
+    pub fn enqueue_response(&self, response: Output) {
+        self.state
+            .lock()
+            .expect("mock provider lock poisoned")
+            .responses
+            .push_back(response);
+    }
+
+    /// Record call arguments and return the next queued response.
+    pub fn call(&self, args: Args) -> Output {
+        let mut state = self.state.lock().expect("mock provider lock poisoned");
+        state.calls.push(args);
+        state
+            .responses
+            .pop_front()
+            .expect("mock provider has no queued response")
+    }
+
+    /// Return the number of calls recorded so far.
+    pub fn call_count(&self) -> usize {
+        self.state
+            .lock()
+            .expect("mock provider lock poisoned")
+            .calls
+            .len()
+    }
+
+    /// Return a copy of the recorded calls.
+    pub fn calls(&self) -> Vec<Args> {
+        self.state
+            .lock()
+            .expect("mock provider lock poisoned")
+            .calls
+            .clone()
+    }
+
+    /// Assert the call count matches the expected value.
+    pub fn assert_call_count(&self, expected: usize) {
+        assert_eq!(self.call_count(), expected);
+    }
+
+    /// Assert the recorded calls match the expected sequence.
+    pub fn assert_called_with(&self, expected: &[Args]) {
+        let calls = self.calls();
+        assert_eq!(calls, expected);
+    }
+}
 
 /// Entry point for testing helpers.
 ///

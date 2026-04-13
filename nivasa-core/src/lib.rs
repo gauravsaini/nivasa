@@ -54,4 +54,4 @@ pub use module::{
     OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy, OnModuleInit,
 };
 pub use reflector::Reflector;
-pub use testing::{Test, TestingModule, TestingModuleBuilder};
+pub use testing::{MockProvider, Test, TestingModule, TestingModuleBuilder};
