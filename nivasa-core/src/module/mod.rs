@@ -1,4 +1,5 @@
 pub mod dynamic;
+pub mod event_emitter;
 pub mod lifecycle;
 pub mod orchestrator;
 pub mod registry;
@@ -9,6 +10,7 @@ use async_trait::async_trait;
 use std::any::TypeId;
 
 pub use dynamic::{ConfigurableModule, DynamicModule};
+pub use event_emitter::{EventEmitter, EventEmitterModule};
 pub use orchestrator::{ModuleHookSet, ModuleOrchestrator, ModuleOrchestratorError};
 pub use registry::{ModuleEntry, ModuleRegistry, ModuleRegistryError};
 pub use runtime::{ModuleLifecycleError, ModuleRuntime};
@@ -112,6 +114,10 @@ pub struct ControllerRouteRegistration {
     pub path: String,
     /// Handler method name.
     pub handler: &'static str,
+    /// Optional throttle window attached to the route.
+    pub throttle: Option<RouteThrottleRegistration>,
+    /// Skip throttling entirely for the route.
+    pub skip_throttle: bool,
 }
 
 impl ControllerRouteRegistration {
@@ -121,7 +127,38 @@ impl ControllerRouteRegistration {
             method,
             path: path.into(),
             handler,
+            throttle: None,
+            skip_throttle: false,
         }
+    }
+
+    /// Attach a throttle window to the route.
+    pub fn with_throttle(mut self, limit: u32, ttl_secs: u64) -> Self {
+        self.throttle = Some(RouteThrottleRegistration::new(limit, ttl_secs));
+        self
+    }
+
+    /// Mark the route as exempt from throttling.
+    pub fn skip_throttle(mut self) -> Self {
+        self.skip_throttle = true;
+        self.throttle = None;
+        self
+    }
+}
+
+/// Throttle metadata attached to a route.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteThrottleRegistration {
+    /// Number of requests allowed per window.
+    pub limit: u32,
+    /// Window duration in seconds.
+    pub ttl_secs: u64,
+}
+
+impl RouteThrottleRegistration {
+    /// Build a route throttle window.
+    pub fn new(limit: u32, ttl_secs: u64) -> Self {
+        Self { limit, ttl_secs }
     }
 }
 

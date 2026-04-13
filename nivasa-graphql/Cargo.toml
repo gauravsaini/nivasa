@@ -1,0 +1,15 @@
+[package]
+name = "nivasa-graphql"
+description = "GraphQL runtime module for Nivasa"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-graphql = { workspace = true }
+async-trait = { workspace = true }
+nivasa-core = { path = "../nivasa-core" }
+
+[dev-dependencies]
+tokio = { workspace = true }

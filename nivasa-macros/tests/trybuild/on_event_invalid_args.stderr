@@ -1,0 +1,7 @@
+error: `#[on_event]` expects an event name like `#[on_event("event_name")]`
+ --> tests/trybuild/on_event_invalid_args.rs:6:5
+  |
+6 |     #[on_event(42)]
+  |     ^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `on_event` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,16 @@
+[package]
+name = "nivasa-scheduling"
+description = "Cron and runtime scheduling primitives for Nivasa"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+chrono = { workspace = true }
+cron = { workspace = true }
+nivasa-core = { path = "../nivasa-core" }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }

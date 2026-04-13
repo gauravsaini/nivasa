@@ -57,11 +57,11 @@
 
 use std::{
     any::Any,
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     future::Future,
     pin::Pin,
-    sync::Arc,
-    time::Duration,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 use nivasa_common::{HttpException, RequestContext};
@@ -72,6 +72,98 @@ type ContextValue = Arc<dyn Any + Send + Sync>;
 ///
 /// Keys are plain strings. Values stay opaque until a guard downcasts them.
 pub type ContextDataMap = BTreeMap<String, ContextValue>;
+
+/// Pluggable request-counter storage for throttling.
+///
+/// Implementations track requests by key and return `true` while the current
+/// request fits inside the configured window.
+pub trait ThrottlerStorage: Send + Sync + std::fmt::Debug {
+    fn allow(&self, key: &str, limit: u32, ttl: Duration) -> bool;
+}
+
+/// In-memory throttling backend.
+#[derive(Debug, Default, Clone)]
+pub struct InMemoryThrottlerStorage {
+    state: Arc<Mutex<HashMap<String, ThrottleWindowState>>>,
+}
+
+#[derive(Debug, Clone)]
+struct ThrottleWindowState {
+    started_at: Instant,
+    count: u32,
+}
+
+impl InMemoryThrottlerStorage {
+    /// Create an empty in-memory throttling backend.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Snapshot the current request counts, mainly for tests.
+    pub fn snapshot(&self) -> HashMap<String, u32> {
+        self.state
+            .lock()
+            .expect("throttler storage lock must be available")
+            .iter()
+            .map(|(key, state)| (key.clone(), state.count))
+            .collect()
+    }
+}
+
+impl ThrottlerStorage for InMemoryThrottlerStorage {
+    fn allow(&self, key: &str, limit: u32, ttl: Duration) -> bool {
+        if limit == 0 || ttl.is_zero() {
+            return false;
+        }
+
+        let mut state = self
+            .state
+            .lock()
+            .expect("throttler storage lock must be available");
+        let now = Instant::now();
+        let entry = state.entry(key.to_owned()).or_insert_with(|| ThrottleWindowState {
+            started_at: now,
+            count: 0,
+        });
+
+        if now.duration_since(entry.started_at) >= ttl {
+            entry.started_at = now;
+            entry.count = 0;
+        }
+
+        if entry.count >= limit {
+            return false;
+        }
+
+        entry.count = entry.count.saturating_add(1);
+        true
+    }
+}
+
+fn throttle_key_from_context(context: &ExecutionContext) -> String {
+    let Some(request_context) = context.request_context() else {
+        return "global".to_string();
+    };
+
+    let request_method = request_context
+        .custom_data("request_method")
+        .and_then(|value| value.as_str())
+        .unwrap_or("UNKNOWN");
+    let request_path = request_context
+        .custom_data("request_path")
+        .and_then(|value| value.as_str())
+        .unwrap_or("/");
+    let module_name = request_context
+        .custom_data("module_name")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let user_id = request_context
+        .custom_data("user_id")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+
+    format!("{module_name}:{user_id}:{request_method}:{request_path}")
+}
 
 /// Runtime context passed into guards.
 ///
@@ -388,16 +480,21 @@ impl Guard for AuthGuard {
 /// assert_eq!(guard.ttl(), Duration::from_secs(60));
 /// assert!(block_on(guard.can_activate(&ExecutionContext::new(()))).unwrap());
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ThrottlerGuard {
     limit: u32,
     ttl: Duration,
+    storage: Arc<dyn ThrottlerStorage>,
 }
 
 impl ThrottlerGuard {
     /// Create a new throttling guard skeleton.
     pub fn new(limit: u32, ttl: Duration) -> Self {
-        Self { limit, ttl }
+        Self {
+            limit,
+            ttl,
+            storage: Arc::new(InMemoryThrottlerStorage::new()),
+        }
     }
 
     /// Number of requests allowed in the configured window.
@@ -410,14 +507,52 @@ impl ThrottlerGuard {
         self.ttl
     }
 
+    /// Swap the request counter backend used by the guard.
+    pub fn with_storage(mut self, storage: Arc<dyn ThrottlerStorage>) -> Self {
+        self.storage = storage;
+        self
+    }
+
+    /// Evaluate the current request without the async guard wrapper.
+    pub fn allows_request(&self, context: &ExecutionContext) -> bool {
+        if !self.has_minimal_valid_configuration() {
+            return false;
+        }
+
+        if context
+            .request_context()
+            .and_then(|request_context| request_context.custom_data("throttle_skip"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+        {
+            return true;
+        }
+
+        let limit = context
+            .request_context()
+            .and_then(|request_context| request_context.custom_data("throttle_limit"))
+            .and_then(|value| value.as_u64())
+            .map(|value| value as u32)
+            .unwrap_or(self.limit);
+        let ttl = context
+            .request_context()
+            .and_then(|request_context| request_context.custom_data("throttle_ttl_secs"))
+            .and_then(|value| value.as_u64())
+            .map(Duration::from_secs)
+            .unwrap_or(self.ttl);
+        let key = throttle_key_from_context(context);
+
+        self.storage.allow(&key, limit, ttl)
+    }
+
     fn has_minimal_valid_configuration(&self) -> bool {
         self.limit > 0 && !self.ttl.is_zero()
     }
 }
 
 impl Guard for ThrottlerGuard {
-    fn can_activate<'a>(&'a self, _context: &'a ExecutionContext) -> GuardFuture<'a> {
-        Box::pin(async move { Ok(self.has_minimal_valid_configuration()) })
+    fn can_activate<'a>(&'a self, context: &'a ExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async move { Ok(self.allows_request(context)) })
     }
 }
 
@@ -543,8 +678,8 @@ mod tests {
     use std::{
         future::Future,
         pin::Pin,
-        time::Duration,
         task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
+        time::Duration,
     };
 
     #[derive(Clone, Debug, PartialEq, Eq)]
@@ -582,7 +717,10 @@ mod tests {
             context.handler_metadata::<Vec<&'static str>>("roles"),
             Some(&vec!["admin", "editor"])
         );
-        assert_eq!(context.class_metadata::<&'static str>("controller"), Some(&"users"));
+        assert_eq!(
+            context.class_metadata::<&'static str>("controller"),
+            Some(&"users")
+        );
         assert_eq!(context.custom_data::<&'static str>("tenant"), Some(&"acme"));
     }
 
@@ -592,8 +730,7 @@ mod tests {
         request_context.insert_request_data(FakeRequest { path: "/shared" });
         request_context.set_handler_metadata("roles", ["admin"]);
 
-        let context = ExecutionContext::new(())
-            .with_request_context(request_context);
+        let context = ExecutionContext::new(()).with_request_context(request_context);
 
         assert_eq!(
             context.request::<FakeRequest>(),
@@ -604,11 +741,8 @@ mod tests {
 
     #[test]
     fn guard_trait_can_read_execution_context() {
-        let context =
-            ExecutionContext::new(FakeRequest { path: "/admin" }).with_handler_metadata(
-                "roles",
-                vec!["admin", "editor"],
-            );
+        let context = ExecutionContext::new(FakeRequest { path: "/admin" })
+            .with_handler_metadata("roles", vec!["admin", "editor"]);
 
         let result = run_ready(RoleGuard.can_activate(&context));
         assert!(result.unwrap());

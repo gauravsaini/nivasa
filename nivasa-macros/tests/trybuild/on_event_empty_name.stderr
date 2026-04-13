@@ -1,0 +1,5 @@
+error: `#[on_event]` expects a non-empty event name like `#[on_event("event_name")]`
+ --> tests/trybuild/on_event_empty_name.rs:6:16
+  |
+6 |     #[on_event("")]
+  |                ^^

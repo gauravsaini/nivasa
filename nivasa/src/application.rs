@@ -10,7 +10,8 @@ use crate::openapi::{
 };
 use nivasa_common::HttpException;
 use nivasa_core::{
-    module::ModuleControllerRegistration, DependencyContainer, DiError, Module, ModuleMetadata,
+    module::{ModuleControllerRegistration, RouteThrottleRegistration},
+    DependencyContainer, DiError, Module, ModuleMetadata,
 };
 use nivasa_filters::{ExceptionFilter, ExceptionFilterMetadata};
 use nivasa_guards::Guard;
@@ -213,6 +214,8 @@ pub struct AppRoute {
     pub method: RouteMethod,
     pub path: String,
     pub handler: &'static str,
+    pub throttle: Option<RouteThrottleRegistration>,
+    pub skip_throttle: bool,
 }
 
 /// Errors raised while assembling the minimal application shell.
@@ -235,7 +238,10 @@ impl std::fmt::Display for AppBuildError {
                 write!(f, "duplicate route `{method} {path}` while building app")
             }
             Self::MissingRouteHandler { handler } => {
-                write!(f, "missing route handler `{handler}` while building app server")
+                write!(
+                    f,
+                    "missing route handler `{handler}` while building app server"
+                )
             }
         }
     }
@@ -363,19 +369,49 @@ impl<T> App<T> {
             let handler = Arc::clone(&handler);
             let method = route.method.clone();
             let path = route.path.clone();
-            builder = builder
-                .route(method, path, move |request| (handler)(request))
-                .map_err(|error| match error {
-                    RouteDispatchError::DuplicateRoute { method, path } => {
-                        AppBuildError::DuplicateRoute { method, path }
-                    }
-                    RouteDispatchError::UnsupportedPatternSegment { path, .. } => {
-                        AppBuildError::DuplicateRoute {
-                            method: route.method.as_str().to_string(),
-                            path,
+            builder = if route.skip_throttle {
+                builder
+                    .route(method, path, move |request| (handler)(request))
+                    .map_err(|error| match error {
+                        RouteDispatchError::DuplicateRoute { method, path } => {
+                            AppBuildError::DuplicateRoute { method, path }
                         }
-                    }
-                })?;
+                        RouteDispatchError::UnsupportedPatternSegment { path, .. } => {
+                            AppBuildError::DuplicateRoute {
+                                method: route.method.as_str().to_string(),
+                                path,
+                            }
+                        }
+                    })?
+            } else if let Some(throttle) = route.throttle.clone() {
+                builder
+                    .route_with_throttle(method, path, move |request| (handler)(request), throttle)
+                    .map_err(|error| match error {
+                        RouteDispatchError::DuplicateRoute { method, path } => {
+                            AppBuildError::DuplicateRoute { method, path }
+                        }
+                        RouteDispatchError::UnsupportedPatternSegment { path, .. } => {
+                            AppBuildError::DuplicateRoute {
+                                method: route.method.as_str().to_string(),
+                                path,
+                            }
+                        }
+                    })?
+            } else {
+                builder
+                    .route(method, path, move |request| (handler)(request))
+                    .map_err(|error| match error {
+                        RouteDispatchError::DuplicateRoute { method, path } => {
+                            AppBuildError::DuplicateRoute { method, path }
+                        }
+                        RouteDispatchError::UnsupportedPatternSegment { path, .. } => {
+                            AppBuildError::DuplicateRoute {
+                                method: route.method.as_str().to_string(),
+                                path,
+                            }
+                        }
+                    })?
+            };
         }
 
         Ok(builder.build())
@@ -1089,6 +1125,8 @@ fn resolve_routes(
                 method,
                 path,
                 handler: route.handler,
+                throttle: route.throttle.clone(),
+                skip_throttle: route.skip_throttle,
             });
         }
     }

@@ -1,0 +1,7 @@
+error: `#[mutation]` expects a field name like `#[mutation("field_name")]`
+ --> tests/trybuild/graphql_invalid_args.rs:6:5
+  |
+6 |     #[mutation(42)]
+  |     ^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `mutation` (in Nightly builds, run with -Z macro-backtrace for more info)

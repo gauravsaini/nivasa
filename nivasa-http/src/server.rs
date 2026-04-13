@@ -18,9 +18,13 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder as AutoBuilder;
 use nivasa_common::HttpException;
 use nivasa_common::RequestContext;
+use nivasa_core::module::RouteThrottleRegistration;
 use nivasa_filters::HttpExceptionSummary;
 use nivasa_filters::{ArgumentsHost, ExceptionFilter, ExceptionFilterMetadata};
-use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard};
+use nivasa_guards::{
+    ExecutionContext as GuardExecutionContext, Guard, InMemoryThrottlerStorage, ThrottlerGuard,
+    ThrottlerStorage,
+};
 use nivasa_interceptors::{
     CallHandler, ExecutionContext as InterceptorExecutionContext, Interceptor,
 };
@@ -330,6 +334,7 @@ pub struct NivasaServerBuilder {
     cors: Option<CorsOptions>,
     request_timeout: Option<Duration>,
     request_body_size_limit: Option<usize>,
+    throttler_storage: Arc<dyn ThrottlerStorage>,
     shutdown: Option<oneshot::Receiver<()>>,
     #[cfg(feature = "tls")]
     tls_config: Option<Arc<rustls::ServerConfig>>,
@@ -488,6 +493,7 @@ impl NivasaServerBuilder {
             cors: None,
             request_timeout: None,
             request_body_size_limit: None,
+            throttler_storage: Arc::new(InMemoryThrottlerStorage::new()),
             shutdown: None,
             #[cfg(feature = "tls")]
             tls_config: None,
@@ -515,6 +521,36 @@ impl NivasaServerBuilder {
     ) -> Result<Self, RouteDispatchError> {
         self.routes
             .register_pattern(method, path, RouteHandlerBinding::new(handler))?;
+        Ok(self)
+    }
+
+    /// Register a request handler with a throttling window.
+    pub fn route_with_throttle(
+        mut self,
+        method: impl Into<RouteMethod>,
+        path: impl Into<String>,
+        handler: impl Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static,
+        throttle: RouteThrottleRegistration,
+    ) -> Result<Self, RouteDispatchError> {
+        let storage = Arc::clone(&self.throttler_storage);
+        let wrapped_handler = move |request: &NivasaRequest| {
+            let context = GuardExecutionContext::new(request.clone())
+                .with_request_context(request_context_from_request(request));
+            let guard = ThrottlerGuard::new(throttle.limit, Duration::from_secs(throttle.ttl_secs))
+                .with_storage(Arc::clone(&storage));
+
+            if guard.allows_request(&context) {
+                handler(request)
+            } else {
+                NivasaResponse::new(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Body::text("too many requests"),
+                )
+            }
+        };
+
+        self.routes
+            .register_pattern(method, path, RouteHandlerBinding::new(wrapped_handler))?;
         Ok(self)
     }
 
@@ -563,6 +599,15 @@ impl NivasaServerBuilder {
                 .with_module_name(module_name),
         )?;
         Ok(self)
+    }
+
+    /// Swap in a custom throttling backend for subsequent throttled routes.
+    pub fn use_throttler_storage<S>(mut self, storage: S) -> Self
+    where
+        S: ThrottlerStorage + 'static,
+    {
+        self.throttler_storage = Arc::new(storage);
+        self
     }
 
     /// Register a route that is selected by `X-API-Version`.
@@ -1013,7 +1058,8 @@ async fn handle_request(
                 }
             };
             *pipeline.request_mut() = request.clone();
-            let guard_context = GuardExecutionContext::new(request.clone());
+            let guard_context = GuardExecutionContext::new(request.clone())
+                .with_request_context(request_context_from_request(&request));
             let guard_refs = global_guards
                 .iter()
                 .map(|guard| guard.as_ref() as &dyn Guard)
@@ -1358,7 +1404,8 @@ async fn dispatch_nivasa_request(
                 }
             };
             *pipeline.request_mut() = request.clone();
-            let guard_context = GuardExecutionContext::new(request.clone());
+            let guard_context = GuardExecutionContext::new(request.clone())
+                .with_request_context(request_context_from_request(&request));
             let guard_refs = global_guards
                 .iter()
                 .map(|guard| guard.as_ref() as &dyn Guard)
@@ -1675,7 +1722,8 @@ async fn handle_http_exception(
         .or_else(|| select_exception_filter(global_filters))
     {
         Some(filter) => {
-            let host = ArgumentsHost::new().with_request_context(request_context_from_request(request));
+            let host =
+                ArgumentsHost::new().with_request_context(request_context_from_request(request));
             let fallback_error = error.clone();
 
             let filter_future =
@@ -2020,7 +2068,10 @@ fn request_id_from_headers(headers: &http::HeaderMap) -> String {
         .unwrap_or_else(|| Uuid::new_v4().to_string())
 }
 
-fn seed_request_identity(mut request: NivasaRequest, request_id: impl Into<String>) -> NivasaRequest {
+fn seed_request_identity(
+    mut request: NivasaRequest,
+    request_id: impl Into<String>,
+) -> NivasaRequest {
     let request_id = request_id.into();
     request.set_header(REQUEST_ID_HEADER, &request_id);
     request
@@ -2029,6 +2080,11 @@ fn seed_request_identity(mut request: NivasaRequest, request_id: impl Into<Strin
 fn request_context_from_request(request: &NivasaRequest) -> RequestContext {
     let mut request_context = RequestContext::new();
     request_context.insert_request_data(request.clone());
+    request_context.set_custom_data(
+        "request_method",
+        json!(request.method().as_str().to_string()),
+    );
+    request_context.set_custom_data("request_path", json!(request.path().to_string()));
 
     if let Some(request_id) = request_header_value(request, REQUEST_ID_HEADER) {
         request_context.set_custom_data(REQUEST_CONTEXT_REQUEST_ID_KEY, json!(request_id));

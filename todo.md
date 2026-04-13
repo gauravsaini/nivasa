@@ -972,10 +972,10 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ### 7.6 — GraphQL Support (Optional, Deferred)
 
 - [x] Implement minimal GraphQL HTTP endpoint and playground wrapper
-- [ ] Evaluate `async-graphql` crate for integration
-- [ ] Implement `GraphQLModule` wrapping async-graphql
-- [ ] Implement `#[resolver]` decorator
-- [ ] Implement `#[query]`, `#[mutation]`, `#[subscription]` decorators
+- [x] Evaluate `async-graphql` crate for integration
+- [x] Implement `GraphQLModule` wrapping async-graphql
+- [x] Implement `#[resolver]` decorator
+- [x] Implement `#[query]`, `#[mutation]`, `#[subscription]` decorators
 - [x] Implement playground UI endpoint
 - [ ] Implement federation support (stretch)
 
