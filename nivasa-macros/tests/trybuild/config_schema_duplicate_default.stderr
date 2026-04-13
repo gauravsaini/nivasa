@@ -1,0 +1,5 @@
+error: duplicate `default` entry in `#[schema]`
+ --> tests/trybuild/config_schema_duplicate_default.rs:5:32
+  |
+5 |     #[schema(default = "3000", default = "4000")]
+  |                                ^^^^^^^

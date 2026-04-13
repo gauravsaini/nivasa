@@ -11,6 +11,7 @@ use nivasa::prelude::{
     ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost, Middleware,
     NivasaMiddlewareLayer, Pipe, Reflector, WsArgumentsHost,
 };
+use nivasa_http::TestClient;
 use std::any::TypeId;
 use std::future::Future;
 use std::pin::Pin;
@@ -151,6 +152,40 @@ fn crate_root_reexports_nest_application_build_as_runtime_shell() {
 }
 
 #[test]
+fn nest_application_can_bridge_built_routes_into_test_client() {
+    let app = nivasa::NestApplication::create(DemoModule)
+        .build()
+        .expect("build should assemble the root module shell");
+
+    let server = app
+        .to_server(|route| match route.handler {
+            "health" => {
+                let route_name = route.handler;
+                Some(Arc::new(move |request: &NivasaRequest| {
+                    let request_id = request
+                        .header("x-request-id")
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or("missing");
+
+                    NivasaResponse::text(format!("ok:{request_id}"))
+                        .with_header("x-app-route", route_name)
+                }))
+            }
+            _ => None,
+        })
+        .expect("app routes should bridge into a server");
+
+    let response = TestClient::new(server)
+        .get("/health")
+        .header("x-request-id", "bridge-1")
+        .send_blocking();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.text(), "ok:bridge-1");
+    assert_eq!(response.header("x-app-route"), Some(String::from("health")));
+}
+
+#[test]
 fn nest_application_preflight_fails_before_module_configure() {
     let configure_calls = Arc::new(AtomicUsize::new(0));
     let module = PreflightModule {
@@ -184,16 +219,46 @@ fn nest_application_preflight_fails_before_module_configure() {
 fn nest_application_preflight_can_validate_required_config_keys() {
     use std::collections::BTreeMap;
 
-    use nivasa::config::ConfigModule;
+    use nivasa::config::{ConfigModule, ConfigSchema, ConfigValidationIssue};
 
-    let loaded = BTreeMap::from([("HOST".to_string(), "127.0.0.1".to_string())]);
+    struct StartupSchema;
+
+    impl ConfigSchema for StartupSchema {
+        fn required_keys() -> &'static [&'static str] {
+            &["HOST", "PORT", "API_KEY"]
+        }
+
+        fn defaults() -> &'static [(&'static str, &'static str)] {
+            &[("SCHEME", "http")]
+        }
+
+        fn validate(loaded: &BTreeMap<String, String>) -> Vec<ConfigValidationIssue> {
+            loaded
+                .get("PORT")
+                .and_then(|port| {
+                    port.parse::<u16>().err().map(|_| ConfigValidationIssue::InvalidValue {
+                        key: "PORT".to_string(),
+                        value: port.to_string(),
+                        expected: "unsigned 16-bit integer".to_string(),
+                    })
+                })
+                .into_iter()
+                .collect()
+        }
+    }
+
+    let loaded = BTreeMap::from([
+        ("HOST".to_string(), "127.0.0.1".to_string()),
+        ("PORT".to_string(), "abc".to_string()),
+    ]);
+    let configure_calls = Arc::new(AtomicUsize::new(0));
     let module = PreflightModule {
-        configure_calls: Arc::new(AtomicUsize::new(0)),
+        configure_calls: Arc::clone(&configure_calls),
     };
 
     let result = nivasa::NestApplication::create(module)
         .with_preflight(move |_module, _bootstrap| {
-            ConfigModule::validate_required_keys(&loaded, ["HOST", "PORT"]).map_err(|error| {
+            ConfigModule::validate_schema::<StartupSchema>(&loaded).map(|_| ()).map_err(|error| {
                 AppBuildError::PreflightValidation {
                     message: error.to_string(),
                 }
@@ -205,12 +270,16 @@ fn nest_application_preflight_can_validate_required_config_keys() {
         Err(error) => match error {
             AppBuildError::PreflightValidation { message } => {
                 assert!(message.contains("missing required config key"));
-                assert!(message.contains("PORT"));
+                assert!(message.contains("API_KEY"));
+                assert!(message.contains("invalid config value for PORT"));
+                assert!(message.contains("unsigned 16-bit integer"));
             }
             other => panic!("unexpected error: {other}"),
         },
-        Ok(_) => panic!("missing config keys should fail fast"),
+        Ok(_) => panic!("schema validation should fail fast"),
     }
+
+    assert_eq!(configure_calls.load(Ordering::SeqCst), 0);
 }
 
 #[test]

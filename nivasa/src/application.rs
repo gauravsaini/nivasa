@@ -14,7 +14,9 @@ use nivasa_core::{
 };
 use nivasa_filters::{ExceptionFilter, ExceptionFilterMetadata};
 use nivasa_guards::Guard;
-use nivasa_http::{NivasaMiddleware, NivasaResponse, NivasaServer, NivasaServerBuilder};
+use nivasa_http::{
+    NivasaMiddleware, NivasaRequest, NivasaResponse, NivasaServer, NivasaServerBuilder,
+};
 use nivasa_interceptors::Interceptor;
 use nivasa_pipes::Pipe;
 use nivasa_routing::{RouteDispatchError, RouteMethod};
@@ -22,6 +24,7 @@ use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 const DEFAULT_OPENAPI_SPEC_PATH: &str = "/api/docs/openapi.json";
@@ -218,6 +221,7 @@ pub enum AppBuildError {
     PreflightValidation { message: String },
     DependencyInjection(DiError),
     DuplicateRoute { method: String, path: String },
+    MissingRouteHandler { handler: String },
 }
 
 impl std::fmt::Display for AppBuildError {
@@ -229,6 +233,9 @@ impl std::fmt::Display for AppBuildError {
             Self::DependencyInjection(error) => write!(f, "{error}"),
             Self::DuplicateRoute { method, path } => {
                 write!(f, "duplicate route `{method} {path}` while building app")
+            }
+            Self::MissingRouteHandler { handler } => {
+                write!(f, "missing route handler `{handler}` while building app server")
             }
         }
     }
@@ -334,6 +341,44 @@ impl<T> App<T> {
     /// Borrow the resolved route metadata captured during build.
     pub fn routes(&self) -> &[AppRoute] {
         &self.routes
+    }
+
+    /// Build an in-memory server from the resolved app routes.
+    ///
+    /// The adapter stays honest: routes come from the built app metadata, and
+    /// the caller supplies the actual route handlers by name.
+    pub fn to_server<F>(&self, resolve_handler: F) -> Result<NivasaServer, AppBuildError>
+    where
+        F: Fn(&AppRoute) -> Option<AppRouteHandler> + Send + Sync + 'static,
+    {
+        let mut builder = self.bootstrap.server_builder();
+
+        for route in &self.routes {
+            let Some(handler) = resolve_handler(route) else {
+                return Err(AppBuildError::MissingRouteHandler {
+                    handler: route.handler.to_string(),
+                });
+            };
+
+            let handler = Arc::clone(&handler);
+            let method = route.method.clone();
+            let path = route.path.clone();
+            builder = builder
+                .route(method, path, move |request| (handler)(request))
+                .map_err(|error| match error {
+                    RouteDispatchError::DuplicateRoute { method, path } => {
+                        AppBuildError::DuplicateRoute { method, path }
+                    }
+                    RouteDispatchError::UnsupportedPatternSegment { path, .. } => {
+                        AppBuildError::DuplicateRoute {
+                            method: route.method.as_str().to_string(),
+                            path,
+                        }
+                    }
+                })?;
+        }
+
+        Ok(builder.build())
     }
 }
 
@@ -1075,6 +1120,7 @@ fn noop_waker() -> Waker {
 
 type AppPreflightHook<T> =
     Box<dyn Fn(&T, &AppBootstrapConfig) -> Result<(), AppBuildError> + Send + Sync + 'static>;
+pub type AppRouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
 
 fn noop_raw_waker() -> RawWaker {
     RawWaker::new(std::ptr::null(), &NOOP_WAKER_VTABLE)

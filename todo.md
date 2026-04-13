@@ -749,7 +749,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support `is_global: true` on `ConfigModule` dynamic metadata surface
 - [x] Support `env_file_path: ".env"` option (single or vec of paths)
 - [x] Support `ignore_env_file: true` (only use process env vars)
-- [ ] Support `validate_config: schema` (validate config at startup)
+- [x] Support `validate_config: schema` (validate config at startup)
 
 #### 6.1.2 — Environment Loading
 - [x] Support `.env` file loading via `dotenvy` crate
@@ -764,12 +764,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `get_or_default<T>(key: &str, default: T) -> T`
 - [x] Implement `get_or_throw(key: &str) -> Result<String, ConfigException>`
 - [x] Implement namespace support: `get("database.host")`
-- [ ] Implement validation of required config keys at startup
+- [x] Implement validation of required config keys at startup
 
 #### 6.1.4 — Type-Safe Config (Config Schema)
-- [ ] Support config schema definition via `#[derive(ConfigSchema)]`
+- [x] Support config schema definition via `#[derive(ConfigSchema)]`
 - [ ] Auto-validate loaded config against schema at module init
-- [ ] Emit clear startup error listing all missing/invalid config keys
+- [x] Emit clear startup error listing all missing/invalid config keys
 - [x] Support default values in schema
 
 #### 6.1.5 — Config Tests
@@ -780,7 +780,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test `get_or_throw` with missing key → startup error
 - [x] Test global config is accessible from any module
 - [x] Test required-key validation helper semantics
-- [ ] Test config schema validation at startup
+- [x] Test config schema validation at startup
 
 ### 6.2 — Structured Logging (`tracing` integration)
 
@@ -827,7 +827,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test creating a testing module with mock providers
 - [x] Test HTTP test client sends and receives correctly
 - [x] Test provider override replaces real provider with mock
-- [ ] Test e2e test flow: create module → HTTP client → assert response
+- [x] Test e2e test flow: create module → HTTP client → assert response
 
 ### 6.4 — CLI Tool (`nivasa-cli`)
 

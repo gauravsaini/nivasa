@@ -3,7 +3,7 @@
 //! Keep this crate as entry map:
 //! - module/DI wiring: `#[module]`, `#[injectable]`
 //! - HTTP/controller wiring: `#[controller]`, `#[get]`, `#[post]`, `#[guard]`, `#[interceptor]`, `#[pipe]`
-//! - validation derives: `#[derive(Dto)]`, `#[derive(PartialDto)]`
+//! - validation derives: `#[derive(Dto)]`, `#[derive(PartialDto)]`, `#[derive(ConfigSchema)]`
 //! - websocket wiring: `#[websocket_gateway]`, `#[subscribe_message]`
 //!
 //! # Example
@@ -51,6 +51,7 @@
 //! ```
 
 mod controller;
+mod config_schema;
 mod filter;
 mod injectable;
 mod middleware;
@@ -224,6 +225,27 @@ pub fn dto(input: TokenStream) -> TokenStream {
 /// ```
 pub fn partial_dto(input: TokenStream) -> TokenStream {
     validation::partial_dto_impl(input)
+}
+
+#[proc_macro_derive(ConfigSchema, attributes(schema))]
+/// Derive the static config schema contract from named struct fields.
+///
+/// ```rust,ignore
+/// use nivasa_config::ConfigSchema;
+/// use nivasa_macros::ConfigSchema as DeriveConfigSchema;
+///
+/// #[derive(DeriveConfigSchema)]
+/// struct AppConfig {
+///     host: String,
+///     #[schema(default = "3000")]
+///     port: String,
+/// }
+///
+/// assert_eq!(AppConfig::required_keys(), &["host"]);
+/// assert_eq!(AppConfig::defaults(), &[("port", "3000")]);
+/// ```
+pub fn config_schema(input: TokenStream) -> TokenStream {
+    config_schema::config_schema_impl(input)
 }
 
 #[proc_macro_attribute]

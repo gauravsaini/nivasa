@@ -71,6 +71,15 @@ impl TestClient {
         let response = server.dispatch_for_test(request).await;
         TestResponse::from_response(response).await
     }
+
+    /// Send the request through the in-memory dispatch path on a private Tokio runtime.
+    pub fn send_blocking(self) -> TestResponse {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime must build")
+            .block_on(self.send())
+    }
 }
 
 fn build_request(
