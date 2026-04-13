@@ -1,8 +1,12 @@
 use async_trait::async_trait;
 use nivasa_core::module::{
-    ConfigurableModule, DynamicModule, Module, ModuleMetadata, ModuleRegistry,
+    ConfigurableModule, DynamicModule, Module, ModuleMetadata, ModuleOrchestrator, ModuleRegistry,
 };
 use std::any::TypeId;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 struct RootService;
 struct FeatureService;
@@ -117,6 +121,21 @@ fn configurable_modules_can_build_root_and_feature_variants() {
 
     assert!(!feature.metadata.is_global);
     assert_eq!(feature.providers, vec![TypeId::of::<FeatureService>()]);
+}
+
+#[test]
+fn dynamic_module_pre_bootstrap_callback_runs_only_when_invoked() {
+    let ran = Arc::new(AtomicBool::new(false));
+    let hook_ran = ran.clone();
+    let module = DynamicModule::new(ModuleMetadata::new()).with_pre_bootstrap(move || {
+        hook_ran.store(true, Ordering::SeqCst);
+        Ok(())
+    });
+
+    assert!(!ran.load(Ordering::SeqCst));
+    ModuleOrchestrator::run_dynamic_pre_bootstrap(&module).unwrap();
+    assert!(ran.load(Ordering::SeqCst));
+    assert!(module.metadata.providers.is_empty());
 }
 
 #[test]

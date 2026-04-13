@@ -355,7 +355,33 @@ impl From<io::Error> for ConfigLoadError {
     }
 }
 
+/// Errors raised while building a validated root config module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigBootstrapError {
+    /// Loading config sources failed before validation could run.
+    Load { message: String },
+    /// Schema validation failed for the loaded config map.
+    Validation { message: String },
+}
+
+impl std::fmt::Display for ConfigBootstrapError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Load { message } => write!(f, "config load failed: {message}"),
+            Self::Validation { message } => write!(f, "config validation failed: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for ConfigBootstrapError {}
+
 impl ConfigModule {
+    fn root_dynamic_module(options: &ConfigOptions) -> DynamicModule {
+        DynamicModule::new(ModuleMetadata::new().with_exports(config_export_types()))
+            .with_providers(config_provider_types())
+            .with_global(options.is_global)
+    }
+
     /// Create a new `ConfigModule` marker.
     pub const fn new() -> Self {
         Self
@@ -366,9 +392,38 @@ impl ConfigModule {
     /// This slice only advertises config-related provider metadata and global
     /// visibility. Actual env loading and richer `ConfigService` wiring land later.
     pub fn for_root(options: ConfigOptions) -> DynamicModule {
-        DynamicModule::new(ModuleMetadata::new().with_exports(config_export_types()))
-            .with_providers(config_provider_types())
-            .with_global(options.is_global)
+        Self::root_dynamic_module(&options)
+    }
+
+    /// Build a root dynamic config module and validate its loaded config
+    /// against a static schema before returning it.
+    ///
+    /// The module also carries a pre-bootstrap callback so the same schema
+    /// check can be replayed by the framework later without manual glue.
+    pub fn for_root_with_schema<S>(
+        options: ConfigOptions,
+    ) -> Result<DynamicModule, ConfigBootstrapError>
+    where
+        S: ConfigSchema,
+    {
+        let loaded = Self::load_env(&options).map_err(|error| ConfigBootstrapError::Load {
+            message: error.to_string(),
+        })?;
+
+        let module = Self::root_dynamic_module(&options).with_pre_bootstrap({
+            let loaded = loaded.clone();
+            move || {
+                ConfigModule::validate_schema::<S>(&loaded)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            }
+        });
+
+        module
+            .run_pre_bootstrap()
+            .map_err(|message| ConfigBootstrapError::Validation { message })?;
+
+        Ok(module)
     }
 
     /// Load configured `.env` files into an in-memory map.
@@ -501,9 +556,7 @@ impl ConfigurableModule for ConfigModule {
     }
 
     fn for_feature(options: Self::Options) -> DynamicModule {
-        DynamicModule::new(ModuleMetadata::new().with_exports(config_export_types()))
-            .with_providers(config_provider_types())
-            .with_global(options.is_global)
+        Self::root_dynamic_module(&options)
     }
 }
 
@@ -697,6 +750,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::PathBuf;
+    use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -967,6 +1021,7 @@ mod tests {
 
     #[test]
     fn load_env_reads_the_first_configured_env_file() {
+        let _env_guard = env_test_lock().lock().unwrap();
         let path = write_temp_env_file(
             "NIVASA_CONFIG_TEST_PORT=3000\nNIVASA_CONFIG_TEST_HOST=127.0.0.1\n",
         );
@@ -986,6 +1041,7 @@ mod tests {
 
     #[test]
     fn load_env_reads_a_dotenv_file() {
+        let _env_guard = env_test_lock().lock().unwrap();
         let path = write_temp_env_file("NIVASA_CONFIG_TEST_NAME=from_dotenv\n");
         let options = ConfigOptions::new().with_env_file_path(path.to_string_lossy().to_string());
 
@@ -999,6 +1055,7 @@ mod tests {
 
     #[test]
     fn load_env_merges_configured_env_files_in_order() {
+        let _env_guard = env_test_lock().lock().unwrap();
         let base_path = write_temp_env_file(
             "NIVASA_CONFIG_TEST_HOST=127.0.0.1\nNIVASA_CONFIG_TEST_PORT=3000\n",
         );
@@ -1026,6 +1083,7 @@ mod tests {
 
     #[test]
     fn load_env_prefers_process_env_over_dotenv_values() {
+        let _env_guard = env_test_lock().lock().unwrap();
         let key = "NIVASA_CONFIG_TEST_OVERRIDE";
         let path = write_temp_env_file("NIVASA_CONFIG_TEST_OVERRIDE=from_file\n");
         let options = ConfigOptions::new().with_env_file_path(path.to_string_lossy().to_string());
@@ -1039,6 +1097,7 @@ mod tests {
 
     #[test]
     fn load_env_expands_variable_references_when_enabled() {
+        let _env_guard = env_test_lock().lock().unwrap();
         let path = write_temp_env_file(
             "NIVASA_CONFIG_TEST_HOST=localhost\nNIVASA_CONFIG_TEST_PORT=3000\nNIVASA_CONFIG_TEST_URL=http://$NIVASA_CONFIG_TEST_HOST:$NIVASA_CONFIG_TEST_PORT\n",
         );
@@ -1056,6 +1115,7 @@ mod tests {
 
     #[test]
     fn load_env_respects_ignore_env_file_option() {
+        let _env_guard = env_test_lock().lock().unwrap();
         let path = write_temp_env_file("PORT=3000\n");
         let options = ConfigOptions::new()
             .with_env_file_path(path.to_string_lossy().to_string())
@@ -1068,6 +1128,7 @@ mod tests {
 
     #[test]
     fn load_env_returns_empty_when_no_env_file_is_configured() {
+        let _env_guard = env_test_lock().lock().unwrap();
         let loaded =
             ConfigModule::load_env(&ConfigOptions::new()).expect("missing path should no-op");
 
@@ -1076,6 +1137,7 @@ mod tests {
 
     #[test]
     fn config_load_error_wraps_dotenv_failures() {
+        let _env_guard = env_test_lock().lock().unwrap();
         let options = ConfigOptions::new().with_env_file_path("/definitely/missing/.env");
 
         let error = ConfigModule::load_env(&options).expect_err("missing file should error");
@@ -1195,6 +1257,11 @@ mod tests {
             std::env::temp_dir().join(format!("nivasa-config-{unique}-{}.env", std::process::id()));
         fs::write(&path, contents).expect("temp env file should write");
         path
+    }
+
+    fn env_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
     }
 
     fn with_env_var<F, R>(key: &str, value: &str, f: F) -> R

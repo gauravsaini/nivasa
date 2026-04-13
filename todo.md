@@ -768,7 +768,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 #### 6.1.4 — Type-Safe Config (Config Schema)
 - [x] Support config schema definition via `#[derive(ConfigSchema)]`
-- [ ] Auto-validate loaded config against schema at module init
+- [x] Auto-validate loaded config against schema at module init
 - [x] Emit clear startup error listing all missing/invalid config keys
 - [x] Support default values in schema
 
