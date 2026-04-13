@@ -996,8 +996,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `.enable_cors()` — minimal transport-side CORS bridge on `ServerOptions`; richer middleware/CorsOptions work remains future
 - [x] Implement `.enable_versioning(VersioningOptions)` — API versioning config
 - [x] Implement `.use_(Middleware)` — apply global middleware (bootstrap-only facade via `AppBootstrapConfig::use_middleware(...)`)
-- [ ] Implement startup banner with ASCII art + version
-- [ ] Implement startup logging: routes registered, modules loaded, listen address
+- [x] Implement startup banner with ASCII art + version
+- [x] Implement startup logging: routes registered, root module loaded, listen address
 - [x] Implement `.close()` — graceful shutdown API (for testing)
 
 ---
