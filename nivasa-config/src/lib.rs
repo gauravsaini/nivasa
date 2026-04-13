@@ -116,12 +116,25 @@ impl std::error::Error for ConfigException {}
 pub enum ConfigValidationIssue {
     /// A required key was missing from the loaded config map.
     MissingRequiredKey { key: String },
+    /// A value failed schema-level validation.
+    InvalidValue {
+        key: String,
+        value: String,
+        expected: String,
+    },
 }
 
 impl std::fmt::Display for ConfigValidationIssue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MissingRequiredKey { key } => write!(f, "missing required config key: {key}"),
+            Self::InvalidValue {
+                key,
+                value,
+                expected,
+            } => {
+                write!(f, "invalid config value for {key}: {value} ({expected})")
+            }
         }
     }
 }
@@ -182,6 +195,15 @@ pub trait ConfigSchema {
     /// Optional default key/value pairs for missing entries.
     fn defaults() -> &'static [(&'static str, &'static str)] {
         &[]
+    }
+
+    /// Additional explicit validation for already-loaded values.
+    ///
+    /// Implementations can use this hook to report typed value problems or
+    /// other schema-specific issues in the same error aggregate as missing
+    /// keys.
+    fn validate(_loaded: &BTreeMap<String, String>) -> Vec<ConfigValidationIssue> {
+        Vec::new()
     }
 }
 
@@ -411,28 +433,13 @@ impl ConfigModule {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let mut missing = Vec::new();
+        let issues = collect_missing_required_key_issues(loaded, required_keys);
 
-        for key in required_keys {
-            let key = key.as_ref().trim();
-            if key.is_empty() || loaded.contains_key(key) || missing.iter().any(|item| item == key)
-            {
-                continue;
-            }
-
-            missing.push(key.to_string());
-        }
-
-        if missing.is_empty() {
+        if issues.is_empty() {
             return Ok(());
         }
 
-        Err(ConfigValidationError::new(
-            missing
-                .into_iter()
-                .map(|key| ConfigValidationIssue::MissingRequiredKey { key })
-                .collect(),
-        ))
+        Err(ConfigValidationError::new(issues))
     }
 
     /// Validate a loaded config map against a static schema contract.
@@ -475,7 +482,13 @@ impl ConfigModule {
                 .or_insert_with(|| (*value).to_string());
         }
 
-        Self::validate_required_keys(&merged, S::required_keys())?;
+        let mut issues = collect_missing_required_key_issues(&merged, S::required_keys());
+        issues.extend(S::validate(&merged));
+
+        if !issues.is_empty() {
+            return Err(ConfigValidationError::new(issues));
+        }
+
         Ok(merged)
     }
 }
@@ -503,6 +516,31 @@ fn config_provider_types() -> Vec<TypeId> {
 
 fn config_export_types() -> Vec<TypeId> {
     vec![TypeId::of::<ConfigService>()]
+}
+
+fn collect_missing_required_key_issues<I, S>(
+    loaded: &BTreeMap<String, String>,
+    required_keys: I,
+) -> Vec<ConfigValidationIssue>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut missing = Vec::new();
+
+    for key in required_keys {
+        let key = key.as_ref().trim();
+        if key.is_empty() || loaded.contains_key(key) || missing.iter().any(|item| item == key) {
+            continue;
+        }
+
+        missing.push(key.to_string());
+    }
+
+    missing
+        .into_iter()
+        .map(|key| ConfigValidationIssue::MissingRequiredKey { key })
+        .collect()
 }
 
 fn normalize_env_file_path(path: String) -> String {
