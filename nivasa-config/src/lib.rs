@@ -3,12 +3,13 @@
 //! Nivasa framework — config.
 //!
 //! This crate currently exposes the bootstrap-facing `ConfigModule` marker
-//! type. Runtime config loading, `for_root`/`for_feature`, env parsing, and
-//! richer config services land in later slices.
+//! type plus a manual `ConfigSchema` validation helper. Runtime config
+//! loading, `for_root`/`for_feature`, env parsing, and richer config services
+//! land in later slices.
 
 use nivasa_core::module::{ConfigurableModule, DynamicModule, ModuleMetadata};
-use std::collections::BTreeMap;
 use std::any::TypeId;
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -21,9 +22,13 @@ use std::str::FromStr;
 /// surface that later loading slices will consume.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ConfigOptions {
+    /// Mark the config module as globally visible.
     pub is_global: bool,
+    /// Ordered list of `.env` file paths to merge.
     pub env_file_paths: Vec<String>,
+    /// Skip `.env` files and read only process environment variables.
     pub ignore_env_file: bool,
+    /// Enable `$VAR` and `${VAR}` interpolation in loaded values.
     pub expand_variables: bool,
 }
 
@@ -88,6 +93,7 @@ pub struct ConfigOptionsProvider;
 /// Errors raised by read-only config lookups.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigException {
+    /// A requested key was not present in the config map.
     MissingKey { key: String },
 }
 
@@ -101,6 +107,106 @@ impl std::fmt::Display for ConfigException {
 
 impl std::error::Error for ConfigException {}
 
+/// One validation issue found in loaded config values.
+///
+/// This surface stays intentionally narrow for now. It only reports missing
+/// required keys for already-loaded config maps and does not imply automatic
+/// startup or module-init validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigValidationIssue {
+    /// A required key was missing from the loaded config map.
+    MissingRequiredKey { key: String },
+    /// A value failed schema-level validation.
+    InvalidValue {
+        key: String,
+        value: String,
+        expected: String,
+    },
+}
+
+impl std::fmt::Display for ConfigValidationIssue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingRequiredKey { key } => write!(f, "missing required config key: {key}"),
+            Self::InvalidValue {
+                key,
+                value,
+                expected,
+            } => {
+                write!(f, "invalid config value for {key}: {value} ({expected})")
+            }
+        }
+    }
+}
+
+/// Aggregated validation error for loaded config values.
+///
+/// This is a manual validation helper result, not a startup/runtime hook.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigValidationError {
+    issues: Vec<ConfigValidationIssue>,
+}
+
+impl ConfigValidationError {
+    /// Build a validation error from collected issues.
+    pub fn new(issues: Vec<ConfigValidationIssue>) -> Self {
+        Self { issues }
+    }
+
+    /// Borrow collected validation issues.
+    pub fn issues(&self) -> &[ConfigValidationIssue] {
+        &self.issues
+    }
+
+    /// True when no validation issues were collected.
+    pub fn is_empty(&self) -> bool {
+        self.issues.is_empty()
+    }
+}
+
+impl std::fmt::Display for ConfigValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut issues = self.issues.iter();
+        if let Some(first) = issues.next() {
+            write!(f, "{first}")?;
+            for issue in issues {
+                write!(f, "; {issue}")?;
+            }
+            Ok(())
+        } else {
+            write!(f, "config validation failed")
+        }
+    }
+}
+
+impl std::error::Error for ConfigValidationError {}
+
+/// Static schema contract for already-loaded config maps.
+///
+/// This trait is intentionally explicit and read-only. It lets callers define
+/// required keys and optional defaults, then validate an in-memory config map
+/// without implying startup-time or module-init validation.
+pub trait ConfigSchema {
+    /// Required keys for this schema.
+    fn required_keys() -> &'static [&'static str] {
+        &[]
+    }
+
+    /// Optional default key/value pairs for missing entries.
+    fn defaults() -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
+
+    /// Additional explicit validation for already-loaded values.
+    ///
+    /// Implementations can use this hook to report typed value problems or
+    /// other schema-specific issues in the same error aggregate as missing
+    /// keys.
+    fn validate(_loaded: &BTreeMap<String, String>) -> Vec<ConfigValidationIssue> {
+        Vec::new()
+    }
+}
+
 /// Thin config service surface for in-crate provider metadata.
 ///
 /// This stays intentionally small: it only wraps an in-memory config map and
@@ -113,6 +219,13 @@ pub struct ConfigService {
 
 impl ConfigService {
     /// Create an empty config service.
+    ///
+    /// ```
+    /// use nivasa_config::ConfigService;
+    ///
+    /// let service = ConfigService::new();
+    /// assert!(service.values().is_empty());
+    /// ```
     pub fn new() -> Self {
         Self {
             values: BTreeMap::new(),
@@ -120,16 +233,46 @@ impl ConfigService {
     }
 
     /// Build a config service from an already-loaded key/value map.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use nivasa_config::ConfigService;
+    ///
+    /// let service = ConfigService::from_values(BTreeMap::from([
+    ///     ("PORT".to_string(), "3000".to_string()),
+    /// ]));
+    /// assert_eq!(service.get_raw("PORT"), Some("3000"));
+    /// ```
     pub fn from_values(values: BTreeMap<String, String>) -> Self {
         Self { values }
     }
 
     /// Borrow a raw config value by key.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use nivasa_config::ConfigService;
+    ///
+    /// let service = ConfigService::from_values(BTreeMap::from([
+    ///     ("HOST".to_string(), "127.0.0.1".to_string()),
+    /// ]));
+    /// assert_eq!(service.get_raw("HOST"), Some("127.0.0.1"));
+    /// ```
     pub fn get_raw(&self, key: &str) -> Option<&str> {
         self.values.get(key).map(|value| value.as_str())
     }
 
     /// Borrow and parse a typed config value by key.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use nivasa_config::ConfigService;
+    ///
+    /// let service = ConfigService::from_values(BTreeMap::from([
+    ///     ("PORT".to_string(), "3000".to_string()),
+    /// ]));
+    /// assert_eq!(service.get::<i32>("PORT"), Some(3000));
+    /// ```
     pub fn get<T>(&self, key: &str) -> Option<T>
     where
         T: FromStr,
@@ -138,6 +281,17 @@ impl ConfigService {
     }
 
     /// Borrow and parse a typed config value, or fall back to a default.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use nivasa_config::ConfigService;
+    ///
+    /// let service = ConfigService::from_values(BTreeMap::from([
+    ///     ("PORT".to_string(), "3000".to_string()),
+    /// ]));
+    /// assert_eq!(service.get_or_default("MISSING", 80), 80);
+    /// assert_eq!(service.get_or_default("PORT", 80), 3000);
+    /// ```
     pub fn get_or_default<T>(&self, key: &str, default: T) -> T
     where
         T: FromStr,
@@ -146,6 +300,16 @@ impl ConfigService {
     }
 
     /// Borrow a raw config value, or return a config error if it is missing.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use nivasa_config::ConfigService;
+    ///
+    /// let service = ConfigService::from_values(BTreeMap::from([
+    ///     ("HOST".to_string(), "127.0.0.1".to_string()),
+    /// ]));
+    /// assert_eq!(service.get_or_throw("HOST").unwrap(), "127.0.0.1");
+    /// ```
     pub fn get_or_throw(&self, key: &str) -> Result<String, ConfigException> {
         self.get_raw(key)
             .map(|value| value.to_string())
@@ -171,6 +335,7 @@ pub struct ConfigModule;
 /// Errors raised while loading `.env` config sources.
 #[derive(Debug)]
 pub enum ConfigLoadError {
+    /// The env file could not be read from disk.
     EnvFile(io::Error),
 }
 
@@ -212,6 +377,14 @@ impl ConfigModule {
     /// configured order. Later files can override earlier keys. If variable
     /// expansion is enabled, values can reference other keys via `$VAR` or
     /// `${VAR}` before process env overlay happens.
+    ///
+    /// ```
+    /// use nivasa_config::{ConfigModule, ConfigOptions};
+    ///
+    /// let options = ConfigOptions::new().with_ignore_env_file(true);
+    /// let loaded = ConfigModule::load_env(&options).unwrap();
+    /// assert!(loaded.is_empty());
+    /// ```
     pub fn load_env(options: &ConfigOptions) -> Result<BTreeMap<String, String>, ConfigLoadError> {
         if options.ignore_env_file {
             return Ok(BTreeMap::new());
@@ -234,6 +407,89 @@ impl ConfigModule {
         loaded.extend(load_process_env());
 
         Ok(loaded)
+    }
+
+    /// Validate that a loaded config map contains all required keys.
+    ///
+    /// This helper validates an already-loaded map only. It does not wire
+    /// validation into startup, module init, or `for_root`.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use nivasa_config::ConfigModule;
+    ///
+    /// let loaded = BTreeMap::from([
+    ///     ("HOST".to_string(), "127.0.0.1".to_string()),
+    ///     ("PORT".to_string(), "3000".to_string()),
+    /// ]);
+    ///
+    /// ConfigModule::validate_required_keys(&loaded, ["HOST", "PORT"]).unwrap();
+    /// ```
+    pub fn validate_required_keys<I, S>(
+        loaded: &BTreeMap<String, String>,
+        required_keys: I,
+    ) -> Result<(), ConfigValidationError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let issues = collect_missing_required_key_issues(loaded, required_keys);
+
+        if issues.is_empty() {
+            return Ok(());
+        }
+
+        Err(ConfigValidationError::new(issues))
+    }
+
+    /// Validate a loaded config map against a static schema contract.
+    ///
+    /// Defaults are applied first, then required keys are checked on the
+    /// merged in-memory map. This helper is explicit and does not imply any
+    /// startup or module-init validation path.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use nivasa_config::{ConfigModule, ConfigSchema};
+    ///
+    /// struct AppConfig;
+    ///
+    /// impl ConfigSchema for AppConfig {
+    ///     fn required_keys() -> &'static [&'static str] {
+    ///         &["HOST", "PORT"]
+    ///     }
+    ///
+    ///     fn defaults() -> &'static [(&'static str, &'static str)] {
+    ///         &[("PORT", "3000")]
+    ///     }
+    /// }
+    ///
+    /// let loaded = BTreeMap::from([("HOST".to_string(), "127.0.0.1".to_string())]);
+    /// let validated = ConfigModule::validate_schema::<AppConfig>(&loaded).unwrap();
+    /// assert_eq!(validated.get("HOST").map(String::as_str), Some("127.0.0.1"));
+    /// assert_eq!(validated.get("PORT").map(String::as_str), Some("3000"));
+    /// ```
+    pub fn validate_schema<S>(
+        loaded: &BTreeMap<String, String>,
+    ) -> Result<BTreeMap<String, String>, ConfigValidationError>
+    where
+        S: ConfigSchema,
+    {
+        let mut merged = loaded.clone();
+        for (key, value) in S::defaults() {
+            merged
+                .entry((*key).to_string())
+                .or_insert_with(|| (*value).to_string());
+        }
+
+        let mut issues = collect_missing_required_key_issues(&merged, S::required_keys());
+        issues.extend(S::validate(&merged));
+
+        if !issues.is_empty() {
+            return Err(ConfigValidationError::new(issues));
+        }
+
+        Ok(merged)
     }
 }
 
@@ -260,6 +516,31 @@ fn config_provider_types() -> Vec<TypeId> {
 
 fn config_export_types() -> Vec<TypeId> {
     vec![TypeId::of::<ConfigService>()]
+}
+
+fn collect_missing_required_key_issues<I, S>(
+    loaded: &BTreeMap<String, String>,
+    required_keys: I,
+) -> Vec<ConfigValidationIssue>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut missing = Vec::new();
+
+    for key in required_keys {
+        let key = key.as_ref().trim();
+        if key.is_empty() || loaded.contains_key(key) || missing.iter().any(|item| item == key) {
+            continue;
+        }
+
+        missing.push(key.to_string());
+    }
+
+    missing
+        .into_iter()
+        .map(|key| ConfigValidationIssue::MissingRequiredKey { key })
+        .collect()
 }
 
 fn normalize_env_file_path(path: String) -> String {
@@ -294,11 +575,7 @@ fn expand_env_values(values: &BTreeMap<String, String>) -> BTreeMap<String, Stri
     expanded
 }
 
-fn expand_env_value(
-    value: &str,
-    values: &BTreeMap<String, String>,
-    depth: usize,
-) -> String {
+fn expand_env_value(value: &str, values: &BTreeMap<String, String>, depth: usize) -> String {
     if depth > 8 {
         return value.to_string();
     }
@@ -414,7 +691,7 @@ fn parse_env_line(line: &str) -> Option<(String, String)> {
 mod tests {
     use super::{
         config_export_types, config_provider_types, ConfigLoadError, ConfigModule, ConfigOptions,
-        ConfigService,
+        ConfigSchema, ConfigService, ConfigValidationError, ConfigValidationIssue,
     };
     use std::any::TypeId;
     use std::collections::BTreeMap;
@@ -541,7 +818,10 @@ mod tests {
         ]));
 
         assert_eq!(service.get_raw("database.host"), Some("localhost"));
-        assert_eq!(service.get::<String>("database.host"), Some("localhost".to_string()));
+        assert_eq!(
+            service.get::<String>("database.host"),
+            Some("localhost".to_string())
+        );
         assert_eq!(
             service.get_or_throw("database.port"),
             Ok("5432".to_string())
@@ -570,8 +850,13 @@ mod tests {
 
     #[test]
     fn config_options_support_multiple_env_file_paths() {
-        let options = ConfigOptions::new()
-            .with_env_file_paths([" .env ", "", " .env.local ", "   ", ".env.production"]);
+        let options = ConfigOptions::new().with_env_file_paths([
+            " .env ",
+            "",
+            " .env.local ",
+            "   ",
+            ".env.production",
+        ]);
 
         assert_eq!(
             options.env_file_paths,
@@ -596,9 +881,8 @@ mod tests {
     #[test]
     fn for_feature_preserves_env_file_path_options_surface() {
         let options = ConfigOptions::new().with_env_file_paths([".env", ".env.test"]);
-        let module = <ConfigModule as nivasa_core::module::ConfigurableModule>::for_feature(
-            options.clone(),
-        );
+        let module =
+            <ConfigModule as nivasa_core::module::ConfigurableModule>::for_feature(options.clone());
 
         assert_eq!(options.env_file_paths, vec![".env", ".env.test"]);
         assert_eq!(module.merged_metadata().providers, config_provider_types());
@@ -632,9 +916,8 @@ mod tests {
     #[test]
     fn for_feature_preserves_ignore_env_file_options_surface() {
         let options = ConfigOptions::new().with_ignore_env_file(true);
-        let module = <ConfigModule as nivasa_core::module::ConfigurableModule>::for_feature(
-            options.clone(),
-        );
+        let module =
+            <ConfigModule as nivasa_core::module::ConfigurableModule>::for_feature(options.clone());
 
         assert!(options.ignore_env_file);
         assert_eq!(module.merged_metadata().providers, config_provider_types());
@@ -653,9 +936,8 @@ mod tests {
             _container: &'life1 nivasa_core::di::DependencyContainer,
         ) -> std::pin::Pin<
             Box<
-                dyn std::future::Future<
-                        Output = Result<(), nivasa_core::di::error::DiError>,
-                    > + Send
+                dyn std::future::Future<Output = Result<(), nivasa_core::di::error::DiError>>
+                    + Send
                     + 'async_trait,
             >,
         >
@@ -685,7 +967,9 @@ mod tests {
 
     #[test]
     fn load_env_reads_the_first_configured_env_file() {
-        let path = write_temp_env_file("NIVASA_CONFIG_TEST_PORT=3000\nNIVASA_CONFIG_TEST_HOST=127.0.0.1\n");
+        let path = write_temp_env_file(
+            "NIVASA_CONFIG_TEST_PORT=3000\nNIVASA_CONFIG_TEST_HOST=127.0.0.1\n",
+        );
         let options = ConfigOptions::new().with_env_file_path(path.to_string_lossy().to_string());
 
         let loaded = ConfigModule::load_env(&options).expect("env file should load");
@@ -784,7 +1068,8 @@ mod tests {
 
     #[test]
     fn load_env_returns_empty_when_no_env_file_is_configured() {
-        let loaded = ConfigModule::load_env(&ConfigOptions::new()).expect("missing path should no-op");
+        let loaded =
+            ConfigModule::load_env(&ConfigOptions::new()).expect("missing path should no-op");
 
         assert!(loaded.is_empty());
     }
@@ -798,15 +1083,116 @@ mod tests {
         assert!(matches!(error, ConfigLoadError::EnvFile(_)));
     }
 
+    #[test]
+    fn validate_required_keys_accepts_loaded_keys() {
+        let loaded = BTreeMap::from([
+            ("HOST".to_string(), "127.0.0.1".to_string()),
+            ("PORT".to_string(), "3000".to_string()),
+        ]);
+
+        let result = ConfigModule::validate_required_keys(&loaded, ["HOST", "PORT"]);
+
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn validate_required_keys_aggregates_missing_keys() {
+        let loaded = BTreeMap::from([("HOST".to_string(), "127.0.0.1".to_string())]);
+
+        let error = ConfigModule::validate_required_keys(&loaded, ["HOST", "PORT", "API_KEY"])
+            .expect_err("missing keys should fail validation");
+
+        assert_eq!(
+            error,
+            ConfigValidationError::new(vec![
+                ConfigValidationIssue::MissingRequiredKey {
+                    key: "PORT".to_string(),
+                },
+                ConfigValidationIssue::MissingRequiredKey {
+                    key: "API_KEY".to_string(),
+                },
+            ])
+        );
+        assert_eq!(
+            error.to_string(),
+            "missing required config key: PORT; missing required config key: API_KEY"
+        );
+    }
+
+    #[test]
+    fn validate_required_keys_ignores_blank_and_duplicate_required_entries() {
+        let loaded = BTreeMap::new();
+
+        let error = ConfigModule::validate_required_keys(&loaded, ["", "PORT", " PORT ", "   "])
+            .expect_err("missing key should fail validation");
+
+        assert_eq!(
+            error.issues(),
+            &[ConfigValidationIssue::MissingRequiredKey {
+                key: "PORT".to_string(),
+            }]
+        );
+    }
+
+    struct DemoConfigSchema;
+
+    impl ConfigSchema for DemoConfigSchema {
+        fn required_keys() -> &'static [&'static str] {
+            &["HOST", "PORT"]
+        }
+
+        fn defaults() -> &'static [(&'static str, &'static str)] {
+            &[("PORT", "3000"), ("SCHEME", "http")]
+        }
+    }
+
+    #[test]
+    fn validate_schema_applies_defaults_without_overriding_loaded_values() {
+        let loaded = BTreeMap::from([("HOST".to_string(), "127.0.0.1".to_string())]);
+
+        let validated = ConfigModule::validate_schema::<DemoConfigSchema>(&loaded)
+            .expect("schema validation should succeed");
+
+        assert_eq!(validated.get("HOST").map(String::as_str), Some("127.0.0.1"));
+        assert_eq!(validated.get("PORT").map(String::as_str), Some("3000"));
+        assert_eq!(validated.get("SCHEME").map(String::as_str), Some("http"));
+    }
+
+    #[test]
+    fn validate_schema_preserves_loaded_values_over_defaults() {
+        let loaded = BTreeMap::from([
+            ("HOST".to_string(), "localhost".to_string()),
+            ("PORT".to_string(), "8080".to_string()),
+        ]);
+
+        let validated = ConfigModule::validate_schema::<DemoConfigSchema>(&loaded)
+            .expect("schema validation should succeed");
+
+        assert_eq!(validated.get("PORT").map(String::as_str), Some("8080"));
+    }
+
+    #[test]
+    fn validate_schema_reports_missing_required_keys_after_defaults() {
+        let loaded = BTreeMap::new();
+
+        let error = ConfigModule::validate_schema::<DemoConfigSchema>(&loaded)
+            .expect_err("missing required key should fail");
+
+        assert_eq!(
+            error,
+            ConfigValidationError::new(vec![ConfigValidationIssue::MissingRequiredKey {
+                key: "HOST".to_string(),
+            }])
+        );
+    }
+
     fn write_temp_env_file(contents: &str) -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock should be after unix epoch")
             .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "nivasa-config-{unique}-{}.env",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("nivasa-config-{unique}-{}.env", std::process::id()));
         fs::write(&path, contents).expect("temp env file should write");
         path
     }

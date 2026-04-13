@@ -3,7 +3,29 @@ use std::collections::{HashMap, HashSet};
 
 use crate::di::error::DiError;
 
-/// Node in the dependency graph.
+/// Dependency graph for DI providers.
+///
+/// Graph stores provider `TypeId` values and dependency edges, then resolves
+/// initialization order with a depth-first topological walk.
+///
+/// # Examples
+///
+/// ```
+/// use std::any::TypeId;
+/// use nivasa_core::di::graph::DependencyGraph;
+///
+/// struct A;
+/// struct B;
+///
+/// let mut graph = DependencyGraph::new();
+/// graph.add_node(TypeId::of::<A>(), "A", vec![TypeId::of::<B>()]);
+/// graph.add_node(TypeId::of::<B>(), "B", vec![]);
+///
+/// let order = graph.resolve_order().unwrap();
+/// assert_eq!(order, vec![TypeId::of::<B>(), TypeId::of::<A>()]);
+/// ```
+///
+/// Cycle returns `DiError::CircularDependency`.
 struct Node {
     pub type_name: &'static str,
     pub dependencies: Vec<TypeId>,
@@ -21,13 +43,16 @@ impl Default for DependencyGraph {
 }
 
 impl DependencyGraph {
+    /// Create empty dependency graph.
     pub fn new() -> Self {
         Self {
             nodes: HashMap::new(),
         }
     }
 
-    /// Add a provider to the graph.
+    /// Add node to graph.
+    ///
+    /// `dependencies` lists providers that must initialize first.
     pub fn add_node(
         &mut self,
         type_id: TypeId,
@@ -43,8 +68,29 @@ impl DependencyGraph {
         );
     }
 
-    /// Run a topological sort to determine initialization order and detect cycles.
-    /// Returns an ordered list of TypeIds, from those with no dependencies up to the root.
+    /// Resolve initialization order.
+    ///
+    /// Returns nodes from leaves to roots.
+    /// Cycle returns [`DiError::CircularDependency`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::any::TypeId;
+    /// use nivasa_core::di::graph::DependencyGraph;
+    ///
+    /// struct A;
+    /// struct B;
+    /// struct C;
+    ///
+    /// let mut graph = DependencyGraph::new();
+    /// graph.add_node(TypeId::of::<A>(), "A", vec![TypeId::of::<B>()]);
+    /// graph.add_node(TypeId::of::<B>(), "B", vec![TypeId::of::<C>()]);
+    /// graph.add_node(TypeId::of::<C>(), "C", vec![]);
+    ///
+    /// let order = graph.resolve_order().unwrap();
+    /// assert_eq!(order, vec![TypeId::of::<C>(), TypeId::of::<B>(), TypeId::of::<A>()]);
+    /// ```
     pub fn resolve_order(&self) -> Result<Vec<TypeId>, DiError> {
         let mut order = Vec::new();
         let mut visited = HashSet::new();

@@ -1,0 +1,5 @@
+error: `#[derive(ConfigSchema)]` only supports structs with named fields
+ --> tests/trybuild/config_schema_tuple_struct.rs:4:1
+  |
+4 | struct TupleConfig(String, String);
+  | ^^^^^^

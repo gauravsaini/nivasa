@@ -6,6 +6,59 @@
 //! Invalid transitions are:
 //! - **Debug builds**: panic with full diagnostic
 //! - **Release builds**: return `Err(InvalidTransitionError)`
+//!
+//! ```rust
+//! use nivasa_statechart::engine::{StatechartEngine, StatechartSpec};
+//!
+//! #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+//! enum DemoState {
+//!     Idle,
+//!     Done,
+//! }
+//!
+//! #[derive(Debug, Clone, PartialEq, Eq)]
+//! enum DemoEvent {
+//!     Finish,
+//! }
+//!
+//! struct DemoSpec;
+//!
+//! impl StatechartSpec for DemoSpec {
+//!     type State = DemoState;
+//!     type Event = DemoEvent;
+//!
+//!     fn transition(current: &Self::State, event: &Self::Event) -> Option<Self::State> {
+//!         match (current, event) {
+//!             (DemoState::Idle, DemoEvent::Finish) => Some(DemoState::Done),
+//!             _ => None,
+//!         }
+//!     }
+//!
+//!     fn valid_events_for(state: &Self::State) -> Vec<Self::Event> {
+//!         match state {
+//!             DemoState::Idle => vec![DemoEvent::Finish],
+//!             DemoState::Done => vec![],
+//!         }
+//!     }
+//!
+//!     fn is_final(state: &Self::State) -> bool {
+//!         matches!(state, DemoState::Done)
+//!     }
+//!
+//!     fn name() -> &'static str {
+//!         "demo"
+//!     }
+//!
+//!     fn scxml_hash() -> &'static str {
+//!         "hash"
+//!     }
+//! }
+//!
+//! let mut engine = StatechartEngine::<DemoSpec>::new(DemoState::Idle);
+//! assert_eq!(engine.current_state(), DemoState::Idle);
+//! assert_eq!(engine.send_event(DemoEvent::Finish).unwrap(), DemoState::Done);
+//! assert!(engine.is_in_final_state());
+//! ```
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -178,6 +231,30 @@ pub struct StatechartEngine<S: StatechartSpec> {
 
 impl<S: StatechartSpec> StatechartEngine<S> {
     /// Create a new engine in the given initial state.
+    ///
+    /// The engine resolves any generated SCXML initial-child state before it
+    /// stores the starting state.
+    ///
+    /// ```rust
+    /// use nivasa_statechart::engine::{StatechartEngine, StatechartSpec};
+    ///
+    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// # enum DemoState { Idle }
+    /// # #[derive(Debug, Clone, PartialEq, Eq)]
+    /// # enum DemoEvent { Finish }
+    /// # struct DemoSpec;
+    /// # impl StatechartSpec for DemoSpec {
+    /// #     type State = DemoState;
+    /// #     type Event = DemoEvent;
+    /// #     fn transition(_: &Self::State, _: &Self::Event) -> Option<Self::State> { None }
+    /// #     fn valid_events_for(_: &Self::State) -> Vec<Self::Event> { vec![] }
+    /// #     fn is_final(_: &Self::State) -> bool { false }
+    /// #     fn name() -> &'static str { "demo" }
+    /// #     fn scxml_hash() -> &'static str { "hash" }
+    /// # }
+    /// let engine = StatechartEngine::<DemoSpec>::new(DemoState::Idle);
+    /// assert_eq!(engine.current_state(), DemoState::Idle);
+    /// ```
     pub fn new(initial_state: S::State) -> Self {
         Self {
             current_state: S::enter_initial_state(initial_state),
@@ -189,6 +266,50 @@ impl<S: StatechartSpec> StatechartEngine<S> {
     }
 
     /// Create a new engine with a tracer.
+    ///
+    /// Use this when you want transition visibility without changing runtime
+    /// behavior.
+    ///
+    /// ```rust
+    /// use nivasa_statechart::engine::{StatechartEngine, StatechartSpec, StatechartTracer};
+    ///
+    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// # enum DemoState { Idle, Done }
+    /// # #[derive(Debug, Clone, PartialEq, Eq)]
+    /// # enum DemoEvent { Finish }
+    /// # struct DemoSpec;
+    /// # impl StatechartSpec for DemoSpec {
+    /// #     type State = DemoState;
+    /// #     type Event = DemoEvent;
+    /// #     fn transition(current: &Self::State, event: &Self::Event) -> Option<Self::State> {
+    /// #         match (current, event) {
+    /// #             (DemoState::Idle, DemoEvent::Finish) => Some(DemoState::Done),
+    /// #             _ => None,
+    /// #         }
+    /// #     }
+    /// #     fn valid_events_for(state: &Self::State) -> Vec<Self::Event> {
+    /// #         match state {
+    /// #             DemoState::Idle => vec![DemoEvent::Finish],
+    /// #             DemoState::Done => vec![],
+    /// #         }
+    /// #     }
+    /// #     fn is_final(state: &Self::State) -> bool { matches!(state, DemoState::Done) }
+    /// #     fn name() -> &'static str { "demo" }
+    /// #     fn scxml_hash() -> &'static str { "hash" }
+    /// # }
+    /// # #[derive(Default)]
+    /// # struct NoopTracer;
+    /// # impl StatechartTracer for NoopTracer {
+    /// #     fn on_transition(&self, _: &str, _: &str, _: &str) {}
+    /// #     fn on_invalid_transition(&self, _: &str, _: &str, _: &[String]) {}
+    /// # }
+    /// let mut engine = StatechartEngine::<DemoSpec>::with_tracer(
+    ///     DemoState::Idle,
+    ///     Box::new(NoopTracer::default()),
+    /// );
+    /// assert_eq!(engine.current_state(), DemoState::Idle);
+    /// assert_eq!(engine.send_event(DemoEvent::Finish).unwrap(), DemoState::Done);
+    /// ```
     pub fn with_tracer(initial_state: S::State, tracer: Box<dyn StatechartTracer>) -> Self {
         Self {
             current_state: S::enter_initial_state(initial_state),
@@ -205,6 +326,38 @@ impl<S: StatechartSpec> StatechartEngine<S> {
     /// On success: transitions to the target state and returns it.
     /// On failure (debug): **panics** with full diagnostic info.
     /// On failure (release): returns `Err(InvalidTransitionError)`.
+    ///
+    /// ```rust
+    /// use nivasa_statechart::engine::{StatechartEngine, StatechartSpec};
+    ///
+    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// # enum DemoState { Idle, Done }
+    /// # #[derive(Debug, Clone, PartialEq, Eq)]
+    /// # enum DemoEvent { Finish }
+    /// # struct DemoSpec;
+    /// # impl StatechartSpec for DemoSpec {
+    /// #     type State = DemoState;
+    /// #     type Event = DemoEvent;
+    /// #     fn transition(current: &Self::State, event: &Self::Event) -> Option<Self::State> {
+    /// #         match (current, event) {
+    /// #             (DemoState::Idle, DemoEvent::Finish) => Some(DemoState::Done),
+    /// #             _ => None,
+    /// #         }
+    /// #     }
+    /// #     fn valid_events_for(state: &Self::State) -> Vec<Self::Event> {
+    /// #         match state {
+    /// #             DemoState::Idle => vec![DemoEvent::Finish],
+    /// #             DemoState::Done => vec![],
+    /// #         }
+    /// #     }
+    /// #     fn is_final(state: &Self::State) -> bool { matches!(state, DemoState::Done) }
+    /// #     fn name() -> &'static str { "demo" }
+    /// #     fn scxml_hash() -> &'static str { "hash" }
+    /// # }
+    /// let mut engine = StatechartEngine::<DemoSpec>::new(DemoState::Idle);
+    /// let next = engine.send_event(DemoEvent::Finish).unwrap();
+    /// assert_eq!(next, DemoState::Done);
+    /// ```
     pub fn send_event(
         &mut self,
         event: S::Event,
@@ -281,6 +434,53 @@ impl<S: StatechartSpec> StatechartEngine<S> {
     }
 
     /// Return a serializable snapshot for debug inspection.
+    ///
+    /// The snapshot includes the statechart identity, current state, SCXML
+    /// hash, optional raw SCXML, and recent transition history.
+    ///
+    /// ```rust
+    /// use nivasa_statechart::engine::{StatechartEngine, StatechartSpec, StatechartTracer};
+    ///
+    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// # enum DemoState { Idle, Done }
+    /// # #[derive(Debug, Clone, PartialEq, Eq)]
+    /// # enum DemoEvent { Finish }
+    /// # struct DemoSpec;
+    /// # impl StatechartSpec for DemoSpec {
+    /// #     type State = DemoState;
+    /// #     type Event = DemoEvent;
+    /// #     fn transition(current: &Self::State, event: &Self::Event) -> Option<Self::State> {
+    /// #         match (current, event) {
+    /// #             (DemoState::Idle, DemoEvent::Finish) => Some(DemoState::Done),
+    /// #             _ => None,
+    /// #         }
+    /// #     }
+    /// #     fn valid_events_for(state: &Self::State) -> Vec<Self::Event> {
+    /// #         match state {
+    /// #             DemoState::Idle => vec![DemoEvent::Finish],
+    /// #             DemoState::Done => vec![],
+    /// #         }
+    /// #     }
+    /// #     fn is_final(state: &Self::State) -> bool { matches!(state, DemoState::Done) }
+    /// #     fn name() -> &'static str { "demo" }
+    /// #     fn scxml_hash() -> &'static str { "hash" }
+    /// # }
+    /// # struct NoopTracer;
+    /// # impl StatechartTracer for NoopTracer {
+    /// #     fn on_transition(&self, _: &str, _: &str, _: &str) {}
+    /// #     fn on_invalid_transition(&self, _: &str, _: &str, _: &[String]) {}
+    /// # }
+    /// let mut engine = StatechartEngine::<DemoSpec>::with_tracer(
+    ///     DemoState::Idle,
+    ///     Box::new(NoopTracer),
+    /// );
+    /// engine.send_event(DemoEvent::Finish).unwrap();
+    ///
+    /// let snapshot = engine.snapshot(Some("<scxml name=\"demo\"/>".to_string()));
+    /// assert_eq!(snapshot.statechart_name, "demo");
+    /// assert_eq!(snapshot.current_state, "Done");
+    /// assert_eq!(snapshot.raw_scxml.as_deref(), Some("<scxml name=\"demo\"/>"));
+    /// ```
     pub fn snapshot(&self, raw_scxml: Option<String>) -> StatechartSnapshot {
         StatechartSnapshot {
             statechart_name: S::name().to_string(),
@@ -303,6 +503,9 @@ impl<S: StatechartSpec> StatechartEngine<S> {
     fn record_transition(&mut self, _record: TransitionRecord) {}
 
     /// Return the recent transition history.
+    ///
+    /// In debug builds this returns a bounded list of valid and invalid
+    /// transition attempts. In release builds it is empty.
     pub fn recent_transitions(&self) -> Vec<TransitionRecord> {
         #[cfg(debug_assertions)]
         {

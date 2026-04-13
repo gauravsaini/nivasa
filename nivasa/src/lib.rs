@@ -8,6 +8,19 @@
 //! use nivasa::prelude::*;
 //! ```
 //!
+//! ## Import Styles
+//!
+//! Use [`prelude`] when you want common app types, macros, and traits in one
+//! place. Use direct imports when you want a smaller namespace.
+//!
+//! ```rust,no_run
+//! use nivasa::prelude::*;
+//! use nivasa::{App, Controller, Middleware};
+//! ```
+//!
+//! `Middleware` is the umbrella alias for `NivasaMiddleware`, so old and new
+//! imports share one name.
+//!
 //! ## Architecture
 //!
 //! Every lifecycle in Nivasa is modeled as a W3C SCXML statechart.
@@ -17,7 +30,15 @@
 pub mod application;
 pub mod openapi;
 
-/// The prelude — import everything you need with `use nivasa::prelude::*`.
+/// Common Nivasa imports.
+///
+/// Use this when app code wants the usual framework surface in one statement.
+/// For smaller modules, prefer direct imports from [`crate`] so the dependency
+/// surface stays explicit.
+///
+/// ```rust,no_run
+/// use nivasa::prelude::*;
+/// ```
 pub mod prelude {
     pub use crate::application::{
         App, AppBootstrapConfig, AppBuildError, AppRoute, NestApplication, ServerOptions,
@@ -42,12 +63,16 @@ pub mod prelude {
     };
     pub use nivasa_filters as filters;
     pub use nivasa_filters::{
-        ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost,
-        WsArgumentsHost,
+        ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost, WsArgumentsHost,
     };
     pub use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
     pub use nivasa_http::upload::MultipartLimits;
     pub use nivasa_http::HttpExceptionFilter;
+    pub use nivasa_http::LogContext;
+    pub use nivasa_http::LoggerFormat;
+    pub use nivasa_http::LoggerModule;
+    pub use nivasa_http::LoggerOptions;
+    pub use nivasa_http::LoggerService;
     pub use nivasa_http::NivasaMiddlewareLayer;
     pub use nivasa_http::TowerServiceMiddleware;
     pub use nivasa_http::{
@@ -65,8 +90,8 @@ pub mod prelude {
         http_code, impl_controller, injectable, ip, module, options, param, patch, post, put,
         query, req, res, scxml_handler, session, use_filters,
     };
-    pub use nivasa_pipes::{ArgumentMetadata, Pipe};
     pub use nivasa_pipes as pipes;
+    pub use nivasa_pipes::{ArgumentMetadata, Pipe};
     pub use nivasa_routing::Controller;
     pub use nivasa_statechart::{
         NivasaApplicationEvent, NivasaApplicationState, NivasaApplicationStatechart,
@@ -108,14 +133,19 @@ pub use nivasa_filters::{
 pub use nivasa_guards::{self, ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 pub use nivasa_http::upload::MultipartLimits;
 pub use nivasa_http::HttpExceptionFilter;
-    pub use nivasa_http::NivasaMiddlewareLayer;
-    pub use nivasa_http::TowerServiceMiddleware;
-    pub use nivasa_http::{
-        self, upload, Body, ControllerResponse, Download, FromRequest, GuardExecutionOutcome,
-        HeaderMap, Html, IntoResponse, Json, NextMiddleware, NivasaMiddleware,
-        NivasaMiddleware as Middleware, NivasaRequest, NivasaResponse, NivasaServer,
-        NivasaServerBuilder, Query, Redirect, RequestExtractError, RequestPipeline, Sse,
-        SseEvent, StreamBody, Text, UploadedFile,
+pub use nivasa_http::LogContext;
+pub use nivasa_http::LoggerFormat;
+pub use nivasa_http::LoggerModule;
+pub use nivasa_http::LoggerOptions;
+pub use nivasa_http::LoggerService;
+pub use nivasa_http::NivasaMiddlewareLayer;
+pub use nivasa_http::TowerServiceMiddleware;
+pub use nivasa_http::{
+    self, upload, Body, ControllerResponse, Download, FromRequest, GuardExecutionOutcome,
+    HeaderMap, Html, IntoResponse, Json, NextMiddleware, NivasaMiddleware,
+    NivasaMiddleware as Middleware, NivasaRequest, NivasaResponse, NivasaServer,
+    NivasaServerBuilder, Query, Redirect, RequestExtractError, RequestPipeline, Sse, SseEvent,
+    StreamBody, Text, UploadedFile,
 };
 pub use nivasa_interceptors::{
     self, CallHandler, ClassSerializerInterceptor, ExecutionContext, Interceptor,
@@ -126,8 +156,8 @@ pub use nivasa_macros::{
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
     req, res, scxml_handler, session, use_filters,
 };
-pub use nivasa_pipes::{self, ArgumentMetadata, Pipe};
 pub use nivasa_pipes as pipes;
+pub use nivasa_pipes::{self, ArgumentMetadata, Pipe};
 pub use nivasa_routing::Controller;
 pub use nivasa_statechart::{
     self, NivasaApplicationEvent, NivasaApplicationState, NivasaApplicationStatechart,

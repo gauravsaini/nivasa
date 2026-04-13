@@ -22,9 +22,25 @@ pub type InterceptorFuture<T> =
 
 /// Minimal request execution context shared with interceptors.
 ///
-/// This keeps the first interceptor slice independent from the HTTP runtime
-/// while still carrying the request, handler, class, and metadata shape that
-/// later phases will need.
+/// This keeps the interceptor slice independent from the HTTP runtime while
+/// still carrying the request, handler, class, and metadata shape that later
+/// phases will need.
+///
+/// ```rust
+/// use nivasa_interceptors::ExecutionContext;
+///
+/// let mut context = ExecutionContext::new()
+///     .with_request("POST", "/users")
+///     .with_handler_name("create_user")
+///     .with_class_name("UsersController");
+///
+/// context.insert_handler_metadata("role", "admin");
+/// context.insert_custom_data("request_id", "req-123");
+///
+/// assert_eq!(context.request_method(), Some("POST"));
+/// assert_eq!(context.request_path(), Some("/users"));
+/// assert_eq!(context.handler_name(), Some("create_user"));
+/// ```
 #[derive(Clone, Default)]
 pub struct ExecutionContext {
     request_method: Option<String>,
@@ -154,6 +170,18 @@ impl ExecutionContext {
 }
 
 /// Deferred handler invocation passed into an interceptor.
+///
+/// ```rust
+/// # use nivasa_interceptors::{CallHandler, InterceptorResult};
+/// # async fn demo() -> InterceptorResult<&'static str> {
+/// let handler = CallHandler::new(|| async {
+///     Ok::<_, nivasa_common::HttpException>("ok")
+/// });
+///
+/// let value = handler.handle().await?;
+/// # Ok(value)
+/// # }
+/// ```
 pub struct CallHandler<T> {
     inner: Option<Box<dyn FnOnce() -> InterceptorFuture<T> + Send + 'static>>,
 }
@@ -184,6 +212,30 @@ where
 }
 
 /// Trait implemented by interceptor types.
+///
+/// ```rust
+/// # use nivasa_interceptors::{
+/// #     CallHandler, ExecutionContext, Interceptor, InterceptorFuture,
+/// # };
+/// struct PrefixInterceptor;
+///
+/// impl Interceptor for PrefixInterceptor {
+///     type Response = String;
+///
+///     fn intercept(
+///         &self,
+///         context: &ExecutionContext,
+///         next: CallHandler<Self::Response>,
+///     ) -> InterceptorFuture<Self::Response> {
+///         let handler_name = context.handler_name().unwrap_or("unknown").to_string();
+///
+///         Box::pin(async move {
+///             let value = next.handle().await?;
+///             Ok(format!("{handler_name}:{value}"))
+///         })
+///     }
+/// }
+/// ```
 pub trait Interceptor: Send + Sync {
     type Response: Send + 'static;
 
@@ -199,6 +251,14 @@ pub trait Interceptor: Send + Sync {
 /// This stays deliberately small and dependency-free. It measures the elapsed
 /// wall-clock time around the next handler in the existing interceptor chain
 /// and returns a `408 Request Timeout` response if the handler takes too long.
+///
+/// ```rust
+/// use nivasa_interceptors::TimeoutInterceptor;
+/// use std::time::Duration;
+///
+/// let interceptor = TimeoutInterceptor::<()>::new(Duration::from_millis(250));
+/// assert_eq!(interceptor.timeout(), Duration::from_millis(250));
+/// ```
 #[derive(Clone, Debug)]
 pub struct TimeoutInterceptor<T = ()> {
     timeout: Duration,
@@ -262,6 +322,24 @@ struct CacheEntry<T> {
 /// The interceptor itself remains transport-agnostic and only projects JSON
 /// objects, but this helper gives later `#[exclude]` / `#[expose]` wiring a
 /// stable serialization entry point.
+///
+/// ```rust
+/// use nivasa_interceptors::class_serialize;
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// struct User {
+///     id: u32,
+///     email: String,
+/// }
+///
+/// let json = class_serialize(&User {
+///     id: 7,
+///     email: "dev@example.com".to_string(),
+/// });
+///
+/// assert_eq!(json["id"], 7);
+/// ```
 pub fn class_serialize<T>(value: &T) -> Value
 where
     T: Serialize,
@@ -276,6 +354,14 @@ where
 /// corresponding `Serialize` step is exposed via [`class_serialize`], which
 /// keeps the slice small and still lets later `#[exclude]` / `#[expose]`
 /// attribute wiring plug into a real runtime projection point.
+///
+/// ```rust
+/// use nivasa_interceptors::ClassSerializerInterceptor;
+///
+/// let interceptor = ClassSerializerInterceptor::new()
+///     .with_excluded_fields(["password"])
+///     .with_exposed_fields(["id", "email"]);
+/// ```
 #[derive(Clone)]
 pub struct ClassSerializerInterceptor {
     excluded_fields: Arc<BTreeMap<String, ()>>,
@@ -361,6 +447,14 @@ impl Interceptor for ClassSerializerInterceptor {
 /// a response-status formatter. That keeps the helper independent from any
 /// concrete HTTP response type while still letting the HTTP test harness
 /// assert on the emitted log line.
+///
+/// ```rust
+/// use nivasa_interceptors::LoggingInterceptor;
+///
+/// let _interceptor = LoggingInterceptor::new(|_entry| {}, |response: &String| {
+///     response.clone()
+/// });
+/// ```
 #[derive(Clone)]
 pub struct LoggingInterceptor<T = ()> {
     sink: LogSink,
@@ -426,6 +520,13 @@ where
 /// shape already present on [`ExecutionContext`], stores cloned successful
 /// responses in a process-local map, and skips the next handler when a matching
 /// entry is present.
+///
+/// ```rust
+/// use nivasa_interceptors::CacheInterceptor;
+/// use std::time::Duration;
+///
+/// let _interceptor = CacheInterceptor::<String>::with_ttl(Duration::from_secs(30));
+/// ```
 #[derive(Clone)]
 pub struct CacheInterceptor<T = ()> {
     store: CacheStore<T>,

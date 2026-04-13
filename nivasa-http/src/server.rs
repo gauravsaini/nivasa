@@ -6,9 +6,9 @@ use bytes::{Bytes, BytesMut};
 use futures_util::FutureExt;
 use http::{
     header::{
-        HeaderMap, HeaderValue, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
-        ACCESS_CONTROL_ALLOW_CREDENTIALS, ACCESS_CONTROL_ALLOW_ORIGIN,
-        ACCESS_CONTROL_REQUEST_HEADERS, ACCESS_CONTROL_REQUEST_METHOD, ALLOW, CONTENT_TYPE, ORIGIN,
+        HeaderMap, HeaderValue, ACCESS_CONTROL_ALLOW_CREDENTIALS, ACCESS_CONTROL_ALLOW_HEADERS,
+        ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_REQUEST_HEADERS,
+        ACCESS_CONTROL_REQUEST_METHOD, ALLOW, CONTENT_TYPE, ORIGIN,
     },
     Method, Request, Response, StatusCode,
 };
@@ -122,6 +122,18 @@ struct RouteMiddlewareBinding {
 }
 
 /// Configuration for transport-level CORS handling.
+///
+/// ```no_run
+/// use http::Method;
+/// use nivasa_http::CorsOptions;
+///
+/// let cors = CorsOptions::permissive()
+///     .allow_origins(["https://app.example"])
+///     .allow_methods([Method::GET, Method::POST])
+///     .allow_headers(["content-type", "authorization"])
+///     .allow_credentials(true);
+/// # let _ = cors;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CorsOptions {
     allowed_origins: Option<Vec<String>>,
@@ -174,7 +186,10 @@ impl CorsOptions {
     fn allow_origin_header_value(&self, request_origin: Option<&str>) -> Option<HeaderValue> {
         if let Some(allowed_origins) = &self.allowed_origins {
             let request_origin = request_origin?;
-            if allowed_origins.iter().any(|allowed| allowed == request_origin) {
+            if allowed_origins
+                .iter()
+                .any(|allowed| allowed == request_origin)
+            {
                 return HeaderValue::from_str(request_origin).ok();
             }
 
@@ -243,6 +258,24 @@ impl CorsOptions {
 }
 
 /// Minimal HTTP transport shell for Nivasa.
+///
+/// Use the builder to register routes and middleware, then call [`NivasaServer::listen`]
+/// to start serving requests.
+///
+/// ```no_run
+/// use nivasa_http::{NivasaResponse, NivasaServer};
+/// use nivasa_routing::RouteMethod;
+///
+/// fn main() -> std::io::Result<()> {
+///     let server = NivasaServer::builder()
+///         .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
+///         .expect("route registers")
+///         .build();
+///
+///     let runtime = tokio::runtime::Runtime::new()?;
+///     runtime.block_on(server.listen("127.0.0.1", 3000))
+/// }
+/// ```
 pub struct NivasaServer {
     routes: RouteDispatchRegistry<RouteHandlerBinding>,
     middleware: Option<MiddlewareLayer>,
@@ -261,6 +294,16 @@ pub struct NivasaServer {
 }
 
 /// Builder for [`NivasaServer`].
+///
+/// ```no_run
+/// use nivasa_http::{NivasaResponse, NivasaServer};
+/// use nivasa_routing::RouteMethod;
+///
+/// let server = NivasaServer::builder()
+///     .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
+///     .expect("route registers")
+///     .build();
+/// ```
 pub struct NivasaServerBuilder {
     routes: RouteDispatchRegistry<RouteHandlerBinding>,
     middleware: Option<MiddlewareLayer>,
@@ -280,11 +323,38 @@ pub struct NivasaServerBuilder {
 
 impl NivasaServer {
     /// Create a new server builder.
+    ///
+    /// ```no_run
+    /// use nivasa_http::{NivasaResponse, NivasaServer};
+    /// use nivasa_routing::RouteMethod;
+    ///
+    /// let server = NivasaServer::builder()
+    ///     .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
+    ///     .expect("route registers")
+    ///     .build();
+    ///
+    /// # let _ = server;
+    /// ```
     pub fn builder() -> NivasaServerBuilder {
         NivasaServerBuilder::new()
     }
 
     /// Start listening for HTTP requests.
+    ///
+    /// ```no_run
+    /// use nivasa_http::{NivasaResponse, NivasaServer};
+    /// use nivasa_routing::RouteMethod;
+    ///
+    /// fn main() -> std::io::Result<()> {
+    ///     let server = NivasaServer::builder()
+    ///         .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
+    ///         .expect("route registers")
+    ///         .build();
+    ///
+    ///     let runtime = tokio::runtime::Runtime::new()?;
+    ///     runtime.block_on(server.listen("127.0.0.1", 3000))
+    /// }
+    /// ```
     pub async fn listen(mut self, host: impl AsRef<str>, port: u16) -> io::Result<()> {
         let addr = socket_addr(host.as_ref(), port)?;
         let listener = TcpListener::bind(addr).await?;
@@ -370,6 +440,27 @@ impl NivasaServer {
         while connections.join_next().await.is_some() {}
         Ok(())
     }
+
+    pub(crate) async fn dispatch_for_test(
+        &self,
+        request: NivasaRequest,
+    ) -> Response<Full<Bytes>> {
+        let response = dispatch_nivasa_request(
+            request,
+            self.routes.clone(),
+            self.middleware.clone(),
+            self.module_middlewares.clone(),
+            self.route_middlewares.clone(),
+            self.global_guards.clone(),
+            self.global_pipes.clone(),
+            self.interceptors.clone(),
+            self.global_filters.clone(),
+            self.cors.clone(),
+        )
+        .await;
+
+        build_response(response.status(), response)
+    }
 }
 
 impl NivasaServerBuilder {
@@ -393,6 +484,18 @@ impl NivasaServerBuilder {
     }
 
     /// Register a request handler for a route.
+    ///
+    /// ```no_run
+    /// use nivasa_http::{NivasaResponse, NivasaServer};
+    /// use nivasa_routing::RouteMethod;
+    ///
+    /// let server = NivasaServer::builder()
+    ///     .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
+    ///     .expect("route registers")
+    ///     .build();
+    ///
+    /// # let _ = server;
+    /// ```
     pub fn route(
         mut self,
         method: impl Into<RouteMethod>,
@@ -572,6 +675,25 @@ impl NivasaServerBuilder {
     }
 
     /// Configure transport-side CORS handling with explicit origins, methods, and headers.
+    ///
+    /// ```no_run
+    /// use http::Method;
+    /// use nivasa_http::{CorsOptions, NivasaResponse, NivasaServer};
+    /// use nivasa_routing::RouteMethod;
+    ///
+    /// let cors = CorsOptions::permissive()
+    ///     .allow_origins(["https://app.example"])
+    ///     .allow_methods([Method::GET])
+    ///     .allow_headers(["content-type"]);
+    ///
+    /// let server = NivasaServer::builder()
+    ///     .route(RouteMethod::Get, "/health", |_| NivasaResponse::text("ok"))
+    ///     .expect("route registers")
+    ///     .cors_options(cors)
+    ///     .build();
+    ///
+    /// # let _ = server;
+    /// ```
     pub fn cors_options(mut self, cors: CorsOptions) -> Self {
         self.cors = Some(cors);
         self
@@ -695,13 +817,13 @@ async fn serve_connection<S>(
                     request,
                     routes,
                     middleware,
-                module_middlewares,
-                route_middlewares,
-                global_guards,
-                global_pipes,
-                interceptors,
-                global_filters,
-                cors.clone(),
+                    module_middlewares,
+                    route_middlewares,
+                    global_guards,
+                    global_pipes,
+                    interceptors,
+                    global_filters,
+                    cors.clone(),
                     request_body_size_limit,
                 )
                 .await
@@ -879,13 +1001,17 @@ async fn handle_request(
                     ));
                 }
             };
+            *pipeline.request_mut() = request.clone();
             let guard_context = GuardExecutionContext::new(request.clone());
             let guard_refs = global_guards
                 .iter()
                 .map(|guard| guard.as_ref() as &dyn Guard)
                 .collect::<Vec<_>>();
 
-            match pipeline.evaluate_guard_chain(&guard_refs, &guard_context).await {
+            match pipeline
+                .evaluate_guard_chain(&guard_refs, &guard_context)
+                .await
+            {
                 Ok(GuardExecutionOutcome::Passed) => {}
                 Ok(GuardExecutionOutcome::Denied) => {
                     return Ok(finalize_response(
@@ -1002,8 +1128,7 @@ async fn handle_request(
                         }
                     }
                     InterceptorExecution::ShortCircuited(response) => {
-                        if pipeline.fail_interceptors_pre().is_err()
-                        {
+                        if pipeline.fail_interceptors_pre().is_err() {
                             NivasaResponse::new(
                                 StatusCode::INTERNAL_SERVER_ERROR,
                                 Body::text("request pipeline interceptor transition failed"),
@@ -1100,6 +1225,347 @@ async fn handle_request(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn dispatch_nivasa_request(
+    request: NivasaRequest,
+    routes: RouteDispatchRegistry<RouteHandlerBinding>,
+    middleware: Option<MiddlewareLayer>,
+    module_middlewares: Vec<MiddlewareLayer>,
+    route_middlewares: Vec<RouteMiddlewareBinding>,
+    global_guards: Vec<GuardLayer>,
+    global_pipes: Vec<PipeLayer>,
+    interceptors: Vec<InterceptorLayer>,
+    global_filters: Vec<GlobalFilterBinding>,
+    cors: Option<CorsOptions>,
+) -> NivasaResponse {
+    let request_origin = request
+        .header(ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let request = match middleware {
+        Some(middleware) => match execute_middleware(middleware, request).await {
+            MiddlewareExecution::Forwarded(request) => request,
+            MiddlewareExecution::ShortCircuited { request, response } => {
+                let request_id = request
+                    .header(REQUEST_ID_HEADER)
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_owned);
+                let mut pipeline = RequestPipeline::new(request);
+
+                if pipeline.parse_request().is_err() || pipeline.fail_middleware().is_err() {
+                    return finalize_nivasa_response(
+                        NivasaResponse::new(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Body::text("request pipeline middleware transition failed"),
+                        ),
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        None,
+                    );
+                }
+
+                return finalize_nivasa_response(
+                    response,
+                    cors.as_ref(),
+                    request_origin.as_deref(),
+                    request_id.as_deref(),
+                );
+            }
+        },
+        None => request,
+    };
+    let request_id = request
+        .header(REQUEST_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let mut pipeline = RequestPipeline::new(request);
+
+    if pipeline.parse_request().is_err() {
+        return finalize_nivasa_response(
+            NivasaResponse::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Body::text("request pipeline parse transition failed"),
+            ),
+            cors.as_ref(),
+            request_origin.as_deref(),
+            request_id.as_deref(),
+        );
+    }
+
+    if pipeline.complete_middleware().is_err() {
+        return finalize_nivasa_response(
+            NivasaResponse::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Body::text("request pipeline middleware transition failed"),
+            ),
+            cors.as_ref(),
+            request_origin.as_deref(),
+            request_id.as_deref(),
+        );
+    }
+
+    let versioned_routes = versioned_routes_for_request(pipeline.request(), &routes);
+
+    let response = match pipeline.match_route(&versioned_routes) {
+        Ok(RouteDispatchOutcome::Matched(entry)) => {
+            let binding = entry.value.clone();
+            let handler = Arc::clone(&binding.handler);
+            let request = pipeline.request().clone();
+            let route_module_middlewares = binding.module_middlewares.clone();
+            let route_middlewares =
+                matching_route_middlewares(request.path(), route_middlewares.as_slice());
+            let request = match execute_middleware_sequence(module_middlewares, request).await {
+                MiddlewareExecution::Forwarded(request) => request,
+                MiddlewareExecution::ShortCircuited { response, .. } => {
+                    return finalize_nivasa_response(
+                        response,
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        request_id.as_deref(),
+                    );
+                }
+            };
+            let request = match execute_middleware_sequence(route_module_middlewares, request).await
+            {
+                MiddlewareExecution::Forwarded(request) => request,
+                MiddlewareExecution::ShortCircuited { response, .. } => {
+                    return finalize_nivasa_response(
+                        response,
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        request_id.as_deref(),
+                    );
+                }
+            };
+            let request = match execute_middleware_sequence(route_middlewares, request).await {
+                MiddlewareExecution::Forwarded(request) => request,
+                MiddlewareExecution::ShortCircuited { response, .. } => {
+                    return finalize_nivasa_response(
+                        response,
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        request_id.as_deref(),
+                    );
+                }
+            };
+            *pipeline.request_mut() = request.clone();
+            let guard_context = GuardExecutionContext::new(request.clone());
+            let guard_refs = global_guards
+                .iter()
+                .map(|guard| guard.as_ref() as &dyn Guard)
+                .collect::<Vec<_>>();
+
+            match pipeline
+                .evaluate_guard_chain(&guard_refs, &guard_context)
+                .await
+            {
+                Ok(GuardExecutionOutcome::Passed) => {}
+                Ok(GuardExecutionOutcome::Denied) => {
+                    return finalize_nivasa_response(
+                        HttpExceptionSummary::from(&HttpException::forbidden(
+                            "request denied by guard",
+                        ))
+                        .into_response(),
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        request_id.as_deref(),
+                    );
+                }
+                Ok(GuardExecutionOutcome::Error(error)) => {
+                    return finalize_nivasa_response(
+                        handle_http_exception(
+                            error,
+                            &binding.handler_filters,
+                            &binding.controller_filters,
+                            &global_filters,
+                            pipeline.request(),
+                        )
+                        .await,
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        request_id.as_deref(),
+                    );
+                }
+                Err(_) => {
+                    return finalize_nivasa_response(
+                        NivasaResponse::new(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Body::text("request pipeline guard transition failed"),
+                        ),
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        request_id.as_deref(),
+                    );
+                }
+            }
+
+            if pipeline.complete_interceptors_pre().is_err() {
+                return finalize_nivasa_response(
+                    NivasaResponse::new(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Body::text("request pipeline interceptor transition failed"),
+                    ),
+                    cors.as_ref(),
+                    request_origin.as_deref(),
+                    request_id.as_deref(),
+                );
+            }
+
+            let transformed_body = match apply_global_pipes(pipeline.request(), &global_pipes) {
+                Ok(body) => body,
+                Err(error) => {
+                    if pipeline.fail_pipes().is_err() {
+                        return finalize_nivasa_response(
+                            NivasaResponse::new(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Body::text("request pipeline pipe transition failed"),
+                            ),
+                            cors.as_ref(),
+                            request_origin.as_deref(),
+                            request_id.as_deref(),
+                        );
+                    }
+
+                    return finalize_nivasa_response(
+                        handle_http_exception(
+                            error,
+                            &binding.handler_filters,
+                            &binding.controller_filters,
+                            &global_filters,
+                            pipeline.request(),
+                        )
+                        .await,
+                        cors.as_ref(),
+                        request_origin.as_deref(),
+                        request_id.as_deref(),
+                    );
+                }
+            };
+            *pipeline.request_mut().body_mut() = transformed_body;
+
+            if pipeline.complete_pipes().is_err() {
+                return finalize_nivasa_response(
+                    NivasaResponse::new(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Body::text("request pipeline pipe transition failed"),
+                    ),
+                    cors.as_ref(),
+                    request_origin.as_deref(),
+                    request_id.as_deref(),
+                );
+            }
+
+            let request = pipeline.request().clone();
+            match interceptors.is_empty() {
+                false => match execute_interceptors(interceptors, request, handler).await {
+                    InterceptorExecution::Completed(response) => {
+                        if pipeline.complete_handler().is_err()
+                            || pipeline.complete_interceptors_post().is_err()
+                            || pipeline.complete_response().is_err()
+                        {
+                            NivasaResponse::new(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Body::text("request pipeline interceptor transition failed"),
+                            )
+                        } else {
+                            map_interceptor_response(response)
+                        }
+                    }
+                    InterceptorExecution::ShortCircuited(response) => {
+                        if pipeline.fail_interceptors_pre().is_err() {
+                            NivasaResponse::new(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Body::text("request pipeline interceptor transition failed"),
+                            )
+                        } else {
+                            map_interceptor_response(response)
+                        }
+                    }
+                    InterceptorExecution::Error {
+                        error,
+                        handler_called,
+                    } => {
+                        let transition_failed = if handler_called {
+                            pipeline.complete_handler().is_err()
+                                || pipeline.fail_interceptors_post().is_err()
+                        } else {
+                            pipeline.fail_interceptors_pre().is_err()
+                        };
+
+                        if transition_failed {
+                            NivasaResponse::new(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Body::text("request pipeline interceptor transition failed"),
+                            )
+                        } else {
+                            handle_http_exception(
+                                error,
+                                &binding.handler_filters,
+                                &binding.controller_filters,
+                                &global_filters,
+                                pipeline.request(),
+                            )
+                            .await
+                        }
+                    }
+                },
+                true => {
+                    let request = pipeline.request().clone();
+                    match tokio::task::spawn_blocking(move || (handler)(&request)).await {
+                        Ok(response) => {
+                            if pipeline.complete_handler().is_err()
+                                || pipeline.complete_interceptors_post().is_err()
+                                || pipeline.complete_response().is_err()
+                            {
+                                NivasaResponse::new(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    Body::text("request pipeline handler transition failed"),
+                                )
+                            } else {
+                                response
+                            }
+                        }
+                        Err(_) => {
+                            if pipeline.fail_handler().is_err() {
+                                NivasaResponse::new(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    Body::text("request pipeline handler transition failed"),
+                                )
+                            } else {
+                                NivasaResponse::new(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    Body::text("request handler failed"),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(RouteDispatchOutcome::NotFound) => {
+            NivasaResponse::new(StatusCode::NOT_FOUND, Body::text("not found"))
+        }
+        Ok(RouteDispatchOutcome::MethodNotAllowed {
+            allowed_methods, ..
+        }) => NivasaResponse::new(
+            StatusCode::METHOD_NOT_ALLOWED,
+            Body::text("method not allowed"),
+        )
+        .with_header(ALLOW.as_str(), allowed_methods.join(", ")),
+        Err(_) => NivasaResponse::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Body::text("request pipeline route transition failed"),
+        ),
+    };
+
+    finalize_nivasa_response(
+        response,
+        cors.as_ref(),
+        request_origin.as_deref(),
+        request_id.as_deref(),
+    )
+}
+
 fn request_body_looks_json(request: &NivasaRequest) -> bool {
     request
         .header(CONTENT_TYPE.as_str())
@@ -1156,10 +1622,7 @@ fn pipe_value_to_body(value: Value) -> Body {
     }
 }
 
-fn apply_global_pipes(
-    request: &NivasaRequest,
-    pipes: &[PipeLayer],
-) -> Result<Body, HttpException> {
+fn apply_global_pipes(request: &NivasaRequest, pipes: &[PipeLayer]) -> Result<Body, HttpException> {
     if pipes.is_empty() {
         return Ok(request.body().clone());
     }
@@ -1219,7 +1682,7 @@ async fn handle_http_exception(
                 Err(_) => fallback_unhandled_exception_response(&fallback_error),
             }
         }
-        None => fallback_unhandled_exception_response(&error),
+        None => HttpExceptionSummary::from(&error).into_response(),
     }
 }
 
@@ -1524,16 +1987,23 @@ fn with_request_id(response: NivasaResponse, request_id: Option<&str>) -> Nivasa
 }
 
 fn finalize_response(
-    mut response: NivasaResponse,
+    response: NivasaResponse,
     cors: Option<&CorsOptions>,
     request_origin: Option<&str>,
     request_id: Option<&str>,
 ) -> Response<Full<Bytes>> {
-    response = with_request_id(response, request_id);
+    let response = finalize_nivasa_response(response, cors, request_origin, request_id);
+    build_response(response.status(), response)
+}
 
-    let mut response = build_response(response.status(), response);
-    apply_cors_headers(response.headers_mut(), cors, request_origin);
-    response
+fn finalize_nivasa_response(
+    response: NivasaResponse,
+    cors: Option<&CorsOptions>,
+    request_origin: Option<&str>,
+    request_id: Option<&str>,
+) -> NivasaResponse {
+    let response = with_request_id(response, request_id);
+    apply_cors_headers_to_response(response, cors, request_origin)
 }
 
 pub struct RouteMiddlewareBuilder {
@@ -1576,49 +2046,63 @@ fn build_cors_preflight_response(
     cors: Option<&CorsOptions>,
     request_origin: Option<&str>,
 ) -> Response<Full<Bytes>> {
-    let mut response = Response::new(Full::new(Bytes::new()));
-    *response.status_mut() = StatusCode::NO_CONTENT;
-    apply_cors_headers(response.headers_mut(), cors, request_origin);
+    let response = build_cors_preflight_nivasa_response(headers, cors, request_origin);
+    build_response(response.status(), response)
+}
+
+fn build_cors_preflight_nivasa_response(
+    headers: &HeaderMap,
+    cors: Option<&CorsOptions>,
+    request_origin: Option<&str>,
+) -> NivasaResponse {
+    let mut response = NivasaResponse::new(StatusCode::NO_CONTENT, Body::empty());
+    response = apply_cors_headers_to_response(response, cors, request_origin);
 
     if let Some(value) = allow_methods_header_value(headers, cors) {
-        response
-            .headers_mut()
-            .insert(ACCESS_CONTROL_ALLOW_METHODS, value);
+        if let Ok(value) = value.to_str() {
+            response = response.with_header(ACCESS_CONTROL_ALLOW_METHODS.as_str(), value);
+        }
     }
 
     if let Some(value) = allow_headers_header_value(headers, cors) {
-        response
-            .headers_mut()
-            .insert(ACCESS_CONTROL_ALLOW_HEADERS, value);
+        if let Ok(value) = value.to_str() {
+            response = response.with_header(ACCESS_CONTROL_ALLOW_HEADERS.as_str(), value);
+        }
     }
 
     if let Some(cors) = cors {
         if let Some(value) = cors.allow_credentials_header_value() {
-            response
-                .headers_mut()
-                .insert(ACCESS_CONTROL_ALLOW_CREDENTIALS, value);
+            if let Ok(value) = value.to_str() {
+                response = response.with_header(ACCESS_CONTROL_ALLOW_CREDENTIALS.as_str(), value);
+            }
         }
     }
 
     response
 }
 
-fn apply_cors_headers(
-    headers: &mut HeaderMap,
+fn apply_cors_headers_to_response(
+    mut response: NivasaResponse,
     cors: Option<&CorsOptions>,
     request_origin: Option<&str>,
-) {
+) -> NivasaResponse {
     let Some(cors) = cors else {
-        return;
+        return response;
     };
 
     if let Some(value) = cors.allow_origin_header_value(request_origin) {
-        headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, value);
+        if let Ok(value) = value.to_str() {
+            response = response.with_header(ACCESS_CONTROL_ALLOW_ORIGIN.as_str(), value);
+        }
     }
 
     if let Some(value) = cors.allow_credentials_header_value() {
-        headers.insert(ACCESS_CONTROL_ALLOW_CREDENTIALS, value);
+        if let Ok(value) = value.to_str() {
+            response = response.with_header(ACCESS_CONTROL_ALLOW_CREDENTIALS.as_str(), value);
+        }
     }
+
+    response
 }
 
 fn allow_methods_header_value(

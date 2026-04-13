@@ -12,6 +12,30 @@ use crate::types::*;
 
 #[allow(dead_code)]
 /// Generate Rust source code from a parsed SCXML document.
+///
+/// The generated output is still SCXML-driven: it derives states, events,
+/// transition helpers, and the `StatechartSpec` glue from the parsed document.
+///
+/// ```rust
+/// use nivasa_statechart::{codegen::generate_rust, ScxmlDocument};
+///
+/// let scxml = r#"<?xml version="1.0"?>
+/// <scxml version="1.0" name="door" initial="closed" xmlns="http://www.w3.org/2005/07/scxml">
+///   <state id="closed">
+///     <transition event="open" target="open"/>
+///   </state>
+///   <state id="open">
+///     <transition event="close" target="closed"/>
+///   </state>
+/// </scxml>"#;
+///
+/// let doc = ScxmlDocument::from_str(scxml).unwrap();
+/// let generated = generate_rust(&doc);
+///
+/// assert!(generated.contains("DoorState"));
+/// assert!(generated.contains("DoorEvent"));
+/// assert!(generated.contains("door_transition"));
+/// ```
 pub fn generate_rust(doc: &ScxmlDocument) -> String {
     generate_rust_with_spec_path(doc, "nivasa_statechart")
 }
@@ -19,6 +43,22 @@ pub fn generate_rust(doc: &ScxmlDocument) -> String {
 /// Generate Rust source code from a parsed SCXML document with a custom
 /// `StatechartSpec` path. This lets the same generator compile both inside
 /// the `nivasa_statechart` crate and in downstream crates that depend on it.
+///
+/// ```rust
+/// use nivasa_statechart::{codegen::generate_rust_with_spec_path, ScxmlDocument};
+///
+/// let scxml = r#"<?xml version="1.0"?>
+/// <scxml version="1.0" name="door" initial="closed" xmlns="http://www.w3.org/2005/07/scxml">
+///   <state id="closed">
+///     <transition event="open" target="open"/>
+///   </state>
+/// </scxml>"#;
+///
+/// let doc = ScxmlDocument::from_str(scxml).unwrap();
+/// let generated = generate_rust_with_spec_path(&doc, "my_app::statechart");
+///
+/// assert!(generated.contains("my_app::statechart::StatechartSpec"));
+/// ```
 pub fn generate_rust_with_spec_path(doc: &ScxmlDocument, spec_path: &str) -> String {
     let chart_name = doc
         .metadata

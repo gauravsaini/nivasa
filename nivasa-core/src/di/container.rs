@@ -24,7 +24,25 @@ struct DependencyContainerInner {
     versions: RwLock<HashMap<TypeId, u64>>,
 }
 
-/// The core Dependency Injection Container.
+/// Core dependency injection container.
+///
+/// Stores provider registrations, singleton cache, and scoped cache.
+///
+/// # Examples
+///
+/// Register direct values, then resolve them later:
+///
+/// ```rust
+/// # use nivasa_core::DependencyContainer;
+/// # let rt = tokio::runtime::Runtime::new().unwrap();
+/// # rt.block_on(async {
+/// let container = DependencyContainer::new();
+/// container.register_value::<u32>(42).await;
+///
+/// let value = container.resolve::<u32>().await.unwrap();
+/// assert_eq!(*value, 42);
+/// # });
+/// ```
 pub struct DependencyContainer {
     inner: Arc<DependencyContainerInner>,
     scoped: Arc<RwLock<HashMap<TypeId, CachedInstance>>>,
@@ -65,6 +83,7 @@ impl Default for DependencyContainer {
 }
 
 impl DependencyContainer {
+    /// Create empty container.
     pub fn new() -> Self {
         Self {
             inner: Arc::new(DependencyContainerInner {
@@ -76,8 +95,9 @@ impl DependencyContainer {
         }
     }
 
-    /// Create a new child scope that shares registrations and singletons
-    /// but maintains its own scoped cache.
+    /// Create child scope.
+    ///
+    /// Child shares registrations and singleton cache, but keeps own scoped cache.
     pub fn create_scope(&self) -> Self {
         Self {
             inner: Arc::clone(&self.inner),
@@ -211,12 +231,25 @@ impl DependencyContainer {
         );
     }
 
-    /// Register a provider interface.
+    /// Register provider.
     pub async fn register<T: Send + Sync + 'static>(&self, provider: Arc<dyn Provider>) {
         self.register_provider::<T>(provider).await;
     }
 
-    /// Register a direct value as a singleton provider.
+    /// Register direct value as singleton.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use nivasa_core::DependencyContainer;
+    /// # let rt = tokio::runtime::Runtime::new().unwrap();
+    /// # rt.block_on(async {
+    /// let container = DependencyContainer::new();
+    /// container.register_value::<String>("hello".to_owned()).await;
+    /// let value = container.resolve::<String>().await.unwrap();
+    /// assert_eq!(value.as_str(), "hello");
+    /// # });
+    /// ```
     pub async fn register_value<T: Send + Sync + 'static>(&self, instance: T) {
         let type_id = TypeId::of::<T>();
         let version = self.bump_version(type_id).await;
@@ -240,7 +273,7 @@ impl DependencyContainer {
         }
     }
 
-    /// Register a type that implements the `Injectable` trait.
+    /// Register injectable type.
     pub async fn register_injectable<T: crate::di::provider::Injectable>(
         &self,
         scope: ProviderScope,
@@ -268,7 +301,9 @@ impl DependencyContainer {
         }
     }
 
-    /// Register a type via a factory closure.
+    /// Register factory provider.
+    ///
+    /// Factory gets container so it can resolve dependencies on demand.
     pub async fn register_factory<T, F>(
         &self,
         scope: ProviderScope,
@@ -289,13 +324,13 @@ impl DependencyContainer {
         self.register_provider::<T>(provider).await;
     }
 
-    /// Check if a type is registered.
+    /// Check if type registered.
     pub async fn has<T: 'static>(&self) -> bool {
         let providers = self.inner.providers.read().await;
         providers.contains::<T>()
     }
 
-    /// Remove a provider and invalidate any cached instances for that type.
+    /// Remove provider and invalidate cached instances.
     pub async fn remove<T: 'static>(&self) -> bool {
         let type_id = TypeId::of::<T>();
         let removed = {
@@ -316,7 +351,9 @@ impl DependencyContainer {
         removed
     }
 
-    /// Resolve an instance of the given type.
+    /// Resolve instance by type.
+    ///
+    /// Returns cached singleton or scoped instance when available.
     pub async fn resolve<T: Send + Sync + 'static>(&self) -> Result<Arc<T>, DiError> {
         let type_id = TypeId::of::<T>();
         let type_name = std::any::type_name::<T>();
@@ -439,8 +476,9 @@ impl DependencyContainer {
         })
     }
 
-    /// Resolve an optional instance of the given type.
-    /// Returns Ok(Some(Arc<T>)) if found, Ok(None) if not registered.
+    /// Resolve optional instance by type.
+    ///
+    /// Returns `Ok(Some(_))` if registered, `Ok(None)` if not.
     pub async fn resolve_optional<T: Send + Sync + 'static>(
         &self,
     ) -> Result<Option<Arc<T>>, DiError> {
@@ -451,8 +489,9 @@ impl DependencyContainer {
         }
     }
 
-    /// Freezes registrations, validates the dependency graph for cycles,
-    /// and pre-instantiates all Singletons in topological order.
+    /// Validate graph and prebuild singleton cache.
+    ///
+    /// Freezes no API surface, but walks dependency graph to catch cycles early.
     pub async fn initialize(&self) -> Result<(), DiError> {
         let mut graph = DependencyGraph::new();
 

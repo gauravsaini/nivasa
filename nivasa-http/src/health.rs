@@ -3,6 +3,8 @@ use serde_json::Value;
 use std::sync::Arc;
 
 /// Health status reported by a custom health indicator.
+///
+/// `Up` means the check passed, while `Down` means the check failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HealthStatus {
     Up,
@@ -10,6 +12,23 @@ pub enum HealthStatus {
 }
 
 /// Result returned by a custom health indicator check.
+///
+/// # Example
+///
+/// ```
+/// use nivasa_http::HealthIndicatorResult;
+/// use serde_json::json;
+///
+/// let result = HealthIndicatorResult::up().with_details(json!({
+///     "name": "database",
+///     "status": "up",
+/// }));
+///
+/// assert_eq!(result.details, Some(json!({
+///     "name": "database",
+///     "status": "up",
+/// })));
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct HealthIndicatorResult {
     pub status: HealthStatus,
@@ -38,36 +57,116 @@ impl HealthIndicatorResult {
 }
 
 /// Trait implemented by custom health indicators.
+///
+/// # Example
+///
+/// ```
+/// use async_trait::async_trait;
+/// use nivasa_http::{HealthIndicator, HealthIndicatorResult};
+/// use serde_json::json;
+///
+/// struct CacheHealth;
+///
+/// #[async_trait]
+/// impl HealthIndicator for CacheHealth {
+///     async fn check(&self) -> HealthIndicatorResult {
+///         HealthIndicatorResult::up().with_details(json!({
+///             "name": "cache",
+///             "status": "up",
+///         }))
+///     }
+/// }
+/// ```
 #[async_trait]
 pub trait HealthIndicator: Send + Sync {
     async fn check(&self) -> HealthIndicatorResult;
 }
 
 /// Reports a stable disk health payload.
+///
+/// # Example
+///
+/// ```
+/// use nivasa_http::{DiskHealthIndicator, HealthIndicator};
+///
+/// let result = tokio::runtime::Builder::new_current_thread()
+///     .enable_all()
+///     .build()
+///     .unwrap()
+///     .block_on(async { DiskHealthIndicator.check().await });
+///
+/// assert_eq!(result.status, nivasa_http::HealthStatus::Up);
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DiskHealthIndicator;
 
 /// Reports a stable memory health payload.
+///
+/// # Example
+///
+/// ```
+/// use nivasa_http::{HealthIndicator, HealthStatus, MemoryHealthIndicator};
+///
+/// let result = tokio::runtime::Builder::new_current_thread()
+///     .enable_all()
+///     .build()
+///     .unwrap()
+///     .block_on(async { MemoryHealthIndicator.check().await });
+///
+/// assert_eq!(result.status, HealthStatus::Up);
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MemoryHealthIndicator;
 
 /// Probe-backed database health indicator.
+///
+/// # Example
+///
+/// ```
+/// use nivasa_http::{DatabaseHealthIndicator, HealthIndicator};
+///
+/// let indicator = DatabaseHealthIndicator::new(|| true);
+/// let result = tokio::runtime::Builder::new_current_thread()
+///     .enable_all()
+///     .build()
+///     .unwrap()
+///     .block_on(async { indicator.check().await });
+///
+/// assert_eq!(result.status, nivasa_http::HealthStatus::Up);
+/// ```
 pub struct DatabaseHealthIndicator<P> {
     probe: P,
 }
 
 impl<P> DatabaseHealthIndicator<P> {
+    /// Create a database health indicator from a boolean probe.
     pub fn new(probe: P) -> Self {
         Self { probe }
     }
 }
 
 /// Probe-backed HTTP health indicator.
+///
+/// # Example
+///
+/// ```
+/// use nivasa_http::{HealthIndicator, HttpHealthIndicator};
+///
+/// let indicator = HttpHealthIndicator::new(|| false);
+/// let result = tokio::runtime::Builder::new_current_thread()
+///     .enable_all()
+///     .build()
+///     .unwrap()
+///     .block_on(async { indicator.check().await });
+///
+/// assert_eq!(result.status, nivasa_http::HealthStatus::Down);
+/// ```
 pub struct HttpHealthIndicator<P> {
     probe: P,
 }
 
 impl<P> HttpHealthIndicator<P> {
+    /// Create an HTTP health indicator from a boolean probe.
     pub fn new(probe: P) -> Self {
         Self { probe }
     }
@@ -155,16 +254,39 @@ pub struct HealthCheckResult {
 }
 
 /// Runs a list of health indicators and aggregates their status.
+///
+/// # Example
+///
+/// ```
+/// use nivasa_http::{DiskHealthIndicator, HealthCheckService, MemoryHealthIndicator};
+/// use std::sync::Arc;
+///
+/// let service = HealthCheckService::new(vec![
+///     Arc::new(DiskHealthIndicator),
+///     Arc::new(MemoryHealthIndicator),
+/// ]);
+///
+/// let result = tokio::runtime::Builder::new_current_thread()
+///     .enable_all()
+///     .build()
+///     .unwrap()
+///     .block_on(async { service.check().await });
+///
+/// assert_eq!(result.status, nivasa_http::HealthStatus::Up);
+/// assert_eq!(result.details.len(), 2);
+/// ```
 #[derive(Clone, Default)]
 pub struct HealthCheckService {
     indicators: Vec<Arc<dyn HealthIndicator>>,
 }
 
 impl HealthCheckService {
+    /// Create a health-check service from a list of indicators.
     pub fn new(indicators: Vec<Arc<dyn HealthIndicator>>) -> Self {
         Self { indicators }
     }
 
+    /// Run all indicators and aggregate the resulting status.
     pub async fn check(&self) -> HealthCheckResult {
         let mut details = Vec::with_capacity(self.indicators.len());
         let mut status = HealthStatus::Up;
@@ -182,6 +304,26 @@ impl HealthCheckService {
 }
 
 /// Minimal facade module that bundles health indicators behind one service.
+///
+/// # Example
+///
+/// ```
+/// use nivasa_http::{DiskHealthIndicator, MemoryHealthIndicator, TerminusModule};
+/// use std::sync::Arc;
+///
+/// let module = TerminusModule::new(vec![
+///     Arc::new(DiskHealthIndicator),
+///     Arc::new(MemoryHealthIndicator),
+/// ]);
+///
+/// let result = tokio::runtime::Builder::new_current_thread()
+///     .enable_all()
+///     .build()
+///     .unwrap()
+///     .block_on(async { module.health_check_service().check().await });
+///
+/// assert_eq!(result.status, nivasa_http::HealthStatus::Up);
+/// ```
 #[derive(Clone, Default)]
 pub struct TerminusModule {
     service: HealthCheckService,

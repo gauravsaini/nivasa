@@ -1,0 +1,5 @@
+error: unknown `#[schema]` entry; expected `default = "..."`
+ --> tests/trybuild/config_schema_unknown_key.rs:5:14
+  |
+5 |     #[schema(foo = "bar")]
+  |              ^^^

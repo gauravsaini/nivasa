@@ -14,7 +14,10 @@ use std::error::Error;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::{sync::oneshot, time::{sleep, timeout}};
+use tokio::{
+    sync::oneshot,
+    time::{sleep, timeout},
+};
 
 struct PipePrefixConfig {
     prefix: &'static str,
@@ -65,7 +68,9 @@ async fn injectable_pipe_struct_can_be_resolved_and_used_as_global_pipe(
 ) -> Result<(), Box<dyn Error>> {
     let container = DependencyContainer::new();
     container
-        .register_value(PipePrefixConfig { prefix: "di-pipe: " })
+        .register_value(PipePrefixConfig {
+            prefix: "di-pipe: ",
+        })
         .await;
     PrefixBodyPipe::__nivasa_register(&container).await;
 

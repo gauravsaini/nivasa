@@ -96,16 +96,16 @@ pub mod di {
 use http::{Method, Request};
 use nivasa_common::HttpException;
 use nivasa_core::di::{DependencyContainer, ProviderScope};
-use nivasa_http::{
-    run_controller_action, run_controller_action_with_body, run_controller_action_with_file,
-    run_controller_action_with_files, run_controller_action_with_param,
-    run_controller_action_with_query, run_controller_action_with_request,
-    resolve_controller_guard_execution, GuardExecutionOutcome,
-    upload::{FileInterceptor, FilesInterceptor, UploadedFile},
-    Body, ControllerResponse, FromRequest, Json, NivasaRequest, NivasaResponse, Query,
-    RequestPipeline,
-};
 use nivasa_guards::{ExecutionContext, Guard, GuardFuture, RolesGuard, ThrottlerGuard};
+use nivasa_http::{
+    resolve_controller_guard_execution, run_controller_action, run_controller_action_with_body,
+    run_controller_action_with_file, run_controller_action_with_files,
+    run_controller_action_with_param, run_controller_action_with_query,
+    run_controller_action_with_request,
+    upload::{FileInterceptor, FilesInterceptor, UploadedFile},
+    Body, ControllerResponse, FromRequest, GuardExecutionOutcome, Json, NivasaRequest,
+    NivasaResponse, Query, RequestPipeline,
+};
 use nivasa_macros::{controller, impl_controller};
 use nivasa_routing::{
     Controller, RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod, RoutePathCaptures,
@@ -690,12 +690,9 @@ async fn evaluate_controller_guard<G: Guard>(
     controller_guards: &[&'static str],
     handler_guard_metadata: &[(&'static str, Vec<&'static str>)],
 ) -> GuardExecutionOutcome {
-    let contract = resolve_controller_guard_execution(
-        handler,
-        controller_guards,
-        handler_guard_metadata,
-    )
-    .expect("controller guard contract must exist");
+    let contract =
+        resolve_controller_guard_execution(handler, controller_guards, handler_guard_metadata)
+            .expect("controller guard contract must exist");
 
     assert_eq!(contract.handler(), handler);
     assert_eq!(contract.guards(), &["ControllerGuard"]);
@@ -756,7 +753,11 @@ async fn controller_guard_runtime_allows_all_routes_when_the_guard_passes() {
     }
 
     for (method, path, handler) in routes {
-        let request = NivasaRequest::new(Method::from_bytes(method.as_bytes()).unwrap(), path, Body::empty());
+        let request = NivasaRequest::new(
+            Method::from_bytes(method.as_bytes()).unwrap(),
+            path,
+            Body::empty(),
+        );
         let mut pipeline = RequestPipeline::new(request);
         pipeline.parse_request().unwrap();
         pipeline.complete_middleware().unwrap();
@@ -804,7 +805,11 @@ async fn controller_guard_runtime_allows_all_routes_when_the_guard_passes() {
         );
         assert_eq!(
             response.body(),
-            &Body::text(if handler == "first" { "first" } else { "second" })
+            &Body::text(if handler == "first" {
+                "first"
+            } else {
+                "second"
+            })
         );
     }
 
@@ -877,12 +882,9 @@ async fn throttler_guard_controller_proof_compiles_and_runs_when_configured() {
     assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
     assert_eq!(pipeline.snapshot().current_state, "GuardChain");
 
-    let contract = resolve_controller_guard_execution(
-        route.2,
-        &controller_guards,
-        &handler_guard_metadata,
-    )
-    .expect("throttler guard contract must exist");
+    let contract =
+        resolve_controller_guard_execution(route.2, &controller_guards, &handler_guard_metadata)
+            .expect("throttler guard contract must exist");
     assert_eq!(contract.handler(), route.2);
     assert_eq!(contract.guards(), &["ThrottlerGuard"]);
 
@@ -914,7 +916,10 @@ async fn throttler_guard_controller_proof_compiles_and_runs_when_configured() {
     assert_eq!(pipeline.snapshot().current_state, "Done");
 
     assert_eq!(response.status(), http::StatusCode::OK);
-    assert_eq!(response.headers().get("x-controller-mode").unwrap(), "throttled");
+    assert_eq!(
+        response.headers().get("x-controller-mode").unwrap(),
+        "throttled"
+    );
     assert_eq!(response.body(), &Body::text("allowed"));
 }
 
@@ -985,7 +990,10 @@ async fn controller_roles_guard_uses_handler_then_class_metadata() {
     assert_eq!(pipeline.snapshot().current_state, "Done");
 
     assert_eq!(response.status(), http::StatusCode::OK);
-    assert_eq!(response.headers().get("x-controller-mode").unwrap(), "roles");
+    assert_eq!(
+        response.headers().get("x-controller-mode").unwrap(),
+        "roles"
+    );
     assert_eq!(response.body(), &Body::text("dashboard"));
 
     let mut fallback_registry: RouteDispatchRegistry<GuardedRouteHandler> =
@@ -1024,7 +1032,10 @@ async fn controller_roles_guard_uses_handler_then_class_metadata() {
         .await
         .expect("roles guard fallback evaluation must advance the request pipeline");
 
-    assert!(matches!(fallback_guard_outcome, GuardExecutionOutcome::Passed));
+    assert!(matches!(
+        fallback_guard_outcome,
+        GuardExecutionOutcome::Passed
+    ));
     assert_eq!(fallback_pipeline.snapshot().current_state, "InterceptorPre");
 }
 
@@ -1072,12 +1083,9 @@ async fn controller_guard_resolves_from_dependency_container() {
     assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
     assert_eq!(pipeline.snapshot().current_state, "GuardChain");
 
-    let contract = resolve_controller_guard_execution(
-        route.2,
-        &controller_guards,
-        &handler_guard_metadata,
-    )
-    .expect("injectable guard contract must exist");
+    let contract =
+        resolve_controller_guard_execution(route.2, &controller_guards, &handler_guard_metadata)
+            .expect("injectable guard contract must exist");
     assert_eq!(contract.guards(), &["InjectableGuard"]);
 
     let guard_outcome = pipeline
@@ -1111,7 +1119,14 @@ async fn controller_guard_resolves_from_dependency_container() {
     );
     assert_eq!(response.body(), &Body::text("guarded"));
 
-    assert!(container.resolve::<InjectableGuard>().await.unwrap().allowance.allowed);
+    assert!(
+        container
+            .resolve::<InjectableGuard>()
+            .await
+            .unwrap()
+            .allowance
+            .allowed
+    );
 }
 
 #[tokio::test]
@@ -1158,7 +1173,11 @@ async fn controller_guard_runtime_blocks_all_routes_when_the_guard_errors() {
     }
 
     for (method, path, handler) in routes {
-        let request = NivasaRequest::new(Method::from_bytes(method.as_bytes()).unwrap(), path, Body::empty());
+        let request = NivasaRequest::new(
+            Method::from_bytes(method.as_bytes()).unwrap(),
+            path,
+            Body::empty(),
+        );
         let mut pipeline = RequestPipeline::new(request);
         pipeline.parse_request().unwrap();
         pipeline.complete_middleware().unwrap();
@@ -1330,7 +1349,7 @@ fn controller_query_runtime_maps_invalid_query_to_bad_request() {
     assert!(body["message"]
         .as_str()
         .expect("message must be string")
-        .starts_with("invalid query string:"));
+        .starts_with("invalid query string: field `page`:"));
 }
 
 #[test]

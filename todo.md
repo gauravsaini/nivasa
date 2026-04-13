@@ -334,7 +334,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Validate no duplicate routes within a controller
 
 #### 2.1.4 — Parameter Extraction
-> ⚠️ **SCXML / controller boundary:** the request pipeline still stops at route dispatch. The landed controller runtime slices are `#[body]` request extraction, `#[req]` raw request access, `#[param("name")]` path-param extraction, `#[query]` full query DTO extraction, and `#[res]` response-builder access; the remaining controller markers stay partial or pending until the later SCXML handler-execution path lands.
+> ⚠️ **SCXML / controller boundary:** request pipeline now runs past route dispatch through controller execution stages. Landed controller runtime slices are `#[body]` request extraction, `#[req]` raw request access, `#[param("name")]` path-param extraction, `#[query]` full query DTO extraction, `#[query("name")]` single query-param extraction, `#[header("name")]` single-header extraction, `#[res]` response-builder access, and multipart `#[file]` / `#[files]` helpers. `#[headers]`, `#[ip]`, `#[session]`, and `#[custom_param(...)]` stay partial or pending.
 
 - [x] Strip and record controller parameter extractor metadata in `#[impl_controller]`
 - [x] Implement `#[body]` extractor — deserialize JSON request body to typed DTO
@@ -418,7 +418,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 - [x] Document the full request lifecycle (reference the SCXML statechart diagram)
 - [x] Create a `StatechartEngine<RequestStatechart>` per incoming request
-- [x] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` (route dispatch is the current SCXML stop; the first `#[res]` runtime slice begins on the controller side, and full controller execution plus later SCXML stages remain future work) → ...
+- [x] Drive pipeline via engine: `Received` → event → `MiddlewareChain` → event → `RouteMatching` → `GuardChain` → `InterceptorPre` → `PipeTransform` → `HandlerExecution` → `InterceptorPost` → `SendingResponse` → `Done`
 - [x] Each pipeline stage handler returns a `RequestEvent` that the engine uses to transition
 - [x] Pipeline short-circuits are SCXML transitions: GuardDenied → `ErrorHandling` (not ad-hoc if/else)
 - [x] Errors at any stage raise `error.*` events → engine transitions to `ErrorHandling` state
@@ -749,7 +749,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Support `is_global: true` on `ConfigModule` dynamic metadata surface
 - [x] Support `env_file_path: ".env"` option (single or vec of paths)
 - [x] Support `ignore_env_file: true` (only use process env vars)
-- [ ] Support `validate_config: schema` (validate config at startup)
+- [x] Support `validate_config: schema` (validate config at startup)
 
 #### 6.1.2 — Environment Loading
 - [x] Support `.env` file loading via `dotenvy` crate
@@ -764,13 +764,13 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `get_or_default<T>(key: &str, default: T) -> T`
 - [x] Implement `get_or_throw(key: &str) -> Result<String, ConfigException>`
 - [x] Implement namespace support: `get("database.host")`
-- [ ] Implement validation of required config keys at startup
+- [x] Implement validation of required config keys at startup
 
 #### 6.1.4 — Type-Safe Config (Config Schema)
-- [ ] Support config schema definition via `#[derive(ConfigSchema)]`
+- [x] Support config schema definition via `#[derive(ConfigSchema)]`
 - [ ] Auto-validate loaded config against schema at module init
-- [ ] Emit clear startup error listing all missing/invalid config keys
-- [ ] Support default values in schema
+- [x] Emit clear startup error listing all missing/invalid config keys
+- [x] Support default values in schema
 
 #### 6.1.5 — Config Tests
 - [x] Test loading from .env file
@@ -779,53 +779,55 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Test `get::<bool>` type coercion
 - [x] Test `get_or_throw` with missing key → startup error
 - [x] Test global config is accessible from any module
-- [ ] Test config schema validation at startup
+- [x] Test required-key validation helper semantics
+- [x] Test config schema validation at startup
 
 ### 6.2 — Structured Logging (`tracing` integration)
 
 - [x] Add `tracing` + `tracing-subscriber` as workspace dependencies
-- [ ] Implement `LoggerModule` with configurable log levels
-- [ ] Implement `LoggerService` injectable provider wrapping `tracing`
-- [ ] Support structured JSON logging (for production)
-- [ ] Support pretty console logging (for development)
+- [x] Implement `LoggerModule` with configurable log levels
+- [x] Implement `LoggerService` injectable provider wrapping `tracing`
+- [x] Support structured JSON logging (for production)
+- [x] Support pretty console logging (for development)
 - [ ] Support log context propagation (request ID, user ID, module name)
 - [x] Implement request logging span (method, path, status, duration)
-- [ ] Support configurable log levels per module
+- [x] Support configurable log levels per module
+- [x] Validate tracing directives
 - [x] Test log output contains expected fields
 - [x] Test log level filtering
 
 ### 6.3 — Testing Utilities (`nivasa-testing` or `nivasa` main crate)
 
 #### 6.3.1 — Test Application Builder
-- [ ] Implement `Test::create_testing_module(metadata)` builder
-- [ ] Implement `.override_provider::<T>().use_value(mock)` for mock injection
-- [ ] Implement `.override_provider::<T>().use_factory(|| mock)` for factory mock
-- [ ] Implement `.compile() -> TestingModule` to build test DI container
-- [ ] Implement `testing_module.get::<T>()` to resolve providers in tests
+- [x] Implement `Test::create_testing_module(metadata)` builder
+- [x] Implement `.override_provider::<T>().use_value(mock)` for mock injection
+- [x] Implement `.override_provider::<T>().use_factory(|| mock)` for factory mock
+- [x] Implement `.compile() -> TestingModule` to build test DI container
+- [x] Implement `testing_module.get::<T>()` to resolve providers in tests
 
 #### 6.3.2 — HTTP Test Client
-- [ ] Implement `TestClient` struct wrapping in-memory HTTP dispatch (no TCP)
-- [ ] Implement `.get("/path")`, `.post("/path")`, `.put("/path")`, `.delete("/path")`
-- [ ] Implement `.header("key", "value")` — set request headers
-- [ ] Implement `.body(json)` — set request body
-- [ ] Implement `.send() -> TestResponse`
-- [ ] Implement `TestResponse::status() -> u16`
-- [ ] Implement `TestResponse::json::<T>() -> T`
-- [ ] Implement `TestResponse::text() -> String`
-- [ ] Implement `TestResponse::header("key") -> Option<String>`
+- [x] Implement `TestClient` struct wrapping in-memory HTTP dispatch (no TCP)
+- [x] Implement `.get("/path")`, `.post("/path")`, `.put("/path")`, `.delete("/path")`
+- [x] Implement `.header("key", "value")` — set request headers
+- [x] Implement `.body(json)` — set request body
+- [x] Implement `.send() -> TestResponse`
+- [x] Implement `TestResponse::status() -> u16`
+- [x] Implement `TestResponse::json::<T>() -> T`
+- [x] Implement `TestResponse::text() -> String`
+- [x] Implement `TestResponse::header("key") -> Option<String>`
 
 #### 6.3.3 — Mock Providers
-- [ ] Implement `MockProvider<T>` utility
-- [ ] Support recording calls (method name, arguments)
-- [ ] Support returning predefined values
-- [ ] Support asserting call counts
-- [ ] Support asserting call arguments
+- [x] Implement `MockProvider<T>` utility
+- [x] Support recording calls (method name, arguments)
+- [x] Support returning predefined values
+- [x] Support asserting call counts
+- [x] Support asserting call arguments
 
 #### 6.3.4 — Testing Tests
-- [ ] Test creating a testing module with mock providers
-- [ ] Test HTTP test client sends and receives correctly
-- [ ] Test provider override replaces real provider with mock
-- [ ] Test e2e test flow: create module → HTTP client → assert response
+- [x] Test creating a testing module with mock providers
+- [x] Test HTTP test client sends and receives correctly
+- [x] Test provider override replaces real provider with mock
+- [x] Test e2e test flow: create module → HTTP client → assert response
 
 ### 6.4 — CLI Tool (`nivasa-cli`)
 
@@ -858,16 +860,16 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Use `askama` or string templates for code generation
 
 #### 6.4.3 — CLI Auto-Registration
-- [ ] After generating a module, auto-add import to parent module's `imports` list
-- [ ] After generating a controller, auto-add to module's `controllers` list
-- [ ] After generating a service, auto-add to module's `providers` list
-- [ ] Handle file parsing to find insertion point (regex or syn-based)
+- [x] After generating a module, auto-add import to parent module's `imports` list via explicit `--parent-module-file`
+- [x] After generating a controller, auto-add to module's `controllers` list via explicit `--module-file`
+- [x] After generating a service, auto-add to module's `providers` list via explicit `--module-file`
+- [x] Handle file parsing to find insertion point with targeted module-attribute parsing
 
 #### 6.4.4 — CLI Tests
 - [x] Test `nivasa new myapp` creates correct project structure
 - [x] Test `nivasa g module users` creates `users/users_module.rs`
 - [x] Test `nivasa g resource users` creates module + controller + service + DTOs
-- [ ] Test auto-registration modifies parent module correctly
+- [x] Test auto-registration modifies parent/module file correctly
 - [x] Test `nivasa info` outputs version information
 
 ---
@@ -1067,7 +1069,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 10.3 — Release Preparation
 - [ ] Final API review: ensure public APIs are consistent and well-named
-- [ ] Ensure all public types/functions have rustdoc with examples
+- [ ] Fill remaining public types/functions with rustdoc examples
+  - recent docs wave covered the major public surfaces in `nivasa-core`, `nivasa-http`, `nivasa-macros`, `nivasa-statechart`, `nivasa-common`, `nivasa-routing`, `nivasa-validation`, `nivasa-websocket`, `nivasa-filters`, `nivasa-interceptors`, `nivasa-pipes`, and `nivasa-guards`; the remaining gaps are now mostly low-level internals such as `nivasa-http/src/upload.rs` and a few DI helper/error surfaces
 - [x] Write `CHANGELOG.md` following Keep a Changelog format
 - [x] Write `CONTRIBUTING.md` with contribution guidelines
 - [x] Set up crate publishing order (dependencies first):

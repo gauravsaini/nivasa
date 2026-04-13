@@ -1,7 +1,20 @@
 //! Typed HTTP status codes for the Nivasa framework.
 //!
-//! The enum covers the standard HTTP status codes and provides convenient
-//! conversions for `u16`, `http::StatusCode`, and `HttpException`.
+//! `HttpStatus` gives you a typed wrapper around standard HTTP status codes,
+//! with helpers for numeric conversion, `http::StatusCode`, and
+//! `HttpException`.
+//!
+//! # Example
+//!
+//! ```rust
+//! use nivasa_common::HttpStatus;
+//!
+//! let status = HttpStatus::NotFound;
+//!
+//! assert_eq!(status.as_u16(), 404);
+//! assert_eq!(status.reason_phrase(), "Not Found");
+//! assert!(status.is_client_error());
+//! ```
 
 use std::fmt;
 
@@ -11,6 +24,16 @@ use thiserror::Error;
 use crate::HttpException;
 
 /// A standard HTTP status code.
+///
+/// Use this enum when you want typed status handling instead of raw numbers.
+///
+/// ```rust
+/// use nivasa_common::HttpStatus;
+///
+/// let status = HttpStatus::Created;
+/// assert_eq!(u16::from(status), 201);
+/// assert_eq!(status.to_string(), "201 Created");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u16)]
 pub enum HttpStatus {
@@ -85,11 +108,23 @@ pub struct InvalidHttpStatus(pub u16);
 
 impl HttpStatus {
     /// Returns the numeric status code.
+    ///
+    /// ```rust
+    /// use nivasa_common::HttpStatus;
+    ///
+    /// assert_eq!(HttpStatus::Ok.as_u16(), 200);
+    /// ```
     pub const fn as_u16(self) -> u16 {
         self as u16
     }
 
     /// Returns the canonical reason phrase for the status.
+    ///
+    /// ```rust
+    /// use nivasa_common::HttpStatus;
+    ///
+    /// assert_eq!(HttpStatus::InternalServerError.reason_phrase(), "Internal Server Error");
+    /// ```
     pub const fn reason_phrase(self) -> &'static str {
         match self {
             Self::Continue => "Continue",
@@ -158,12 +193,26 @@ impl HttpStatus {
     }
 
     /// Returns the matching `http::StatusCode`.
+    ///
+    /// ```rust
+    /// use nivasa_common::HttpStatus;
+    ///
+    /// assert_eq!(HttpStatus::NotFound.to_http_status_code().as_u16(), 404);
+    /// ```
     pub fn to_http_status_code(self) -> StatusCode {
         StatusCode::from_u16(self.as_u16())
             .expect("HttpStatus variants are valid standard HTTP status codes")
     }
 
     /// Returns the matching `HttpException` with the provided message.
+    ///
+    /// ```rust
+    /// use nivasa_common::HttpStatus;
+    ///
+    /// let ex = HttpStatus::BadRequest.into_exception("invalid payload");
+    /// assert_eq!(ex.status_code, 400);
+    /// assert_eq!(ex.message, "invalid payload");
+    /// ```
     pub fn into_exception(self, message: impl Into<String>) -> HttpException {
         HttpException::from_status(self, message)
     }

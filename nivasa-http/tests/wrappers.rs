@@ -38,7 +38,7 @@ fn request_extraction_supports_query_headers_and_json() {
 
     let request = NivasaRequest::from_http(request);
 
-    assert_eq!(request.query("page"), Some("2"));
+    assert_eq!(request.query("page"), Some("2".to_string()));
     assert_eq!(request.query("missing"), None);
     assert_eq!(
         request.header("x-request-id").unwrap().to_str().unwrap(),
@@ -67,6 +67,20 @@ fn request_extraction_supports_query_headers_and_json() {
             name: "Ada".to_string(),
         }
     );
+}
+
+#[test]
+fn request_query_decodes_values_and_keeps_last_duplicate() {
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri("/users?name=Alice%20Smith&tag=one&tag=two")
+        .body(Body::empty())
+        .expect("request must build");
+
+    let request = NivasaRequest::from_http(request);
+
+    assert_eq!(request.query("name"), Some("Alice Smith".to_string()));
+    assert_eq!(request.query("tag"), Some("two".to_string()));
 }
 
 #[test]

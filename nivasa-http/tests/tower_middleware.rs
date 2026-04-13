@@ -157,7 +157,9 @@ where
                 service.call(nivasa_request).await
             };
 
-            let response = response.expect("middleware service must succeed").into_inner();
+            let response = response
+                .expect("middleware service must succeed")
+                .into_inner();
             let mut builder = http::Response::builder().status(response.status());
             for (name, value) in response.headers() {
                 builder = builder.header(name, value);
@@ -224,7 +226,11 @@ async fn tower_http_cors_wraps_a_nivasa_middleware_service() {
         "vary header should include origin, got {vary}"
     );
 
-    let body = response.into_body().collect().await.expect("body should collect");
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body should collect");
     let body = body.to_bytes();
     assert_eq!(body, Bytes::from_static(b"cors ok"));
 }

@@ -69,4 +69,31 @@ fn malformed_query_fields_still_report_deserialization_errors() {
 
     assert!(matches!(err, RequestExtractError::InvalidQuery(_)));
     assert!(err.to_string().starts_with("invalid query string:"));
+    assert!(err.to_string().contains("page"));
+}
+
+#[test]
+fn full_query_extraction_decodes_values_and_keeps_last_duplicate() {
+    #[derive(Debug, Deserialize, PartialEq, Eq)]
+    struct SearchTerm {
+        name: String,
+        tag: String,
+    }
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri("/users?name=Alice%20Smith&tag=one&tag=two")
+        .body(Body::empty())
+        .expect("request must build");
+    let request = NivasaRequest::from_http(request);
+
+    let query = Query::<SearchTerm>::from_request(&request).unwrap();
+
+    assert_eq!(
+        query.into_inner(),
+        SearchTerm {
+            name: "Alice Smith".to_string(),
+            tag: "two".to_string(),
+        }
+    );
 }

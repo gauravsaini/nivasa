@@ -11,9 +11,14 @@ use nivasa::prelude::{
     ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost, Middleware,
     NivasaMiddlewareLayer, Pipe, Reflector, WsArgumentsHost,
 };
+use nivasa_http::TestClient;
 use std::any::TypeId;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 #[test]
 fn crate_root_reexports_app_config_builders() {
@@ -147,9 +152,140 @@ fn crate_root_reexports_nest_application_build_as_runtime_shell() {
 }
 
 #[test]
+fn nest_application_can_bridge_built_routes_into_test_client() {
+    let app = nivasa::NestApplication::create(DemoModule)
+        .build()
+        .expect("build should assemble the root module shell");
+
+    let server = app
+        .to_server(|route| match route.handler {
+            "health" => {
+                let route_name = route.handler;
+                Some(Arc::new(move |request: &NivasaRequest| {
+                    let request_id = request
+                        .header("x-request-id")
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or("missing");
+
+                    NivasaResponse::text(format!("ok:{request_id}"))
+                        .with_header("x-app-route", route_name)
+                }))
+            }
+            _ => None,
+        })
+        .expect("app routes should bridge into a server");
+
+    let response = TestClient::new(server)
+        .get("/health")
+        .header("x-request-id", "bridge-1")
+        .send_blocking();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.text(), "ok:bridge-1");
+    assert_eq!(response.header("x-app-route"), Some(String::from("health")));
+}
+
+#[test]
+fn nest_application_preflight_fails_before_module_configure() {
+    let configure_calls = Arc::new(AtomicUsize::new(0));
+    let module = PreflightModule {
+        configure_calls: Arc::clone(&configure_calls),
+    };
+
+    let result = nivasa::NestApplication::create(module)
+        .with_preflight(|module, _bootstrap| {
+            assert_eq!(module.metadata(), ModuleMetadata::default());
+            Err(AppBuildError::PreflightValidation {
+                message: "missing HOST and PORT".to_string(),
+            })
+        })
+        .build();
+
+    match result {
+        Err(error) => match error {
+            AppBuildError::PreflightValidation { message } => {
+                assert_eq!(message, "missing HOST and PORT");
+            }
+            other => panic!("unexpected error: {other}"),
+        },
+        Ok(_) => panic!("preflight should stop build early"),
+    }
+
+    assert_eq!(configure_calls.load(Ordering::SeqCst), 0);
+}
+
+#[cfg(feature = "config")]
+#[test]
+fn nest_application_preflight_can_validate_required_config_keys() {
+    use std::collections::BTreeMap;
+
+    use nivasa::config::{ConfigModule, ConfigSchema, ConfigValidationIssue};
+
+    struct StartupSchema;
+
+    impl ConfigSchema for StartupSchema {
+        fn required_keys() -> &'static [&'static str] {
+            &["HOST", "PORT", "API_KEY"]
+        }
+
+        fn defaults() -> &'static [(&'static str, &'static str)] {
+            &[("SCHEME", "http")]
+        }
+
+        fn validate(loaded: &BTreeMap<String, String>) -> Vec<ConfigValidationIssue> {
+            loaded
+                .get("PORT")
+                .and_then(|port| {
+                    port.parse::<u16>().err().map(|_| ConfigValidationIssue::InvalidValue {
+                        key: "PORT".to_string(),
+                        value: port.to_string(),
+                        expected: "unsigned 16-bit integer".to_string(),
+                    })
+                })
+                .into_iter()
+                .collect()
+        }
+    }
+
+    let loaded = BTreeMap::from([
+        ("HOST".to_string(), "127.0.0.1".to_string()),
+        ("PORT".to_string(), "abc".to_string()),
+    ]);
+    let configure_calls = Arc::new(AtomicUsize::new(0));
+    let module = PreflightModule {
+        configure_calls: Arc::clone(&configure_calls),
+    };
+
+    let result = nivasa::NestApplication::create(module)
+        .with_preflight(move |_module, _bootstrap| {
+            ConfigModule::validate_schema::<StartupSchema>(&loaded).map(|_| ()).map_err(|error| {
+                AppBuildError::PreflightValidation {
+                    message: error.to_string(),
+                }
+            })
+        })
+        .build();
+
+    match result {
+        Err(error) => match error {
+            AppBuildError::PreflightValidation { message } => {
+                assert!(message.contains("missing required config key"));
+                assert!(message.contains("API_KEY"));
+                assert!(message.contains("invalid config value for PORT"));
+                assert!(message.contains("unsigned 16-bit integer"));
+            }
+            other => panic!("unexpected error: {other}"),
+        },
+        Ok(_) => panic!("schema validation should fail fast"),
+    }
+
+    assert_eq!(configure_calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
 fn crate_root_reexports_global_pipe_bootstrap_surface() {
-    let builder = nivasa::AppBootstrapConfig::default()
-        .use_global_pipe(pipes_crate::TrimPipe::new());
+    let builder =
+        nivasa::AppBootstrapConfig::default().use_global_pipe(pipes_crate::TrimPipe::new());
 
     fn _assert_builder_is_in_scope(_: Option<NivasaServerBuilder>) {}
     let _ = builder;
@@ -212,7 +348,9 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
 #[test]
 #[allow(unused_imports)]
 fn crate_root_reexports_pipe_surface_as_placeholder_crate() {
-    use nivasa::{pipes as pipes_crate, ArgumentMetadata as RootArgumentMetadata, Pipe as RootPipe};
+    use nivasa::{
+        pipes as pipes_crate, ArgumentMetadata as RootArgumentMetadata, Pipe as RootPipe,
+    };
 
     fn _assert_pipes_namespace_is_in_scope(_: Option<pipes_crate::ArgumentMetadata>) {}
     fn _assert_pipes_namespace_pipe_is_in_scope<T: pipes_crate::Pipe>() {}
@@ -330,6 +468,37 @@ impl Module for DemoModule {
             vec![ControllerRouteRegistration::new("GET", "health", "health")],
             Vec::new(),
         )]
+    }
+}
+
+struct PreflightModule {
+    configure_calls: Arc<AtomicUsize>,
+}
+
+impl Module for PreflightModule {
+    fn metadata(&self) -> ModuleMetadata {
+        ModuleMetadata::default()
+    }
+
+    fn configure<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        _container: &'life1 DependencyContainer,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DiError>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        let configure_calls = Arc::clone(&self.configure_calls);
+
+        Box::pin(async move {
+            configure_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+    }
+
+    fn controller_registrations(&self) -> Vec<ModuleControllerRegistration> {
+        Vec::new()
     }
 }
 
@@ -505,7 +674,9 @@ fn bootstrap_config_can_enable_versioning_without_runtime_wiring() {
 
     assert_eq!(bootstrap.versioning(), Some(&versioning));
     assert_eq!(
-        bootstrap.versioning().and_then(|options| options.default_version.as_deref()),
+        bootstrap
+            .versioning()
+            .and_then(|options| options.default_version.as_deref()),
         Some("v2")
     );
     assert_eq!(bootstrap.server.versioning, Some(versioning));
@@ -516,6 +687,8 @@ fn bootstrap_config_can_enable_versioning_without_runtime_wiring() {
 #[allow(unused_imports)]
 fn optional_crate_features_reexport_placeholder_crates_when_enabled() {
     use nivasa::config as config_crate;
+    #[cfg(feature = "validation")]
     use nivasa::validation as validation_crate;
+    #[cfg(feature = "websocket")]
     use nivasa::websocket as websocket_crate;
 }

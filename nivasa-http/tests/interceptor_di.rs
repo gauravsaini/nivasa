@@ -5,9 +5,7 @@ use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use nivasa_core::di::{DependencyContainer, ProviderScope};
 use nivasa_http::{NivasaResponse, NivasaServer};
-use nivasa_interceptors::{
-    CallHandler, ExecutionContext, Interceptor, InterceptorFuture,
-};
+use nivasa_interceptors::{CallHandler, ExecutionContext, Interceptor, InterceptorFuture};
 use nivasa_macros::injectable;
 use nivasa_routing::RouteMethod;
 use std::net::TcpListener as StdTcpListener;

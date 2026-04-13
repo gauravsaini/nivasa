@@ -1,9 +1,12 @@
+use nivasa_common::HttpException;
 use nivasa_http::NivasaResponse;
 use nivasa_interceptors::{CallHandler, ExecutionContext, Interceptor, LoggingInterceptor};
-use nivasa_common::HttpException;
 use std::sync::{Arc, Mutex};
 
-fn capture_logs() -> (Arc<Mutex<Vec<String>>>, impl Fn(String) + Send + Sync + 'static) {
+fn capture_logs() -> (
+    Arc<Mutex<Vec<String>>>,
+    impl Fn(String) + Send + Sync + 'static,
+) {
     let logs = Arc::new(Mutex::new(Vec::new()));
     let sink_logs = Arc::clone(&logs);
 
@@ -48,9 +51,8 @@ async fn logging_interceptor_records_failure_status_codes() {
         .with_request("POST", "/logging")
         .with_handler_name("create_user")
         .with_class_name("UsersController");
-    let next = CallHandler::new(|| async {
-        Err::<NivasaResponse, _>(HttpException::bad_request("boom"))
-    });
+    let next =
+        CallHandler::new(|| async { Err::<NivasaResponse, _>(HttpException::bad_request("boom")) });
 
     let error = interceptor.intercept(&context, next).await.unwrap_err();
 

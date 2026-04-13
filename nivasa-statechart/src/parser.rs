@@ -2,6 +2,24 @@
 //!
 //! Parses `.scxml` files (W3C State Chart XML) into an in-memory
 //! [`ScxmlDocument`] representation.
+//!
+//! This parser only builds the document model. It does not perform W3C SCXML
+//! schema validation; use [`crate::schema::validate_scxml_schema`] for that.
+//!
+//! # Example
+//!
+//! ```rust
+//! use nivasa_statechart::ScxmlDocument;
+//!
+//! let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+//! <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle">
+//!   <state id="idle"/>
+//! </scxml>"#;
+//!
+//! let doc = ScxmlDocument::from_str(scxml).unwrap();
+//! assert_eq!(doc.metadata.initial.as_deref(), Some("idle"));
+//! assert!(doc.has_state("idle"));
+//! ```
 
 use crate::types::*;
 use quick_xml::events::{BytesStart, Event as XmlEvent};
@@ -11,6 +29,15 @@ use std::path::Path;
 use thiserror::Error;
 
 /// Errors that can occur during SCXML parsing.
+///
+/// # Example
+///
+/// ```rust
+/// use nivasa_statechart::parser::{ParseError, ScxmlDocument};
+///
+/// let err = ScxmlDocument::from_str("<state id=\"idle\"/>").unwrap_err();
+/// assert!(matches!(err, ParseError::Invalid(message) if message.contains("Missing <scxml> root element")));
+/// ```
 #[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum ParseError {
@@ -33,6 +60,23 @@ pub enum ParseError {
 }
 
 /// A parsed SCXML document.
+///
+/// Use [`ScxmlDocument::from_str`] for embedded SCXML content or
+/// [`ScxmlDocument::from_file`] for files on disk.
+///
+/// # Example
+///
+/// ```rust
+/// use nivasa_statechart::ScxmlDocument;
+///
+/// let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+/// <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle">
+///   <state id="idle"/>
+/// </scxml>"#;
+///
+/// let doc = ScxmlDocument::from_str(scxml).unwrap();
+/// assert_eq!(doc.top_level_states, vec!["idle".to_string()]);
+/// ```
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ScxmlDocument {
@@ -51,12 +95,44 @@ pub struct ScxmlDocument {
 #[allow(dead_code)]
 impl ScxmlDocument {
     /// Parse an SCXML document from a file path.
+    ///
+    /// This reads the file into memory and then delegates to
+    /// [`ScxmlDocument::from_str`].
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use nivasa_statechart::ScxmlDocument;
+    ///
+    /// let doc = ScxmlDocument::from_file("statecharts/app.scxml").unwrap();
+    /// assert!(doc.metadata.name.is_some());
+    /// ```
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, ParseError> {
         let source = std::fs::read_to_string(path)?;
         Self::from_str(&source)
     }
 
     /// Parse an SCXML document from a string.
+    ///
+    /// The parser accepts well-formed SCXML and preserves the document shape
+    /// for later validation and code generation.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use nivasa_statechart::ScxmlDocument;
+    ///
+    /// let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+    /// <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle">
+    ///   <state id="idle">
+    ///     <transition event="go" target="running"/>
+    ///   </state>
+    ///   <state id="running"/>
+    /// </scxml>"#;
+    ///
+    /// let doc = ScxmlDocument::from_str(scxml).unwrap();
+    /// assert_eq!(doc.states["idle"].transitions[0].event.as_deref(), Some("go"));
+    /// ```
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(source: &str) -> Result<Self, ParseError> {
         let mut reader = Reader::from_str(source);

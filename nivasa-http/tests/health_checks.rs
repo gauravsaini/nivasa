@@ -3,7 +3,10 @@ use http::{StatusCode, Uri};
 use http_body_util::{BodyExt, Empty};
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use hyper_util::rt::TokioExecutor;
-use nivasa_http::{Body, HealthCheckService, HealthIndicator, HealthIndicatorResult, HealthStatus, NivasaResponse, NivasaServer};
+use nivasa_http::{
+    Body, HealthCheckService, HealthIndicator, HealthIndicatorResult, HealthStatus, NivasaResponse,
+    NivasaServer,
+};
 use nivasa_routing::RouteMethod;
 use std::{error::Error, net::TcpListener as StdTcpListener, sync::Arc, time::Duration};
 use tokio::{
@@ -103,7 +106,10 @@ impl HealthIndicator for FailingIndicator {
 #[tokio::test]
 async fn health_endpoint_returns_ok_when_all_indicators_are_up() -> Result<(), Box<dyn Error>> {
     assert_health_endpoint_status(
-        vec![Arc::new(nivasa_http::DiskHealthIndicator), Arc::new(nivasa_http::MemoryHealthIndicator)],
+        vec![
+            Arc::new(nivasa_http::DiskHealthIndicator),
+            Arc::new(nivasa_http::MemoryHealthIndicator),
+        ],
         StatusCode::OK,
         "up",
     )
@@ -113,5 +119,10 @@ async fn health_endpoint_returns_ok_when_all_indicators_are_up() -> Result<(), B
 #[tokio::test]
 async fn health_endpoint_returns_service_unavailable_when_any_indicator_is_down(
 ) -> Result<(), Box<dyn Error>> {
-    assert_health_endpoint_status(vec![Arc::new(FailingIndicator)], StatusCode::SERVICE_UNAVAILABLE, "down").await
+    assert_health_endpoint_status(
+        vec![Arc::new(FailingIndicator)],
+        StatusCode::SERVICE_UNAVAILABLE,
+        "down",
+    )
+    .await
 }

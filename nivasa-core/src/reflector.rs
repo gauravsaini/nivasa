@@ -7,16 +7,59 @@ use serde::de::DeserializeOwned;
 ///
 /// This stays intentionally read-only so later guard and interceptor slices can
 /// depend on a stable lookup API without introducing mutation or runtime wiring.
+///
+/// # Example
+///
+/// ```rust
+/// use nivasa_core::reflector::Reflector;
+/// use nivasa_common::RequestContext;
+/// use serde_json::json;
+///
+/// let mut context = RequestContext::new();
+/// context.set_handler_metadata("roles", json!(["admin"]));
+///
+/// let reflector = Reflector::new();
+/// assert_eq!(
+///     reflector.get_roles(&context),
+///     Some(vec!["admin".to_string()])
+/// );
+/// ```
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Reflector;
 
 impl Reflector {
     /// Create a new reflector helper.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use nivasa_core::reflector::Reflector;
+    ///
+    /// let reflector = Reflector::new();
+    /// let _ = reflector;
+    /// ```
     pub fn new() -> Self {
         Self
     }
 
     /// Read typed handler metadata from the shared request context.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use nivasa_core::reflector::Reflector;
+    /// use nivasa_common::RequestContext;
+    /// use serde_json::json;
+    ///
+    /// let mut context = RequestContext::new();
+    /// context.set_handler_metadata("roles", json!(["admin", "editor"]));
+    ///
+    /// let reflector = Reflector::new();
+    /// assert_eq!(
+    ///     reflector.get_handler_metadata::<Vec<String>>(&context, "roles"),
+    ///     Some(vec!["admin".to_string(), "editor".to_string()])
+    /// );
+    /// ```
     pub fn get_handler_metadata<T>(
         &self,
         context: &RequestContext,
@@ -32,6 +75,23 @@ impl Reflector {
     }
 
     /// Read typed class metadata from the shared request context.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use nivasa_core::reflector::Reflector;
+    /// use nivasa_common::RequestContext;
+    /// use serde_json::json;
+    ///
+    /// let mut context = RequestContext::new();
+    /// context.set_class_metadata("controller", json!("UsersController"));
+    ///
+    /// let reflector = Reflector::new();
+    /// assert_eq!(
+    ///     reflector.get_class_metadata::<String>(&context, "controller"),
+    ///     Some("UsersController".to_string())
+    /// );
+    /// ```
     pub fn get_class_metadata<T>(
         &self,
         context: &RequestContext,
@@ -47,6 +107,23 @@ impl Reflector {
     }
 
     /// Read typed custom metadata from the shared request context.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use nivasa_core::reflector::Reflector;
+    /// use nivasa_common::RequestContext;
+    /// use serde_json::json;
+    ///
+    /// let mut context = RequestContext::new();
+    /// context.set_custom_data("request_id", json!("req-123"));
+    ///
+    /// let reflector = Reflector::new();
+    /// assert_eq!(
+    ///     reflector.get_custom_data::<String>(&context, "request_id"),
+    ///     Some("req-123".to_string())
+    /// );
+    /// ```
     pub fn get_custom_data<T>(
         &self,
         context: &RequestContext,
@@ -65,6 +142,23 @@ impl Reflector {
     ///
     /// The lookup order matches the existing capture surfaces:
     /// handler metadata first, then class metadata, then custom data.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use nivasa_core::reflector::Reflector;
+    /// use nivasa_common::RequestContext;
+    /// use serde_json::json;
+    ///
+    /// let mut context = RequestContext::new();
+    /// context.set_class_metadata("controller", json!("UsersController"));
+    ///
+    /// let reflector = Reflector::new();
+    /// assert_eq!(
+    ///     reflector.get_metadata::<String>(&context, "controller"),
+    ///     Some("UsersController".to_string())
+    /// );
+    /// ```
     pub fn get_metadata<T>(
         &self,
         context: &RequestContext,
@@ -83,11 +177,53 @@ impl Reflector {
     /// This prefers handler metadata and falls back to class metadata so
     /// controller-level and route-level role declarations can be consumed with
     /// a single convenience lookup.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use nivasa_core::reflector::Reflector;
+    /// use nivasa_common::RequestContext;
+    /// use serde_json::json;
+    ///
+    /// let mut context = RequestContext::new();
+    /// context.set_class_metadata("roles", json!(["reader"]));
+    ///
+    /// let reflector = Reflector::new();
+    /// assert_eq!(reflector.get_roles(&context), Some(vec!["reader".to_string()]));
+    /// ```
     pub fn get_roles(&self, context: &RequestContext) -> Option<Vec<String>> {
         self.get_metadata::<Vec<String>>(context, "roles")
     }
 
     /// Read typed request payload data from the shared request context.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use nivasa_core::reflector::Reflector;
+    /// use nivasa_common::RequestContext;
+    ///
+    /// #[derive(Debug, PartialEq, Eq)]
+    /// struct RequestSnapshot {
+    ///     method: &'static str,
+    ///     path: &'static str,
+    /// }
+    ///
+    /// let mut context = RequestContext::new();
+    /// context.insert_request_data(RequestSnapshot {
+    ///     method: "GET",
+    ///     path: "/users",
+    /// });
+    ///
+    /// let reflector = Reflector::new();
+    /// assert_eq!(
+    ///     reflector.get_request_data::<RequestSnapshot>(&context),
+    ///     Some(&RequestSnapshot {
+    ///         method: "GET",
+    ///         path: "/users",
+    ///     })
+    /// );
+    /// ```
     pub fn get_request_data<'a, T>(&self, context: &'a RequestContext) -> Option<&'a T>
     where
         T: Send + Sync + 'static,

@@ -14,6 +14,16 @@ use std::hash::Hash;
 /// This stays intentionally small until the richer websocket runtime lands.
 /// It gives downstream crates a concrete public abstraction to implement
 /// without implying any transport, room, or message-routing behavior yet.
+///
+/// ```rust,no_run
+/// use nivasa_websocket::WebSocketGateway;
+///
+/// struct ChatGateway;
+///
+/// fn assert_gateway<T: WebSocketGateway>() {}
+///
+/// assert_gateway::<ChatGateway>();
+/// ```
 pub trait WebSocketGateway: Send + Sync + 'static {}
 
 impl<T> WebSocketGateway for T where T: Send + Sync + 'static {}
@@ -23,6 +33,16 @@ impl<T> WebSocketGateway for T where T: Send + Sync + 'static {}
 /// This stays as a marker-style abstraction until the concrete transport layer
 /// lands. It gives downstream crates a stable public trait to reference
 /// without implying any handshake, subscription, or room behavior yet.
+///
+/// ```rust,no_run
+/// use nivasa_websocket::WebSocketAdapter;
+///
+/// struct InMemoryAdapter;
+///
+/// fn assert_adapter<T: WebSocketAdapter>() {}
+///
+/// assert_adapter::<InMemoryAdapter>();
+/// ```
 pub trait WebSocketAdapter: Send + Sync + 'static {}
 
 impl<T> WebSocketAdapter for T where T: Send + Sync + 'static {}
@@ -43,26 +63,87 @@ impl DefaultWebSocketAdapter {
     }
 }
 
-/// Hook for gateways that want a callback when the websocket runtime starts.
+/// Gateway startup hook.
+///
+/// Implement on gateway type when need bootstrap callback after runtime init.
+///
+/// ```rust,no_run
+/// use nivasa_websocket::OnGatewayInit;
+///
+/// struct Gateway;
+///
+/// impl OnGatewayInit for Gateway {
+///     fn on_gateway_init(&self) {
+///         // bootstrap hook
+///     }
+/// }
+/// ```
 pub trait OnGatewayInit: Send + Sync + 'static {
+    /// Run once when websocket runtime starts.
     fn on_gateway_init(&self) {}
 }
 
-/// Hook for gateways that want a callback when a client connects.
+/// Gateway connect hook.
+///
+/// Use when need per-client setup after connection accepted.
+///
+/// ```rust,no_run
+/// use nivasa_websocket::OnGatewayConnection;
+///
+/// struct Gateway;
+/// struct Client;
+///
+/// impl OnGatewayConnection for Gateway {
+///     type Client = Client;
+///
+///     fn on_gateway_connection(&self, _client: &Self::Client) {
+///         // per-client hook
+///     }
+/// }
+/// ```
 pub trait OnGatewayConnection: Send + Sync + 'static {
+    /// Connected client payload.
     type Client: Send + Sync + 'static;
 
+    /// Run when client connects.
     fn on_gateway_connection(&self, _client: &Self::Client) {}
 }
 
-/// Hook for gateways that want a callback when a client disconnects.
+/// Gateway disconnect hook.
+///
+/// Use when need cleanup after client leaves.
+///
+/// ```rust,no_run
+/// use nivasa_websocket::OnGatewayDisconnect;
+///
+/// struct Gateway;
+/// struct Client;
+///
+/// impl OnGatewayDisconnect for Gateway {
+///     type Client = Client;
+///
+///     fn on_gateway_disconnect(&self, _client: &Self::Client) {
+///         // cleanup hook
+///     }
+/// }
+/// ```
 pub trait OnGatewayDisconnect: Send + Sync + 'static {
+    /// Disconnected client payload.
     type Client: Send + Sync + 'static;
 
+    /// Run when client disconnects.
     fn on_gateway_disconnect(&self, _client: &Self::Client) {}
 }
 
-/// Minimal in-memory room registry for a single namespace.
+/// In-memory room registry for one namespace.
+///
+/// ```rust
+/// use nivasa_websocket::RoomRegistry;
+///
+/// let mut rooms = RoomRegistry::new("/chat");
+/// assert!(rooms.join("lobby", "client-1"));
+/// assert!(rooms.contains("lobby", &"client-1"));
+/// ```
 #[derive(Debug, Clone)]
 pub struct RoomRegistry<ClientId> {
     namespace: String,
@@ -73,7 +154,7 @@ impl<ClientId> RoomRegistry<ClientId>
 where
     ClientId: Clone + Eq + Hash,
 {
-    /// Create a room registry for the given namespace path.
+    /// Create registry for namespace path.
     pub fn new(namespace: impl Into<String>) -> Self {
         Self {
             namespace: namespace.into(),
@@ -81,17 +162,21 @@ where
         }
     }
 
-    /// Return namespace path associated with this registry.
+    /// Return namespace path.
     pub fn namespace(&self) -> &str {
         &self.namespace
     }
 
-    /// Add client to room. Returns `true` when membership was newly inserted.
+    /// Add client to room.
+    ///
+    /// Returns `true` when membership was new.
     pub fn join(&mut self, room: impl Into<String>, client: ClientId) -> bool {
         self.rooms.entry(room.into()).or_default().insert(client)
     }
 
-    /// Remove client from room. Returns `true` when membership existed.
+    /// Remove client from room.
+    ///
+    /// Returns `true` when membership existed.
     pub fn leave(&mut self, room: &str, client: &ClientId) -> bool {
         let Some(members) = self.rooms.get_mut(room) else {
             return false;
@@ -105,7 +190,7 @@ where
         removed
     }
 
-    /// Return `true` when room contains given client.
+    /// Return `true` when room contains client.
     pub fn contains(&self, room: &str, client: &ClientId) -> bool {
         self.rooms
             .get(room)
@@ -113,7 +198,7 @@ where
             .unwrap_or(false)
     }
 
-    /// Return members for room in stable order.
+    /// Return room members.
     pub fn members(&self, room: &str) -> Vec<ClientId> {
         let Some(members) = self.rooms.get(room) else {
             return Vec::new();
@@ -122,12 +207,12 @@ where
         members.iter().cloned().collect()
     }
 
-    /// Return `true` when registry has no active rooms.
+    /// Return `true` when registry has no rooms.
     pub fn is_empty(&self) -> bool {
         self.rooms.is_empty()
     }
 
-    /// Return total tracked room count.
+    /// Return room count.
     pub fn room_count(&self) -> usize {
         self.rooms.len()
     }
@@ -142,13 +227,13 @@ where
     }
 }
 
-/// Minimal in-memory namespace registry for websocket room membership.
+/// In-memory namespace registry for room membership.
 #[derive(Debug, Clone)]
 pub struct NamespaceRegistry<ClientId> {
     namespaces: HashMap<String, RoomRegistry<ClientId>>,
 }
 
-/// Minimal client-scoped helper for room membership in one namespace.
+/// Scoped room-membership helper for one client and namespace.
 #[derive(Debug)]
 pub struct ClientRoomMembership<'a, ClientId> {
     registry: &'a mut NamespaceRegistry<ClientId>,
@@ -156,7 +241,16 @@ pub struct ClientRoomMembership<'a, ClientId> {
     client: ClientId,
 }
 
-/// Minimal in-memory client event registry.
+/// In-memory client event inboxes.
+///
+/// ```rust
+/// use nivasa_websocket::ClientEventRegistry;
+///
+/// let mut events = ClientEventRegistry::new();
+/// let mut client = events.client("client-1");
+/// assert_eq!(client.emit("message", "hello"), 1);
+/// assert_eq!(events.events_for(&"client-1").len(), 1);
+/// ```
 #[derive(Debug, Clone)]
 pub struct ClientEventRegistry<ClientId> {
     clients: HashMap<ClientId, Vec<(String, String)>>,
@@ -169,19 +263,38 @@ pub struct ClientEventHandle<'a, ClientId> {
     client: ClientId,
 }
 
-/// Minimal in-memory broadcast registry for `server.emit("event", data)`.
+/// In-memory server broadcast inboxes.
+///
+/// ```rust
+/// use nivasa_websocket::ServerEventRegistry;
+///
+/// let mut server = ServerEventRegistry::new();
+/// server.connect("client-1");
+/// server.connect("client-2");
+/// assert_eq!(server.server().emit("notice", "hello"), 2);
+/// ```
 #[derive(Debug, Clone)]
 pub struct ServerEventRegistry<ClientId> {
     clients: HashMap<ClientId, Vec<(String, String)>>,
 }
 
-/// Server-scoped event broadcaster for connected clients.
+/// Server-scoped broadcaster for connected clients.
 #[derive(Debug)]
 pub struct ServerEventHandle<'a, ClientId> {
     registry: &'a mut ServerEventRegistry<ClientId>,
 }
 
-/// Minimal in-memory room-targeted broadcaster for `server.to("room").emit(...)`.
+/// In-memory room broadcast inboxes.
+///
+/// ```rust
+/// use nivasa_websocket::RoomEventRegistry;
+///
+/// let mut rooms = RoomEventRegistry::new();
+/// rooms.connect("client-1");
+/// rooms.connect("client-2");
+/// rooms.join("lobby", "client-1");
+/// assert_eq!(rooms.to("lobby").emit("notice", "hello"), 1);
+/// ```
 #[derive(Debug, Clone)]
 pub struct RoomEventRegistry<ClientId> {
     rooms: NamespaceRegistry<ClientId>,
@@ -199,12 +312,12 @@ impl<ClientId> NamespaceRegistry<ClientId>
 where
     ClientId: Clone + Eq + Hash,
 {
-    /// Create an empty namespace registry.
+    /// Create empty namespace registry.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Return a client-scoped room membership helper for one namespace.
+    /// Return client-scoped room helper for one namespace.
     pub fn client(
         &mut self,
         namespace: impl Into<String>,
@@ -217,7 +330,9 @@ where
         }
     }
 
-    /// Add client to a room inside namespace. Returns `true` on new membership.
+    /// Add client to room inside namespace.
+    ///
+    /// Returns `true` when membership was new.
     pub fn join(
         &mut self,
         namespace: impl Into<String>,
@@ -231,7 +346,9 @@ where
             .join(room, client)
     }
 
-    /// Remove client from room inside namespace. Returns `true` when removed.
+    /// Remove client from room inside namespace.
+    ///
+    /// Returns `true` when membership existed.
     pub fn leave(&mut self, namespace: &str, room: &str, client: &ClientId) -> bool {
         let Some(registry) = self.namespaces.get_mut(namespace) else {
             return false;
@@ -245,7 +362,7 @@ where
         removed
     }
 
-    /// Return members for a room inside namespace.
+    /// Return room members inside namespace.
     pub fn members(&self, namespace: &str, room: &str) -> Vec<ClientId> {
         self.namespaces
             .get(namespace)
@@ -253,7 +370,7 @@ where
             .unwrap_or_default()
     }
 
-    /// Return `true` when namespace/room contains client.
+    /// Return `true` when namespace and room contain client.
     pub fn contains(&self, namespace: &str, room: &str, client: &ClientId) -> bool {
         self.namespaces
             .get(namespace)
@@ -282,12 +399,12 @@ impl<ClientId> ClientEventRegistry<ClientId>
 where
     ClientId: Clone + Eq + Hash,
 {
-    /// Create an empty client event registry.
+    /// Create empty client event registry.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Return a client-scoped event handle.
+    /// Return client-scoped event handle.
     pub fn client(&mut self, client: ClientId) -> ClientEventHandle<'_, ClientId> {
         ClientEventHandle {
             registry: self,
@@ -295,12 +412,12 @@ where
         }
     }
 
-    /// Return recorded events for a specific client.
+    /// Return recorded events for one client.
     pub fn events_for(&self, client: &ClientId) -> Vec<(String, String)> {
         self.clients.get(client).cloned().unwrap_or_default()
     }
 
-    /// Return `true` when no client has emitted any event.
+    /// Return `true` when no client has events.
     pub fn is_empty(&self) -> bool {
         self.clients.is_empty()
     }
@@ -321,32 +438,32 @@ impl<ClientId> ServerEventRegistry<ClientId>
 where
     ClientId: Clone + Eq + Hash,
 {
-    /// Create an empty server event registry.
+    /// Create empty server event registry.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Register a connected client and return a broadcast handle.
+    /// Register connected client.
     pub fn connect(&mut self, client: ClientId) {
         self.clients.entry(client).or_default();
     }
 
-    /// Disconnect a client and drop its inbox.
+    /// Disconnect client and drop inbox.
     pub fn disconnect(&mut self, client: &ClientId) -> bool {
         self.clients.remove(client).is_some()
     }
 
-    /// Return a server-scoped broadcast handle.
+    /// Return server-scoped broadcast handle.
     pub fn server(&mut self) -> ServerEventHandle<'_, ClientId> {
         ServerEventHandle { registry: self }
     }
 
-    /// Return recorded events for a specific connected client.
+    /// Return recorded events for one connected client.
     pub fn events_for(&self, client: &ClientId) -> Vec<(String, String)> {
         self.clients.get(client).cloned().unwrap_or_default()
     }
 
-    /// Return all connected client ids.
+    /// Return connected client ids.
     pub fn connected_clients(&self) -> Vec<ClientId> {
         self.clients.keys().cloned().collect()
     }
@@ -367,27 +484,27 @@ impl<ClientId> RoomEventRegistry<ClientId>
 where
     ClientId: Clone + Eq + Hash,
 {
-    /// Create an empty room-targeted broadcast registry.
+    /// Create empty room-targeted broadcast registry.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Register a connected client.
+    /// Register connected client.
     pub fn connect(&mut self, client: ClientId) {
         self.clients.entry(client).or_default();
     }
 
-    /// Remove a connected client and all its room memberships.
+    /// Remove connected client and room memberships.
     pub fn disconnect(&mut self, client: &ClientId) -> bool {
         self.clients.remove(client).is_some()
     }
 
-    /// Add a connected client to a room.
+    /// Add connected client to room.
     pub fn join(&mut self, room: impl Into<String>, client: ClientId) -> bool {
         self.rooms.join("/", room, client)
     }
 
-    /// Return a room-scoped broadcast handle.
+    /// Return room-scoped broadcast handle.
     pub fn to(&mut self, room: impl Into<String>) -> RoomEventHandle<'_, ClientId> {
         RoomEventHandle {
             registry: self,
@@ -395,12 +512,12 @@ where
         }
     }
 
-    /// Return recorded events for a specific connected client.
+    /// Return recorded events for one connected client.
     pub fn events_for(&self, client: &ClientId) -> Vec<(String, String)> {
         self.clients.get(client).cloned().unwrap_or_default()
     }
 
-    /// Return members connected to a room.
+    /// Return members connected to room.
     pub fn room_members(&self, room: &str) -> Vec<ClientId> {
         self.rooms.members("/", room)
     }
@@ -422,13 +539,13 @@ impl<'a, ClientId> ClientRoomMembership<'a, ClientId>
 where
     ClientId: Clone + Eq + Hash,
 {
-    /// Add the scoped client to a room in the scoped namespace.
+    /// Add scoped client to room in scoped namespace.
     pub fn join(&mut self, room: impl Into<String>) -> bool {
         self.registry
             .join(self.namespace.clone(), room, self.client.clone())
     }
 
-    /// Remove the scoped client from a room in the scoped namespace.
+    /// Remove scoped client from room in scoped namespace.
     pub fn leave(&mut self, room: &str) -> bool {
         self.registry.leave(&self.namespace, room, &self.client)
     }
@@ -448,7 +565,7 @@ impl<'a, ClientId> ClientEventHandle<'a, ClientId>
 where
     ClientId: Clone + Eq + Hash,
 {
-    /// Emit one event for the scoped client.
+    /// Emit one event for scoped client.
     pub fn emit(&mut self, event: impl Into<String>, data: impl Into<String>) -> usize {
         let entry = self.registry.clients.entry(self.client.clone()).or_default();
         entry.push((event.into(), data.into()));
@@ -484,7 +601,7 @@ impl<'a, ClientId> RoomEventHandle<'a, ClientId>
 where
     ClientId: Clone + Eq + Hash,
 {
-    /// Emit one event to clients currently in the scoped room.
+    /// Emit one event to clients in scoped room.
     pub fn emit(&mut self, event: impl Into<String>, data: impl Into<String>) -> usize {
         let event = event.into();
         let data = data.into();

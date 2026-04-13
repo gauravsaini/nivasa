@@ -32,12 +32,7 @@ fn matched_pipeline() -> RequestPipeline {
     pipeline
 }
 
-fn assert_latest_transition(
-    pipeline: &RequestPipeline,
-    from: &str,
-    event: &str,
-    to: Option<&str>,
-) {
+fn assert_latest_transition(pipeline: &RequestPipeline, from: &str, event: &str, to: Option<&str>) {
     let snapshot = pipeline.snapshot();
     let transition = snapshot
         .recent_transitions
@@ -188,7 +183,12 @@ fn request_pipeline_short_circuits_guard_denials_via_scxml() {
 
     pipeline.deny_guards().unwrap();
     assert_eq!(pipeline.snapshot().current_state, "ErrorHandling");
-    assert_latest_transition(&pipeline, "GuardChain", "GuardDenied", Some("ErrorHandling"));
+    assert_latest_transition(
+        &pipeline,
+        "GuardChain",
+        "GuardDenied",
+        Some("ErrorHandling"),
+    );
     pipeline.handle_filter().unwrap();
     assert_eq!(pipeline.snapshot().current_state, "SendingResponse");
     pipeline.fail_send().unwrap();
@@ -371,7 +371,12 @@ fn request_pipeline_routes_late_stage_errors_through_error_handling() {
     let mut guard_error = matched_pipeline();
     guard_error.fail_guards().unwrap();
     assert_eq!(guard_error.snapshot().current_state, "ErrorHandling");
-    assert_latest_transition(&guard_error, "GuardChain", "ErrorGuard", Some("ErrorHandling"));
+    assert_latest_transition(
+        &guard_error,
+        "GuardChain",
+        "ErrorGuard",
+        Some("ErrorHandling"),
+    );
 
     let mut interceptor_error = matched_pipeline();
     interceptor_error.pass_guards().unwrap();
@@ -401,7 +406,12 @@ fn request_pipeline_routes_late_stage_errors_through_error_handling() {
     pipe_error.complete_interceptors_pre().unwrap();
     pipe_error.fail_pipes().unwrap();
     assert_eq!(pipe_error.snapshot().current_state, "ErrorHandling");
-    assert_latest_transition(&pipe_error, "PipeTransform", "ErrorPipe", Some("ErrorHandling"));
+    assert_latest_transition(
+        &pipe_error,
+        "PipeTransform",
+        "ErrorPipe",
+        Some("ErrorHandling"),
+    );
 
     let mut handler_error = matched_pipeline();
     handler_error.pass_guards().unwrap();

@@ -1,18 +1,50 @@
 //! # nivasa-http
 //!
-//! Nivasa framework HTTP primitives.
+//! HTTP wrapper primitives for Nivasa.
+//!
+//! Start here if you want the small wrapper layer around requests, responses,
+//! upload helpers, or the higher-level server and health surfaces.
+//!
+//! The most common entry points are:
+//! - [`Body`], [`NivasaRequest`], and [`NivasaResponse`] for wrapper-layer HTTP values
+//! - [`ControllerResponse`] for the first `#[res]` runtime slice
+//! - [`CorsOptions`] and [`GlobalFilterBinding`] for server wiring
+//! - [`HealthCheckService`] and [`TerminusModule`] for health checks
+//! - [`LoggerModule`] and [`LoggerService`] for structured logging setup
+//!
+//! ```rust
+//! use http::{Method, StatusCode};
+//! use nivasa_http::{Body, NivasaRequest, NivasaResponse};
+//!
+//! let request = NivasaRequest::new(Method::GET, "/users?limit=10", Body::empty());
+//! assert_eq!(request.path(), "/users");
+//! assert_eq!(request.query("limit"), Some("10".to_string()));
+//!
+//! let response = NivasaResponse::new(StatusCode::OK, Body::text("ready"));
+//! assert_eq!(response.status(), StatusCode::OK);
+//! assert_eq!(response.body().as_bytes(), b"ready");
+//! ```
+//!
+//! For the transport side, [`NivasaServer`] and [`CorsOptions`] cover the
+//! server builder path, while [`upload`] contains the focused multipart
+//! helpers.
 
 mod health;
+mod logging;
 mod pipeline;
 mod server;
+pub mod testing;
 pub mod upload;
 
-pub use http::header::HeaderMap;
 pub use health::{
     DatabaseHealthIndicator, DiskHealthIndicator, HealthCheckResult, HealthCheckService,
     HealthIndicator, HealthIndicatorResult, HealthStatus, HttpHealthIndicator,
-    MemoryHealthIndicator,
-    TerminusModule,
+    MemoryHealthIndicator, TerminusModule,
+};
+pub use http::header::HeaderMap;
+pub use logging::{
+    LogContext, LoggerFormat, LoggerInitError, LoggerModule, LoggerOptions, LoggerOptionsProvider,
+    LoggerService,
 };
 pub use server::{CorsOptions, GlobalFilterBinding};
 
@@ -44,7 +76,6 @@ use std::{
     convert::Infallible,
     fmt,
     future::Future,
-    io::Write,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -52,9 +83,17 @@ use std::{
 };
 use tokio::sync::Mutex;
 use tower::{Layer, Service};
+use url::form_urlencoded;
 use uuid::Uuid;
 
 /// Minimal response/request body abstraction for the HTTP wrapper layer.
+///
+/// ```rust
+/// use nivasa_http::Body;
+///
+/// let body = Body::text("hello");
+/// assert_eq!(body.as_bytes(), b"hello");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Body {
     Empty,
@@ -328,7 +367,35 @@ where
     deserialize_path_value(raw)
 }
 
+fn query_pairs(uri: &Uri) -> impl Iterator<Item = (String, String)> + '_ {
+    uri.query()
+        .into_iter()
+        .flat_map(|query| form_urlencoded::parse(query.as_bytes()))
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+}
+
+fn query_values(uri: &Uri) -> serde_json::Map<String, serde_json::Value> {
+    let mut values = serde_json::Map::new();
+
+    for (key, raw_value) in query_pairs(uri) {
+        let value = serde_json::from_str::<serde_json::Value>(&raw_value)
+            .unwrap_or_else(|_| serde_json::Value::String(raw_value));
+        values.insert(key, value);
+    }
+
+    values
+}
+
 /// Request wrapper used by the HTTP layer.
+///
+/// ```rust
+/// use http::Method;
+/// use nivasa_http::{Body, NivasaRequest};
+///
+/// let request = NivasaRequest::new(Method::GET, "/users?limit=10", Body::empty());
+/// assert_eq!(request.path(), "/users");
+/// assert_eq!(request.query("limit"), Some("10".to_string()));
+/// ```
 #[derive(Debug, Clone)]
 pub struct NivasaRequest {
     inner: Request<Body>,
@@ -417,18 +484,11 @@ impl NivasaRequest {
     }
 
     /// Look up a single query parameter by name.
-    pub fn query(&self, name: impl AsRef<str>) -> Option<&str> {
+    pub fn query(&self, name: impl AsRef<str>) -> Option<String> {
         let name = name.as_ref();
-        self.inner.uri().query().and_then(|query| {
-            query.split('&').find_map(|pair| {
-                let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-                if key == name {
-                    Some(value)
-                } else {
-                    None
-                }
-            })
-        })
+        query_pairs(self.inner.uri())
+            .filter_map(|(key, value)| (key == name).then_some(value))
+            .last()
     }
 
     /// Look up and coerce a single query parameter by name.
@@ -441,7 +501,7 @@ impl NivasaRequest {
             return Err(RequestExtractError::MissingQueryParameter { name });
         };
 
-        deserialize_scalar_value(raw)
+        deserialize_scalar_value(&raw)
             .map_err(|error| RequestExtractError::InvalidQueryParameter { name, error })
     }
 
@@ -603,29 +663,53 @@ where
     T: DeserializeOwned,
 {
     fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
-        let mut values = serde_json::Map::new();
-        if let Some(query) = request.uri().query() {
-            for pair in query.split('&').filter(|segment| !segment.is_empty()) {
-                let (key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
-                let value = serde_json::from_str::<serde_json::Value>(raw_value)
-                    .unwrap_or_else(|_| serde_json::Value::String(raw_value.to_string()));
-                values.insert(key.to_string(), value);
-            }
-        }
+        let value = serde_json::Value::Object(query_values(request.uri()));
+        let payload = serde_json::to_vec(&value)
+            .map_err(|err| RequestExtractError::InvalidQuery(err.to_string()))?;
+        let mut deserializer = serde_json::Deserializer::from_slice(&payload);
 
-        serde_json::from_value(serde_json::Value::Object(values))
+        serde_path_to_error::deserialize(&mut deserializer)
             .map(Query)
-            .map_err(|err| RequestExtractError::InvalidQuery(err.to_string()))
+            .map_err(|err| {
+                let path = err.path().to_string();
+                let error = err.into_inner();
+                let message = if path.is_empty() {
+                    error.to_string()
+                } else {
+                    format!("field `{path}`: {error}")
+                };
+                RequestExtractError::InvalidQuery(message)
+            })
     }
 }
 
 /// Response wrapper used by the HTTP layer.
+///
+/// ```rust
+/// use http::StatusCode;
+/// use nivasa_http::NivasaResponse;
+///
+/// let response = NivasaResponse::new(StatusCode::CREATED, "saved");
+/// assert_eq!(response.status(), StatusCode::CREATED);
+/// assert_eq!(response.body().as_bytes(), b"saved");
+/// ```
 #[derive(Debug, Clone)]
 pub struct NivasaResponse {
     inner: Response<Body>,
 }
 
 /// Mutable controller response handle for the first `#[res]` runtime slice.
+///
+/// ```rust
+/// use http::StatusCode;
+/// use nivasa_http::ControllerResponse;
+///
+/// let mut response = ControllerResponse::new();
+/// response
+///     .status(StatusCode::NO_CONTENT)
+///     .header("x-trace-id", "abc123")
+///     .body("done");
+/// ```
 #[derive(Debug, Clone)]
 pub struct ControllerResponse {
     status: StatusCode,
@@ -798,6 +882,18 @@ impl IntoResponse for StatusCode {
 }
 
 /// Builder for `NivasaResponse`.
+///
+/// ```rust
+/// use http::StatusCode;
+/// use nivasa_http::NivasaResponse;
+///
+/// let response = NivasaResponse::builder()
+///     .status(StatusCode::ACCEPTED)
+///     .header("x-powered-by", "nivasa")
+///     .body("queued");
+///
+/// assert_eq!(response.status(), StatusCode::ACCEPTED);
+/// ```
 #[derive(Debug, Clone)]
 pub struct NivasaResponseBuilder {
     status: StatusCode,
@@ -1382,7 +1478,11 @@ fn accepts_compression(request: &NivasaRequest) -> Option<CompressionFormat> {
         .and_then(|value| {
             value.split(',').find_map(|encoding| {
                 let encoding = encoding.trim();
-                let encoding = encoding.split(';').next().map(str::trim).unwrap_or(encoding);
+                let encoding = encoding
+                    .split(';')
+                    .next()
+                    .map(str::trim)
+                    .unwrap_or(encoding);
 
                 match encoding {
                     "br" => {
@@ -1420,7 +1520,10 @@ fn accepts_compression(request: &NivasaRequest) -> Option<CompressionFormat> {
                         {
                             Some(CompressionFormat::Brotli)
                         }
-                        #[cfg(all(not(feature = "compression-brotli"), feature = "compression-gzip"))]
+                        #[cfg(all(
+                            not(feature = "compression-brotli"),
+                            feature = "compression-gzip"
+                        ))]
                         {
                             Some(CompressionFormat::Gzip)
                         }
@@ -1511,9 +1614,7 @@ fn compress_response(response: NivasaResponse, format: CompressionFormat) -> Niv
             encoder
                 .write_all(&body)
                 .expect("deflate compression must succeed");
-            encoder
-                .finish()
-                .expect("deflate compression must finish")
+            encoder.finish().expect("deflate compression must finish")
         }
     };
 
@@ -1678,6 +1779,13 @@ fn infer_stream_content_type(chunks: &[Body]) -> Option<&'static str> {
 
 /// Buffered streaming response helper.
 ///
+/// ```rust
+/// use nivasa_http::NivasaResponse;
+///
+/// let response = NivasaResponse::stream(["part one", "part two"]);
+/// assert!(!response.body().is_empty());
+/// ```
+///
 /// This collects chunked bodies into a single wrapper-layer response without
 /// requiring transport-level streaming support.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1760,6 +1868,13 @@ impl IntoResponse for StreamBody {
 }
 
 /// Buffered server-sent events response helper.
+///
+/// ```rust
+/// use nivasa_http::{NivasaResponse, SseEvent};
+///
+/// let response = NivasaResponse::sse([SseEvent::data("ready").event("status")]);
+/// assert_eq!(response.status(), http::StatusCode::OK);
+/// ```
 ///
 /// This frames SSE payloads into a `text/event-stream` body without introducing
 /// transport-level streaming requirements in the wrapper layer.
@@ -1904,6 +2019,13 @@ impl IntoResponse for Sse {
 }
 
 /// File download response helper backed by the existing byte body surface.
+///
+/// ```rust
+/// use nivasa_http::{Download, IntoResponse};
+///
+/// let response = Download::attachment("report.txt", b"contents".to_vec()).into_response();
+/// assert_eq!(response.status(), http::StatusCode::OK);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Download {
     filename: String,
@@ -1984,6 +2106,13 @@ impl ExceptionFilterMetadata for HttpExceptionFilter {
 }
 
 /// Redirect response helper with common HTTP redirect statuses.
+///
+/// ```rust
+/// use nivasa_http::{IntoResponse, Redirect};
+///
+/// let response = Redirect::temporary("/login").into_response();
+/// assert_eq!(response.status(), http::StatusCode::FOUND);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Redirect {
     status: StatusCode,
@@ -2059,6 +2188,7 @@ where
 
 pub use pipeline::{GuardExecutionOutcome, RequestPipeline};
 pub use server::{NivasaServer, NivasaServerBuilder};
+pub use testing::{TestClient, TestResponse};
 pub use upload::UploadedFile;
 
 #[cfg(debug_assertions)]

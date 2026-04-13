@@ -21,8 +21,8 @@ use nivasa_interceptors::{
 use nivasa_macros::{controller, impl_controller};
 use nivasa_pipes::{ArgumentMetadata, Pipe};
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod};
-use serde_json::Value;
 use serde_json::json;
+use serde_json::Value;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -150,7 +150,8 @@ struct FullLifecycleMiddleware {
 impl NivasaMiddleware for FullLifecycleMiddleware {
     async fn use_(&self, mut req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
         self.log.push("middleware");
-        req.body_mut().clone_from(&Body::text("  from-middleware  "));
+        req.body_mut()
+            .clone_from(&Body::text("  from-middleware  "));
         next.run(req).await
     }
 }

@@ -27,11 +27,7 @@ impl ErrorEnvelopeHost {
 }
 
 impl ErrorEnvelopeFilter {
-    async fn catch(
-        &self,
-        exception: HttpException,
-        host: &ErrorEnvelopeHost,
-    ) -> NivasaResponse {
+    async fn catch(&self, exception: HttpException, host: &ErrorEnvelopeHost) -> NivasaResponse {
         let request_id = host
             .request_context()
             .and_then(|context| context.custom_data("request_id"))
@@ -39,7 +35,8 @@ impl ErrorEnvelopeFilter {
             .unwrap_or("unknown");
 
         NivasaResponse::new(
-            StatusCode::from_u16(exception.status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            StatusCode::from_u16(exception.status_code)
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             json!({
                 "statusCode": exception.status_code,
                 "message": exception.message,

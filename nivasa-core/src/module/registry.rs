@@ -5,14 +5,24 @@ use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
 /// Registered module metadata plus its concrete Rust identity.
+///
+/// `ModuleEntry` is what the registry stores after a module is registered.
+/// You normally reach it through [`ModuleRegistry::get`] or
+/// [`ModuleRegistry::entries`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleEntry {
+    /// Concrete Rust type for the registered module.
     pub type_id: TypeId,
+    /// Fully qualified Rust type name, used for diagnostics and ordering.
     pub type_name: &'static str,
+    /// Captured module metadata.
     pub metadata: ModuleMetadata,
 }
 
 /// Errors raised while building or resolving the module dependency graph.
+///
+/// The registry reports missing imports, invalid exports, and circular import
+/// chains before module lookup is used at runtime.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ModuleRegistryError {
     #[error("module '{module}' depends on an unregistered module ({missing:?})")]
@@ -36,32 +46,135 @@ impl From<ModuleRegistryError> for DiError {
 }
 
 /// Registry of known modules and their dependency graph.
+///
+/// ```rust,no_run
+/// use async_trait::async_trait;
+/// use nivasa_core::di::{DependencyContainer, DiError};
+/// use nivasa_core::module::{Module, ModuleMetadata, ModuleRegistry};
+/// use std::any::TypeId;
+///
+/// struct LeafService;
+/// struct SharedService;
+/// struct AppService;
+/// struct LeafModule;
+/// struct SharedModule;
+/// struct AppModule;
+///
+/// #[async_trait]
+/// impl Module for LeafModule {
+///     fn metadata(&self) -> ModuleMetadata {
+///         ModuleMetadata::new()
+///             .with_providers(vec![TypeId::of::<LeafService>()])
+///             .with_exports(vec![TypeId::of::<LeafService>()])
+///     }
+///
+///     async fn configure(&self, _container: &DependencyContainer) -> Result<(), DiError> {
+///         Ok(())
+///     }
+/// }
+///
+/// #[async_trait]
+/// impl Module for SharedModule {
+///     fn metadata(&self) -> ModuleMetadata {
+///         ModuleMetadata::new()
+///             .with_imports(vec![TypeId::of::<LeafModule>()])
+///             .with_providers(vec![TypeId::of::<SharedService>()])
+///             .with_exports(vec![TypeId::of::<SharedService>()])
+///     }
+///
+///     async fn configure(&self, _container: &DependencyContainer) -> Result<(), DiError> {
+///         Ok(())
+///     }
+/// }
+///
+/// #[async_trait]
+/// impl Module for AppModule {
+///     fn metadata(&self) -> ModuleMetadata {
+///         ModuleMetadata::new()
+///             .with_imports(vec![TypeId::of::<SharedModule>()])
+///             .with_providers(vec![TypeId::of::<AppService>()])
+///     }
+///
+///     async fn configure(&self, _container: &DependencyContainer) -> Result<(), DiError> {
+///         Ok(())
+///     }
+/// }
+///
+/// let mut registry = ModuleRegistry::new();
+/// registry.register(&LeafModule);
+/// registry.register(&SharedModule);
+/// registry.register(&AppModule);
+///
+/// assert!(registry.contains::<AppModule>());
+/// assert_eq!(registry.get::<SharedModule>().unwrap().type_name, std::any::type_name::<SharedModule>());
+/// assert_eq!(
+///     registry.resolve_order().unwrap(),
+///     vec![
+///         TypeId::of::<LeafModule>(),
+///         TypeId::of::<SharedModule>(),
+///         TypeId::of::<AppModule>(),
+///     ]
+/// );
+/// assert!(registry.visible_exports::<AppModule>().unwrap().contains(&TypeId::of::<SharedService>()));
+/// ```
 #[derive(Debug, Default, Clone)]
 pub struct ModuleRegistry {
     entries: HashMap<TypeId, ModuleEntry>,
 }
 
 impl ModuleRegistry {
+    /// Create an empty registry.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Number of registered modules.
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    /// Whether the registry has no registered modules.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
+    /// Whether `M` has been registered.
     pub fn contains<M: Module>(&self) -> bool {
         self.entries.contains_key(&TypeId::of::<M>())
     }
 
+    /// Fetch the stored entry for `M`.
     pub fn get<M: Module>(&self) -> Option<&ModuleEntry> {
         self.entries.get(&TypeId::of::<M>())
     }
 
+    /// Register a concrete module instance.
+    ///
+    /// Returns `true` when the module was newly inserted and `false` when an
+    /// existing entry for the same type was replaced.
+    ///
+    /// ```rust,no_run
+    /// use async_trait::async_trait;
+    /// use nivasa_core::di::{DependencyContainer, DiError};
+    /// use nivasa_core::module::{Module, ModuleMetadata, ModuleRegistry};
+    ///
+    /// struct AppModule;
+    ///
+    /// #[async_trait]
+    /// impl Module for AppModule {
+    ///     fn metadata(&self) -> ModuleMetadata {
+    ///         ModuleMetadata::new()
+    ///     }
+    ///
+    ///     async fn configure(&self, _container: &DependencyContainer) -> Result<(), DiError> {
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// let mut registry = ModuleRegistry::new();
+    /// assert!(registry.register(&AppModule));
+    /// assert!(!registry.register(&AppModule));
+    /// ```
     pub fn register<M: Module>(&mut self, module: &M) -> bool {
         let entry = ModuleEntry {
             type_id: TypeId::of::<M>(),
@@ -71,6 +184,7 @@ impl ModuleRegistry {
         self.entries.insert(entry.type_id, entry).is_none()
     }
 
+    /// Register a dynamic module under the concrete type `M`.
     pub fn register_dynamic<M: 'static>(&mut self, module: DynamicModule) -> bool {
         let entry = ModuleEntry {
             type_id: TypeId::of::<M>(),
@@ -80,6 +194,7 @@ impl ModuleRegistry {
         self.entries.insert(entry.type_id, entry).is_none()
     }
 
+    /// Iterate over registered entries.
     pub fn entries(&self) -> impl Iterator<Item = &ModuleEntry> {
         self.entries.values()
     }
@@ -177,6 +292,9 @@ impl ModuleRegistry {
 
     /// Compute the types this module makes visible to its consumers.
     ///
+    /// The visible surface includes the module's own exports, exports from
+    /// imported modules, and exports from global modules.
+    ///
     /// A module can see:
     /// - Its own exported providers
     /// - Exports from imported modules
@@ -224,6 +342,45 @@ impl ModuleRegistry {
     }
 
     /// Returns the import/global module sources a module can consume providers from.
+    ///
+    /// ```rust,no_run
+    /// use async_trait::async_trait;
+    /// use nivasa_core::di::{DependencyContainer, DiError};
+    /// use nivasa_core::module::{Module, ModuleMetadata, ModuleRegistry};
+    /// use std::any::TypeId;
+    ///
+    /// struct LeafModule;
+    /// struct AppModule;
+    ///
+    /// #[async_trait]
+    /// impl Module for LeafModule {
+    ///     fn metadata(&self) -> ModuleMetadata {
+    ///         ModuleMetadata::new().with_global(true)
+    ///     }
+    ///
+    ///     async fn configure(&self, _container: &DependencyContainer) -> Result<(), DiError> {
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// #[async_trait]
+    /// impl Module for AppModule {
+    ///     fn metadata(&self) -> ModuleMetadata {
+    ///         ModuleMetadata::new().with_imports(vec![TypeId::of::<LeafModule>()])
+    ///     }
+    ///
+    ///     async fn configure(&self, _container: &DependencyContainer) -> Result<(), DiError> {
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// let mut registry = ModuleRegistry::new();
+    /// registry.register(&LeafModule);
+    /// registry.register(&AppModule);
+    ///
+    /// let sources = registry.import_sources_by_id(TypeId::of::<AppModule>()).unwrap();
+    /// assert!(sources.contains(&TypeId::of::<LeafModule>()));
+    /// ```
     pub fn import_sources_by_id(
         &self,
         module: TypeId,
@@ -270,6 +427,47 @@ impl ModuleRegistry {
     }
 
     /// Returns whether a type exported by `Exported` is visible to `Consumer`.
+    ///
+    /// ```rust,no_run
+    /// use async_trait::async_trait;
+    /// use nivasa_core::di::{DependencyContainer, DiError};
+    /// use nivasa_core::module::{Module, ModuleMetadata, ModuleRegistry};
+    /// use std::any::TypeId;
+    ///
+    /// struct SharedService;
+    /// struct LeafModule;
+    /// struct AppModule;
+    ///
+    /// #[async_trait]
+    /// impl Module for LeafModule {
+    ///     fn metadata(&self) -> ModuleMetadata {
+    ///         ModuleMetadata::new()
+    ///             .with_providers(vec![TypeId::of::<SharedService>()])
+    ///             .with_exports(vec![TypeId::of::<SharedService>()])
+    ///     }
+    ///
+    ///     async fn configure(&self, _container: &DependencyContainer) -> Result<(), DiError> {
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// #[async_trait]
+    /// impl Module for AppModule {
+    ///     fn metadata(&self) -> ModuleMetadata {
+    ///         ModuleMetadata::new().with_imports(vec![TypeId::of::<LeafModule>()])
+    ///     }
+    ///
+    ///     async fn configure(&self, _container: &DependencyContainer) -> Result<(), DiError> {
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// let mut registry = ModuleRegistry::new();
+    /// registry.register(&LeafModule);
+    /// registry.register(&AppModule);
+    ///
+    /// assert!(registry.is_visible_to::<AppModule, SharedService>().unwrap());
+    /// ```
     pub fn is_visible_to<Consumer: Module, Exported: 'static>(
         &self,
     ) -> Result<bool, ModuleRegistryError> {
@@ -278,6 +476,65 @@ impl ModuleRegistry {
             .contains(&TypeId::of::<Exported>()))
     }
 
+    /// Resolve modules in dependency order, from leaves to roots.
+    ///
+    /// ```rust,no_run
+    /// use async_trait::async_trait;
+    /// use nivasa_core::di::{DependencyContainer, DiError};
+    /// use nivasa_core::module::{Module, ModuleMetadata, ModuleRegistry};
+    /// use std::any::TypeId;
+    ///
+    /// struct LeafModule;
+    /// struct SharedModule;
+    /// struct AppModule;
+    ///
+    /// #[async_trait]
+    /// impl Module for LeafModule {
+    ///     fn metadata(&self) -> ModuleMetadata {
+    ///         ModuleMetadata::new()
+    ///     }
+    ///
+    ///     async fn configure(&self, _container: &DependencyContainer) -> Result<(), DiError> {
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// #[async_trait]
+    /// impl Module for SharedModule {
+    ///     fn metadata(&self) -> ModuleMetadata {
+    ///         ModuleMetadata::new().with_imports(vec![TypeId::of::<LeafModule>()])
+    ///     }
+    ///
+    ///     async fn configure(&self, _container: &DependencyContainer) -> Result<(), DiError> {
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// #[async_trait]
+    /// impl Module for AppModule {
+    ///     fn metadata(&self) -> ModuleMetadata {
+    ///         ModuleMetadata::new().with_imports(vec![TypeId::of::<SharedModule>()])
+    ///     }
+    ///
+    ///     async fn configure(&self, _container: &DependencyContainer) -> Result<(), DiError> {
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// let mut registry = ModuleRegistry::new();
+    /// registry.register(&LeafModule);
+    /// registry.register(&SharedModule);
+    /// registry.register(&AppModule);
+    ///
+    /// assert_eq!(
+    ///     registry.resolve_order().unwrap(),
+    ///     vec![
+    ///         TypeId::of::<LeafModule>(),
+    ///         TypeId::of::<SharedModule>(),
+    ///         TypeId::of::<AppModule>(),
+    ///     ]
+    /// );
+    /// ```
     pub fn resolve_order(&self) -> Result<Vec<TypeId>, ModuleRegistryError> {
         let mut order = Vec::new();
         let mut visited = HashSet::new();

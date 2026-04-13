@@ -6,6 +6,17 @@
 //!
 //! The full pipeline is:
 //! `Received -> MiddlewareChain -> RouteMatching -> GuardChain -> InterceptorPre -> PipeTransform -> HandlerExecution -> InterceptorPost -> ErrorHandling -> SendingResponse -> Done`
+//!
+//! ```rust
+//! use http::Method;
+//! use nivasa_http::{Body, NivasaRequest, RequestPipeline};
+//! use nivasa_statechart::NivasaRequestState;
+//!
+//! let request = NivasaRequest::new(Method::GET, "/health", Body::empty());
+//! let pipeline = RequestPipeline::new(request);
+//!
+//! assert_eq!(pipeline.current_state(), NivasaRequestState::Received);
+//! ```
 
 use crate::NivasaRequest;
 use nivasa_common::HttpException;
@@ -183,7 +194,11 @@ pub enum GuardExecutionOutcome {
     Error(HttpException),
 }
 
-/// SCXML-safe request coordinator for the first request pipeline stages.
+/// SCXML-safe request coordinator for request pipeline stages.
+///
+/// The pipeline stays honest to SCXML: each public method advances the
+/// underlying statechart through a typed event, and route/guard helpers only
+/// mutate request metadata when the SCXML transition says to move forward.
 pub struct RequestPipeline {
     engine: StatechartEngine<NivasaRequestStatechart>,
     request: NivasaRequest,
@@ -191,6 +206,17 @@ pub struct RequestPipeline {
 
 impl RequestPipeline {
     /// Create a new request pipeline starting from the SCXML `Received` state.
+    ///
+    /// ```rust
+    /// use http::Method;
+    /// use nivasa_http::{Body, NivasaRequest, RequestPipeline};
+    /// use nivasa_statechart::NivasaRequestState;
+    ///
+    /// let request = NivasaRequest::new(Method::GET, "/", Body::empty());
+    /// let pipeline = RequestPipeline::new(request);
+    ///
+    /// assert_eq!(pipeline.current_state(), NivasaRequestState::Received);
+    /// ```
     pub fn new(request: NivasaRequest) -> Self {
         Self {
             engine: StatechartEngine::new(NivasaRequestState::Received),
@@ -209,11 +235,34 @@ impl RequestPipeline {
     }
 
     /// Return the current SCXML state.
+    ///
+    /// ```rust
+    /// use http::Method;
+    /// use nivasa_http::{Body, NivasaRequest, RequestPipeline};
+    /// use nivasa_statechart::NivasaRequestState;
+    ///
+    /// let request = NivasaRequest::new(Method::GET, "/", Body::empty());
+    /// let pipeline = RequestPipeline::new(request);
+    ///
+    /// assert_eq!(pipeline.current_state(), NivasaRequestState::Received);
+    /// ```
     pub fn current_state(&self) -> NivasaRequestState {
         self.engine.current_state()
     }
 
     /// Return a serializable statechart snapshot for debug inspection.
+    ///
+    /// ```rust
+    /// use http::Method;
+    /// use nivasa_http::{Body, NivasaRequest, RequestPipeline};
+    ///
+    /// let request = NivasaRequest::new(Method::GET, "/", Body::empty());
+    /// let pipeline = RequestPipeline::new(request);
+    /// let snapshot = pipeline.snapshot();
+    ///
+    /// assert_eq!(snapshot.current_state, "Received");
+    /// assert!(snapshot.recent_transitions.is_empty());
+    /// ```
     pub fn snapshot(&self) -> StatechartSnapshot {
         self.engine.snapshot(None)
     }
@@ -247,6 +296,24 @@ impl RequestPipeline {
     }
 
     /// Match the request against the routing registry and advance the engine.
+    ///
+    /// When route lookup succeeds, captured path params are copied into the
+    /// request before the pipeline advances to the route-matching outcome.
+    ///
+    /// ```rust
+    /// use http::Method;
+    /// use nivasa_http::{Body, NivasaRequest, RequestPipeline};
+    /// use nivasa_routing::RouteDispatchRegistry;
+    ///
+    /// let request = NivasaRequest::new(Method::GET, "/health", Body::empty());
+    /// let mut pipeline = RequestPipeline::new(request);
+    /// pipeline.parse_request().unwrap();
+    /// pipeline.complete_middleware().unwrap();
+    /// let routes = RouteDispatchRegistry::<()>::new();
+    ///
+    /// let outcome = pipeline.match_route(&routes).unwrap();
+    /// assert!(matches!(outcome, nivasa_routing::RouteDispatchOutcome::NotFound));
+    /// ```
     pub fn match_route<'a, T>(
         &mut self,
         routes: &'a RouteDispatchRegistry<T>,
@@ -301,6 +368,56 @@ impl RequestPipeline {
     /// Every guard must pass before the pipeline advances to `InterceptorPre`.
     /// The first deny or error short-circuits the chain and routes the pipeline
     /// through the existing SCXML error transitions.
+    ///
+    /// ```rust,no_run
+    /// use http::Method;
+    /// use nivasa_guards::{ExecutionContext, Guard, GuardFuture};
+    /// use nivasa_http::{Body, GuardExecutionOutcome, NivasaRequest, RequestPipeline};
+    /// use nivasa_routing::RouteDispatchRegistry;
+    /// use nivasa_statechart::NivasaRequestState;
+    ///
+    /// struct DenyGuard;
+    ///
+    /// impl Guard for DenyGuard {
+    ///     fn can_activate<'a>(&'a self, _: &'a ExecutionContext) -> GuardFuture<'a> {
+    ///         Box::pin(async { Ok(false) })
+    ///     }
+    /// }
+    ///
+    /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+    /// let request = NivasaRequest::new(Method::GET, "/health", Body::empty());
+    /// let mut pipeline = RequestPipeline::new(request);
+    /// let mut routes = RouteDispatchRegistry::new();
+    ///
+    /// routes.register_static("GET", "/health", ()).unwrap();
+    /// pipeline.parse_request().unwrap();
+    /// pipeline.complete_middleware().unwrap();
+    /// pipeline.match_route(&routes).unwrap();
+    ///
+    /// let outcome = pipeline
+    ///     .evaluate_guard_chain(&[&DenyGuard], &ExecutionContext::new(()))
+    ///     .await
+    ///     .unwrap();
+    ///
+    /// assert!(matches!(outcome, GuardExecutionOutcome::Denied));
+    /// assert_eq!(pipeline.current_state(), NivasaRequestState::ErrorHandling);
+    /// # });
+    /// ```
+    ///
+    /// ```rust,no_run
+    /// use nivasa_guards::ExecutionContext;
+    /// use nivasa_http::{Body, GuardExecutionOutcome, NivasaRequest, RequestPipeline};
+    /// use http::Method;
+    ///
+    /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+    /// let request = NivasaRequest::new(Method::GET, "/", Body::empty());
+    /// let mut pipeline = RequestPipeline::new(request);
+    /// let context = ExecutionContext::new(());
+    ///
+    /// let outcome = pipeline.evaluate_guard_chain(&[], &context).await.unwrap();
+    /// assert!(matches!(outcome, GuardExecutionOutcome::Passed));
+    /// # });
+    /// ```
     pub async fn evaluate_guard_chain(
         &mut self,
         guards: &[&dyn Guard],
@@ -371,6 +488,29 @@ impl RequestPipeline {
     }
 
     /// Mark handler execution as complete.
+    ///
+    /// ```rust
+    /// use http::Method;
+    /// use nivasa_http::{Body, NivasaRequest, RequestPipeline};
+    /// use nivasa_routing::RouteDispatchRegistry;
+    /// use nivasa_statechart::NivasaRequestState;
+    ///
+    /// let request = NivasaRequest::new(Method::GET, "/health", Body::empty());
+    /// let mut pipeline = RequestPipeline::new(request);
+    /// let mut routes = RouteDispatchRegistry::new();
+    ///
+    /// routes.register_static("GET", "/health", ()).unwrap();
+    /// pipeline.parse_request().unwrap();
+    /// pipeline.complete_middleware().unwrap();
+    /// pipeline.match_route(&routes).unwrap();
+    /// pipeline.pass_guards().unwrap();
+    /// pipeline.complete_interceptors_pre().unwrap();
+    /// pipeline.complete_pipes().unwrap();
+    ///
+    /// assert_eq!(pipeline.current_state(), NivasaRequestState::HandlerExecution);
+    /// pipeline.complete_handler().unwrap();
+    /// assert_eq!(pipeline.current_state(), NivasaRequestState::InterceptorPost);
+    /// ```
     pub fn complete_handler(
         &mut self,
     ) -> Result<NivasaRequestState, InvalidTransitionError<NivasaRequestStatechart>> {

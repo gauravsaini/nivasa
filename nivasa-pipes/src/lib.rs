@@ -53,6 +53,27 @@ impl ArgumentMetadata {
 }
 
 /// A value transformer that can validate or coerce a handler argument.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_common::HttpException;
+/// use nivasa_pipes::{ArgumentMetadata, Pipe};
+/// use serde_json::Value;
+///
+/// struct UppercasePipe;
+///
+/// impl Pipe for UppercasePipe {
+///     fn transform(
+///         &self,
+///         value: Value,
+///         _metadata: ArgumentMetadata,
+///     ) -> Result<Value, HttpException> {
+///         let input = value.as_str().ok_or_else(|| HttpException::bad_request("expected string"))?;
+///         Ok(Value::from(input.to_uppercase()))
+///     }
+/// }
+/// ```
 pub trait Pipe: Send + Sync + 'static {
     fn transform(&self, value: Value, metadata: ArgumentMetadata) -> Result<Value, HttpException>;
 }
@@ -120,6 +141,17 @@ impl ParseFloatTarget for f64 {
 }
 
 /// Parse a JSON string into a boolean value.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_pipes::{ArgumentMetadata, ParseBoolPipe, Pipe};
+/// use serde_json::json;
+///
+/// let pipe = ParseBoolPipe::new();
+/// let output = pipe.transform(json!("true"), ArgumentMetadata::new(0)).unwrap();
+/// assert_eq!(output, json!(true));
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ParseBoolPipe;
 
@@ -147,6 +179,17 @@ impl Pipe for ParseBoolPipe {
 }
 
 /// Parse a JSON string into an integer value.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_pipes::{ArgumentMetadata, ParseIntPipe, Pipe};
+/// use serde_json::json;
+///
+/// let pipe = ParseIntPipe::<i64>::new();
+/// let output = pipe.transform(json!("42"), ArgumentMetadata::new(1)).unwrap();
+/// assert_eq!(output, json!(42));
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ParseIntPipe<T = i64> {
     _marker: PhantomData<T>,
@@ -181,6 +224,17 @@ where
 }
 
 /// Parse a JSON string into a floating-point value.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_pipes::{ArgumentMetadata, ParseFloatPipe, Pipe};
+/// use serde_json::json;
+///
+/// let pipe = ParseFloatPipe::<f64>::new();
+/// let output = pipe.transform(json!("3.5"), ArgumentMetadata::new(2)).unwrap();
+/// assert_eq!(output, json!(3.5));
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ParseFloatPipe<T = f64> {
     _marker: PhantomData<T>,
@@ -215,6 +269,17 @@ where
 }
 
 /// Trim leading and trailing whitespace from a JSON string value.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_pipes::{ArgumentMetadata, Pipe, TrimPipe};
+/// use serde_json::json;
+///
+/// let pipe = TrimPipe::new();
+/// let output = pipe.transform(json!("  nivasa  "), ArgumentMetadata::new(0)).unwrap();
+/// assert_eq!(output, json!("nivasa"));
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TrimPipe;
 
@@ -238,6 +303,17 @@ impl Pipe for TrimPipe {
 /// Replace an explicit `null` value with a configured default.
 ///
 /// Missing values are handled by the extractor/macro layer later.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_pipes::{ArgumentMetadata, DefaultValuePipe, Pipe};
+/// use serde_json::json;
+///
+/// let pipe = DefaultValuePipe::new(json!("guest"));
+/// let output = pipe.transform(json!(null), ArgumentMetadata::new(0)).unwrap();
+/// assert_eq!(output, json!("guest"));
+/// ```
 #[derive(Debug, Clone)]
 pub struct DefaultValuePipe {
     default_value: Value,
@@ -261,6 +337,36 @@ impl Pipe for DefaultValuePipe {
 }
 
 /// Deserialize and validate a JSON object DTO.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_pipes::{ArgumentMetadata, Pipe, ValidationPipe};
+/// use nivasa_validation::{Validate, ValidationErrors};
+/// use serde::{Deserialize, Serialize};
+/// use serde_json::json;
+///
+/// #[derive(Debug, Serialize, Deserialize)]
+/// struct CreateUser {
+///     name: String,
+/// }
+///
+/// impl Validate for CreateUser {
+///     fn validate(&self) -> Result<(), ValidationErrors> {
+///         if self.name.is_empty() {
+///             Err(ValidationErrors::default())
+///         } else {
+///             Ok(())
+///         }
+///     }
+/// }
+///
+/// let pipe = ValidationPipe::<CreateUser>::new();
+/// let output = pipe
+///     .transform(json!({"name": "Ada"}), ArgumentMetadata::new(0))
+///     .unwrap();
+/// assert_eq!(output, json!({"name": "Ada"}));
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ValidationPipe<T> {
     _marker: PhantomData<T>,
@@ -308,6 +414,22 @@ fn validation_exception(errors: ValidationErrors) -> HttpException {
 }
 
 /// Parse a JSON string into a UUID value.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_pipes::{ArgumentMetadata, ParseUuidPipe, Pipe};
+/// use serde_json::json;
+///
+/// let pipe = ParseUuidPipe::new();
+/// let output = pipe
+///     .transform(
+///         json!("550e8400-e29b-41d4-a716-446655440000"),
+///         ArgumentMetadata::new(0),
+///     )
+///     .unwrap();
+/// assert_eq!(output, json!("550e8400-e29b-41d4-a716-446655440000"));
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ParseUuidPipe;
 
@@ -346,6 +468,40 @@ pub trait ParseEnumTarget: Send + Sync + 'static {
 }
 
 /// Parse a JSON string into an enum-like value.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_pipes::{ArgumentMetadata, ParseEnumPipe, ParseEnumTarget, Pipe};
+/// use serde_json::json;
+///
+/// #[derive(Debug, PartialEq)]
+/// enum Color {
+///     Red,
+///     Blue,
+/// }
+///
+/// impl ParseEnumTarget for Color {
+///     fn parse(input: &str) -> Result<Self, String> {
+///         match input {
+///             "red" => Ok(Color::Red),
+///             "blue" => Ok(Color::Blue),
+///             other => Err(format!("unknown color: {other}")),
+///         }
+///     }
+///
+///     fn into_value(value: Self) -> serde_json::Value {
+///         match value {
+///             Color::Red => json!("red"),
+///             Color::Blue => json!("blue"),
+///         }
+///     }
+/// }
+///
+/// let pipe = ParseEnumPipe::<Color>::new();
+/// let output = pipe.transform(json!("red"), ArgumentMetadata::new(0)).unwrap();
+/// assert_eq!(output, json!("red"));
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ParseEnumPipe<T> {
     _marker: PhantomData<T>,
@@ -382,6 +538,17 @@ where
 /// Compose two pipes and run them left to right.
 ///
 /// This is a reusable sequencing primitive for future `#[pipe(...)]` support.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_pipes::{ArgumentMetadata, ParseBoolPipe, Pipe, PipeChain, TrimPipe};
+/// use serde_json::json;
+///
+/// let pipe = PipeChain::new(TrimPipe::new(), ParseBoolPipe::new());
+/// let output = pipe.transform(json!(" true "), ArgumentMetadata::new(0)).unwrap();
+/// assert_eq!(output, json!(true));
+/// ```
 pub struct PipeChain<A, B> {
     first: A,
     second: B,

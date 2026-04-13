@@ -8,6 +8,7 @@ license.workspace = true
 
 [[bin]]
 name = "nivasa"
+doc = false
 path = "src/main.rs"
 
 [dependencies]

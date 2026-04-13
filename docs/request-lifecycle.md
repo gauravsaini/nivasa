@@ -16,9 +16,7 @@ The codebase currently exercises the early request stages that are wired into `n
 1. `MiddlewareChain`
 1. `RouteMatching`
 
-That is the current runtime boundary: requests stop at route dispatch. A narrow controller-side `#[res]` response-builder slice now exists, but full controller execution plus the later SCXML stages remain future work.
-
-Controller-side multipart helpers for `#[file]` and `#[files]` now exist as post-route helpers as well, but they do not introduce a new SCXML stage. They still execute after route matching, and `RequestPipeline` remains the lifecycle owner.
+That is no longer the runtime boundary. `nivasa-http` now drives requests past route matching into controller execution, including guard, interceptor, pipe, handler, post-interceptor, and response-completion flow. A narrow controller-side `#[res]` response-builder slice exists, and multipart `#[file]` / `#[files]` helpers also run post-route without creating a new SCXML stage.
 
 The implemented coordinator in `nivasa-http` now:
 
@@ -40,7 +38,7 @@ The routing layer already supports:
 
 ## Remaining SCXML Stages
 
-The statechart still defines the later lifecycle stages, but `nivasa-http` does not yet drive them:
+The statechart still defines the later lifecycle stages, and most of them now drive in `nivasa-http`. `ErrorHandling` remains the main future stage boundary:
 
 1. `GuardChain`
 1. `InterceptorPre`
@@ -51,7 +49,7 @@ The statechart still defines the later lifecycle stages, but `nivasa-http` does 
 1. `SendingResponse`
 1. `Done`
 
-These stages are still important because they define the future SCXML contract for guards, interceptors, pipes, handlers, filters, and response completion, but they should not be read as landed runtime behavior yet.
+These stages are still important because they define the SCXML contract for controller execution and response completion. Keep `ErrorHandling` as the remaining future-stage caveat.
 
 ## Practical Notes
 
