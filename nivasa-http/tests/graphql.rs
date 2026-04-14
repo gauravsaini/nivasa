@@ -1,5 +1,18 @@
-use nivasa_http::{Body, GraphQLModule, GraphQLRequest, GraphQLResponse, NivasaServer, TestClient};
+use nivasa_http::{
+    graphql::{EmptyMutation, EmptySubscription, GraphQLSchema},
+    Body, GraphQLModule, GraphQLRequest, GraphQLResponse, NivasaServer, TestClient,
+};
 use serde_json::json;
+
+#[derive(Default)]
+struct EchoQuery;
+
+#[async_graphql::Object]
+impl EchoQuery {
+    async fn echo(&self, value: String) -> String {
+        value
+    }
+}
 
 fn build_server(module: GraphQLModule) -> NivasaServer {
     module
@@ -9,36 +22,14 @@ fn build_server(module: GraphQLModule) -> NivasaServer {
 }
 
 #[test]
-fn graphql_post_executes_via_the_provided_handler() {
-    let server = build_server(
-        GraphQLModule::new(|request: GraphQLRequest| {
-            assert_eq!(
-                request.query,
-                "query Hello($name: String!) { hello(name: $name) }"
-            );
-            assert_eq!(request.operation_name.as_deref(), Some("Hello"));
-            assert_eq!(
-                request
-                    .variables
-                    .as_ref()
-                    .and_then(|value| value["name"].as_str()),
-                Some("Nivasa")
-            );
-
-            GraphQLResponse::data(json!({
-                "hello": "hi Nivasa",
-                "operation": request.operation_name,
-            }))
-        })
-        .title("Nivasa GraphQL"),
-    );
+fn graphql_post_executes_a_real_schema() {
+    let schema = GraphQLSchema::build(EmptyMutation, EmptyMutation, EmptySubscription).finish();
+    let server = build_server(GraphQLModule::from_schema(schema).title("Nivasa GraphQL"));
 
     let response = TestClient::new(server)
         .post("/graphql")
         .body(Body::json(json!({
-            "query": "query Hello($name: String!) { hello(name: $name) }",
-            "operationName": "Hello",
-            "variables": { "name": "Nivasa" }
+            "query": "{ __typename }"
         })))
         .send_blocking();
 
@@ -49,8 +40,38 @@ fn graphql_post_executes_via_the_provided_handler() {
     );
 
     let value: serde_json::Value = response.json();
-    assert_eq!(value["data"]["hello"], "hi Nivasa");
-    assert_eq!(value["data"]["operation"], "Hello");
+    assert_eq!(value["data"]["__typename"], "EmptyMutation");
+}
+
+#[test]
+fn graphql_from_schema_forwards_variables_and_operation_name() {
+    let schema = GraphQLSchema::build(EchoQuery::default(), EmptyMutation, EmptySubscription)
+        .finish();
+    let server = build_server(
+        GraphQLModule::from_schema(schema)
+            .endpoint_path("/api/graphql")
+            .playground_path("/playground"),
+    );
+
+    let response = TestClient::new(server)
+        .post("/api/graphql")
+        .body(Body::json(json!({
+            "query": "query Echo($value: String!) { echo(value: $value) }",
+            "operationName": "Echo",
+            "variables": {
+                "value": "bridge"
+            }
+        })))
+        .send_blocking();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.header("content-type"),
+        Some(String::from("application/json"))
+    );
+
+    let value: serde_json::Value = response.json();
+    assert_eq!(value["data"]["echo"], "bridge");
 }
 
 #[test]
