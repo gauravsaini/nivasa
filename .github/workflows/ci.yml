@@ -77,8 +77,8 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Run benchmark harness
-        run: cargo bench -p nivasa-benchmarks --bench hello_world -- --quick --noplot
+      - name: Run benchmark smoke gate
+        run: BENCHMARK_HELLO_WORLD_MAX_UPPER_US=5000 bash benches/check_hello_world_budget.sh
 
   coverage:
     runs-on: ubuntu-latest

@@ -1066,7 +1066,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [ ] Benchmark full middleware + guard + interceptor pipeline overhead
 - [ ] Benchmark startup time with many modules
 - [x] Document benchmark results in `BENCHMARKS.md`
-- [ ] Set up CI benchmark regression detection
+- [x] Set up CI benchmark regression detection
 
 ### 10.3 — Release Preparation
 - [ ] Final API review: ensure public APIs are consistent and well-named
