@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 nivasa = { path = "../../nivasa", features = ["config"] }
 nivasa-core = { path = "../../nivasa-core" }
+nivasa-http = { path = "../../nivasa-http" }
 nivasa-routing = { path = "../../nivasa-routing" }
 async-trait = "0.1"
 
