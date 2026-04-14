@@ -1041,8 +1041,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ## Phase 10: Quality, Performance & Release
 
 ### 10.1 — Testing
-- [ ] Achieve >90% code coverage across all crates
-  - recent HTTP coverage-gap work added explicit coverage for request-context authorization seeding in `nivasa-http/src/server.rs` and the guard-error request path, but the `>90%` threshold is still unproven; `cargo llvm-cov` currently fails on an unrelated compile error in `nivasa-http/src/lib.rs`, so the enforcement gate stays blocked until the workspace builds cleanly under coverage instrumentation
+- [ ] Achieve >95% code coverage across all crates
+  - recent HTTP coverage-gap work added explicit coverage for request-context authorization seeding in `nivasa-http/src/server.rs` and the guard-error request path, but the `>95%` threshold is still unproven; `cargo llvm-cov` can start with local LLVM overrides, but the workspace coverage run currently stops on a public API surface mismatch in `nivasa/tests/public_api.rs`, so the enforcement gate stays blocked until that test surface is aligned
 - [x] Add in-process request lifecycle integration coverage (middleware → guard → interceptor → handler → Done)
 - [x] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
 - [x] Write integration tests: module composition (nested modules, imports/exports)
@@ -1063,7 +1063,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Benchmark hello-world GET (JSON response) vs Actix Web
 - [x] Benchmark hello-world GET (JSON response) vs Axum
 - [x] Benchmark DI container resolution overhead (1, 10, 100 providers)
-- [ ] Benchmark routing performance (10, 100, 1000 routes)
+- [x] Benchmark routing performance (10, 100, 1000 routes)
 - [ ] Benchmark full middleware + guard + interceptor pipeline overhead
 - [ ] Benchmark startup time with many modules
 - [x] Document benchmark results in `BENCHMARKS.md`
