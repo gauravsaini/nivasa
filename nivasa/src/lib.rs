@@ -44,7 +44,7 @@ pub mod prelude {
         App, AppBootstrapConfig, AppBuildError, AppRoute, NestApplication, ServerOptions,
         ServerOptionsBuilder, VersioningOptions, VersioningOptionsBuilder, VersioningStrategy,
     };
-    pub use nivasa_common::{HttpException, HttpStatus};
+    pub use nivasa_common::{HttpException, HttpStatus, InvalidHttpStatus, RequestContext};
     #[cfg(feature = "config")]
     pub use nivasa_config as config;
     pub use nivasa_core::di::provider::Injectable;
@@ -115,7 +115,7 @@ pub use application::{
     App, AppBootstrapConfig, AppBuildError, AppRoute, NestApplication, ServerOptions,
     ServerOptionsBuilder, VersioningOptions, VersioningOptionsBuilder, VersioningStrategy,
 };
-pub use nivasa_common::{self, HttpException, HttpStatus};
+pub use nivasa_common::{self, HttpException, HttpStatus, InvalidHttpStatus, RequestContext};
 #[cfg(feature = "config")]
 pub use nivasa_config as config;
 pub use nivasa_core::di::provider::Injectable;

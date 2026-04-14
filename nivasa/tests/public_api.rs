@@ -10,8 +10,8 @@ use nivasa::prelude::{
     req, res, scxml_handler, session, App, AppBuildError, AppRoute, ArgumentMetadata,
     ArgumentsHost, EmptyMutation, EmptySubscription, ExceptionFilter, ExceptionFilterFuture,
     GraphQLError, GraphQLCoreModule, GraphQLModule, GraphQLRequest, GraphQLResponse,
-    GraphQLSchema, HttpArgumentsHost, Middleware, NivasaMiddlewareLayer, Pipe, Reflector,
-    TestClient, TestResponse, WsArgumentsHost,
+    GraphQLSchema, HttpArgumentsHost, InvalidHttpStatus, Middleware, NivasaMiddlewareLayer, Pipe,
+    Reflector, RequestContext, TestClient, TestResponse, WsArgumentsHost,
 };
 use bytes::Bytes;
 use http_body_util::{BodyExt, Empty};
@@ -82,6 +82,21 @@ fn prelude_reexports_app_config_types_for_downstream_use() {
             .and_then(|options| options.default_version.as_deref()),
         Some("v2")
     );
+}
+
+#[test]
+fn prelude_reexports_common_request_and_status_types() {
+    let mut context = RequestContext::new();
+    context.insert_request_data(String::from("req-123"));
+
+    let invalid_status = InvalidHttpStatus(599);
+    let root_context = nivasa::RequestContext::new();
+    let root_invalid_status = nivasa::InvalidHttpStatus(599);
+
+    assert_eq!(context.request_data::<String>().map(String::as_str), Some("req-123"));
+    assert_eq!(invalid_status.0, 599);
+    assert!(root_context.request_data::<String>().is_none());
+    assert_eq!(root_invalid_status.0, 599);
 }
 
 #[test]
