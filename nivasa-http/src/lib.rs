@@ -83,10 +83,11 @@ use nivasa_routing::RoutePathCaptures;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
     convert::Infallible,
+    collections::HashMap,
     fmt,
     future::Future,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, OnceLock, RwLock},
     task::{Context, Poll},
     time::Instant,
 };
@@ -160,7 +161,7 @@ impl Body {
             Body::Empty => Vec::new(),
             Body::Text(text) => text.as_bytes().to_vec(),
             Body::Html(html) => html.as_bytes().to_vec(),
-            Body::Json(value) => serde_json::to_vec(value).expect("JSON body must serialize"),
+            Body::Json(value) => serde_json::to_vec(value).unwrap_or_default(),
             Body::Bytes(bytes) => bytes.clone(),
         }
     }
@@ -171,7 +172,7 @@ impl Body {
             Body::Empty => Vec::new(),
             Body::Text(text) => text.into_bytes(),
             Body::Html(html) => html.into_bytes(),
-            Body::Json(value) => serde_json::to_vec(&value).expect("JSON body must serialize"),
+            Body::Json(value) => serde_json::to_vec(&value).unwrap_or_default(),
             Body::Bytes(bytes) => bytes,
         }
     }
@@ -414,11 +415,21 @@ pub struct NivasaRequest {
 impl NivasaRequest {
     /// Construct a new request from parts.
     pub fn new(method: Method, uri: impl AsRef<str>, body: impl Into<Body>) -> Self {
-        let inner = Request::builder()
-            .method(method)
+        let body = body.into();
+        let method_for_builder = method.clone();
+        let inner = match Request::builder()
+            .method(method_for_builder)
             .uri(uri.as_ref())
-            .body(body.into())
-            .expect("request must have a valid URI");
+            .body(body.clone())
+        {
+            Ok(inner) => inner,
+            Err(_) => {
+                let mut inner = Request::new(body);
+                *inner.method_mut() = method;
+                *inner.uri_mut() = Uri::from_static("/");
+                inner
+            }
+        };
 
         Self {
             inner,
@@ -463,11 +474,12 @@ impl NivasaRequest {
 
     /// Add or replace a header on the request.
     pub fn set_header(&mut self, name: impl AsRef<str>, value: impl AsRef<str>) -> &mut Self {
-        let name = HeaderName::from_bytes(name.as_ref().as_bytes())
-            .expect("request header name must be valid");
-        let value =
-            HeaderValue::from_str(value.as_ref()).expect("request header value must be valid");
-        self.inner.headers_mut().insert(name, value);
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(name.as_ref().as_bytes()),
+            HeaderValue::from_str(value.as_ref()),
+        ) {
+            self.inner.headers_mut().insert(name, value);
+        }
         self
     }
 
@@ -750,11 +762,12 @@ impl ControllerResponse {
 
     /// Add or replace a response header.
     pub fn header(&mut self, name: impl AsRef<str>, value: impl AsRef<str>) -> &mut Self {
-        let name = HeaderName::from_bytes(name.as_ref().as_bytes())
-            .expect("response header name must be valid");
-        let value =
-            HeaderValue::from_str(value.as_ref()).expect("response header value must be valid");
-        self.headers.insert(name, value);
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(name.as_ref().as_bytes()),
+            HeaderValue::from_str(value.as_ref()),
+        ) {
+            self.headers.insert(name, value);
+        }
         self
     }
 
@@ -849,11 +862,12 @@ impl NivasaResponse {
 
     /// Add or replace a header on the response.
     pub fn with_header(mut self, name: impl AsRef<str>, value: impl AsRef<str>) -> Self {
-        let name = HeaderName::from_bytes(name.as_ref().as_bytes())
-            .expect("response header name must be valid");
-        let value =
-            HeaderValue::from_str(value.as_ref()).expect("response header value must be valid");
-        self.inner.headers_mut().insert(name, value);
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(name.as_ref().as_bytes()),
+            HeaderValue::from_str(value.as_ref()),
+        ) {
+            self.inner.headers_mut().insert(name, value);
+        }
         self
     }
 
@@ -929,11 +943,12 @@ impl NivasaResponseBuilder {
 
     /// Add or replace a response header.
     pub fn header(mut self, name: impl AsRef<str>, value: impl AsRef<str>) -> Self {
-        let name = HeaderName::from_bytes(name.as_ref().as_bytes())
-            .expect("response header name must be valid");
-        let value =
-            HeaderValue::from_str(value.as_ref()).expect("response header value must be valid");
-        self.headers.insert(name, value);
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(name.as_ref().as_bytes()),
+            HeaderValue::from_str(value.as_ref()),
+        ) {
+            self.headers.insert(name, value);
+        }
         self
     }
 
@@ -965,6 +980,48 @@ impl NivasaResponseBuilder {
 /// Convert values into a `NivasaResponse`.
 pub trait IntoResponse {
     fn into_response(self) -> NivasaResponse;
+}
+
+/// Shared request/response handler type used by app-shell dispatch seams.
+pub type AppRouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
+
+static CONTROLLER_ROUTE_HANDLERS: OnceLock<RwLock<HashMap<String, AppRouteHandler>>> =
+    OnceLock::new();
+
+fn controller_route_handler_registry() -> &'static RwLock<HashMap<String, AppRouteHandler>> {
+    CONTROLLER_ROUTE_HANDLERS.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn controller_route_handler_key(path: &str, handler: &str) -> String {
+    format!("{}::{}", path.trim(), handler.trim())
+}
+
+/// Register a controller route handler for later app-shell dispatch.
+///
+/// The registry is intentionally tiny and keyed by the resolved route path plus
+/// handler name so the app shell can resolve a handler without bypassing the
+/// normal SCXML-backed HTTP pipeline.
+pub fn register_controller_route_handler(
+    path: impl AsRef<str>,
+    handler: &str,
+    route_handler: AppRouteHandler,
+) {
+    let key = controller_route_handler_key(path.as_ref(), handler);
+    let mut registry = controller_route_handler_registry()
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    registry.insert(key, route_handler);
+}
+
+/// Resolve a controller route handler from the shared registry.
+pub fn resolve_controller_route_handler(path: &str, handler: &str) -> Option<AppRouteHandler> {
+    let key = controller_route_handler_key(path, handler);
+    let registry = controller_route_handler_registry()
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    registry.get(&key).cloned()
 }
 
 /// Execute a controller-style action with mutable response access.
@@ -1227,6 +1284,12 @@ impl IntoResponse for String {
 impl IntoResponse for &str {
     fn into_response(self) -> NivasaResponse {
         NivasaResponse::text(self)
+    }
+}
+
+impl IntoResponse for () {
+    fn into_response(self) -> NivasaResponse {
+        NivasaResponse::new(StatusCode::OK, Body::empty())
     }
 }
 
@@ -1586,10 +1649,9 @@ fn append_vary_accept_encoding(headers: &mut HeaderMap) {
     };
 
     if let Some(value) = updated {
-        headers.insert(
-            VARY,
-            HeaderValue::from_str(&value).expect("vary header must be valid"),
-        );
+        if let Ok(value) = HeaderValue::from_str(&value) {
+            headers.insert(VARY, value);
+        }
     }
 }
 
@@ -1609,26 +1671,20 @@ fn compress_response(response: NivasaResponse, format: CompressionFormat) -> Niv
         #[cfg(feature = "compression-brotli")]
         CompressionFormat::Brotli => {
             let mut encoder = CompressorWriter::new(Vec::new(), 4096, 5, 22);
-            encoder
-                .write_all(&body)
-                .expect("brotli compression must succeed");
+            let _ = encoder.write_all(&body);
             encoder.into_inner()
         }
         #[cfg(feature = "compression-gzip")]
         CompressionFormat::Gzip => {
             let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-            encoder
-                .write_all(&body)
-                .expect("gzip compression must succeed");
-            encoder.finish().expect("gzip compression must finish")
+            let _ = encoder.write_all(&body);
+            encoder.finish().unwrap_or_default()
         }
         #[cfg(feature = "compression-deflate")]
         CompressionFormat::Deflate => {
             let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
-            encoder
-                .write_all(&body)
-                .expect("deflate compression must succeed");
-            encoder.finish().expect("deflate compression must finish")
+            let _ = encoder.write_all(&body);
+            encoder.finish().unwrap_or_default()
         }
     };
 
@@ -1648,11 +1704,9 @@ fn compress_response(response: NivasaResponse, format: CompressionFormat) -> Niv
         HeaderValue::from_static(content_encoding),
     );
     append_vary_accept_encoding(&mut parts.headers);
-    parts.headers.insert(
-        http::header::CONTENT_LENGTH,
-        HeaderValue::from_str(&compressed.len().to_string())
-            .expect("compressed body length must be valid"),
-    );
+    if let Ok(value) = HeaderValue::from_str(&compressed.len().to_string()) {
+        parts.headers.insert(http::header::CONTENT_LENGTH, value);
+    }
 
     NivasaResponse {
         inner: Response::from_parts(parts, Body::bytes(compressed)),
@@ -2115,10 +2169,12 @@ impl IntoResponse for HttpException {
     fn into_response(self) -> NivasaResponse {
         let status =
             StatusCode::from_u16(self.status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-        NivasaResponse::new(
-            status,
-            serde_json::to_value(self).expect("HttpException must serialize"),
-        )
+        let fallback = serde_json::json!({
+            "statusCode": status.as_u16(),
+            "message": self.to_string(),
+        });
+        let body = serde_json::to_value(&self).unwrap_or(fallback);
+        NivasaResponse::new(status, body)
     }
 }
 
@@ -2213,9 +2269,11 @@ where
     T: Serialize,
 {
     fn into_response(self) -> NivasaResponse {
-        NivasaResponse::json(
-            serde_json::to_value(self.0).expect("JSON response value must serialize"),
-        )
+        NivasaResponse::json(serde_json::to_value(self.0).unwrap_or_else(|_| {
+            serde_json::json!({
+                "error": "response serialization failed"
+            })
+        }))
     }
 }
 

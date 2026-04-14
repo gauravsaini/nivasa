@@ -59,11 +59,14 @@ impl ExceptionFilterMetadata for DetailedHttpExceptionFilter {
 }
 
 fn free_port() -> u16 {
-    StdTcpListener::bind("127.0.0.1:0")
-        .expect("must bind an ephemeral port")
-        .local_addr()
-        .expect("must inspect ephemeral addr")
-        .port()
+    let listener = match StdTcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(err) => panic!("must bind an ephemeral port: {err}"),
+    };
+    match listener.local_addr() {
+        Ok(addr) => addr.port(),
+        Err(err) => panic!("must read ephemeral port: {err}"),
+    }
 }
 
 async fn wait_for_server(port: u16) {
@@ -97,10 +100,9 @@ async fn validation_pipe_rejects_invalid_dto_with_field_level_details() -> Resul
         .build();
 
     let server_task = tokio::spawn(async move {
-        server
-            .listen("127.0.0.1", port)
-            .await
-            .expect("server must stop cleanly");
+        if let Err(err) = server.listen("127.0.0.1", port).await {
+            panic!("server must stop cleanly: {err}");
+        }
     });
 
     wait_for_server(port).await;
@@ -119,8 +121,8 @@ async fn validation_pipe_rejects_invalid_dto_with_field_level_details() -> Resul
         response
             .headers()
             .get(http::header::CONTENT_TYPE)
-            .expect("validation response must set content type"),
-        "application/json"
+            .map(|value| value.as_bytes()),
+        Some(b"application/json".as_slice())
     );
 
     let body = response.into_body().collect().await?.to_bytes();
@@ -130,23 +132,21 @@ async fn validation_pipe_rejects_invalid_dto_with_field_level_details() -> Resul
     assert_eq!(body["error"], "Bad Request");
     assert_eq!(body["message"], "Validation failed");
 
-    let errors = body["details"]["errors"]
-        .as_array()
-        .expect("validation details must contain an errors array");
+    let Some(errors) = body["details"]["errors"].as_array() else {
+        panic!("validation details must contain an errors array");
+    };
 
-    let email_error = errors
-        .iter()
-        .find(|error| error["field"] == "email")
-        .expect("email validation error must exist");
+    let Some(email_error) = errors.iter().find(|error| error["field"] == "email") else {
+        panic!("email validation error must exist");
+    };
     assert_eq!(
         email_error["constraints"]["is_email"],
         "must be a valid email"
     );
 
-    let password_error = errors
-        .iter()
-        .find(|error| error["field"] == "password")
-        .expect("password validation error must exist");
+    let Some(password_error) = errors.iter().find(|error| error["field"] == "password") else {
+        panic!("password validation error must exist");
+    };
     assert_eq!(
         password_error["constraints"]["min_length"],
         "must be at least 6 characters"

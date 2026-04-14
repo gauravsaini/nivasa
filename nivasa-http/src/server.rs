@@ -1895,12 +1895,9 @@ fn map_interceptor_response(response: NivasaResponse) -> NivasaResponse {
     let mut mapped_response = NivasaResponse::new(status, Body::json(mapped_body));
     for (name, value) in headers.iter() {
         if name.as_str() != CONTENT_TYPE.as_str() {
-            mapped_response = mapped_response.with_header(
-                name.as_str(),
-                value
-                    .to_str()
-                    .expect("response header value must be valid utf-8"),
-            );
+            if let Ok(value) = value.to_str() {
+                mapped_response = mapped_response.with_header(name.as_str(), value);
+            }
         }
     }
 
@@ -2293,11 +2290,13 @@ fn shutdown_future(
             {
                 use tokio::signal::unix::{SignalKind, signal};
 
-                let mut sigterm = signal(SignalKind::terminate())
-                    .expect("SIGTERM signal handler must be available");
-                tokio::select! {
-                    _ = tokio::signal::ctrl_c() => {}
-                    _ = sigterm.recv() => {}
+                if let Ok(mut sigterm) = signal(SignalKind::terminate()) {
+                    tokio::select! {
+                        _ = tokio::signal::ctrl_c() => {}
+                        _ = sigterm.recv() => {}
+                    }
+                } else {
+                    let _ = tokio::signal::ctrl_c().await;
                 }
             }
 

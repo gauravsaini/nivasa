@@ -1,9 +1,11 @@
 use async_trait::async_trait;
 use nivasa_core::di::DependencyContainer;
-use nivasa_core::module::{
-    Module, ModuleLifecycleError, ModuleMetadata, ModuleRuntime, OnModuleDestroy, OnModuleInit,
-};
+use nivasa_core::lifecycle as app_lifecycle;
 use nivasa_core::module::lifecycle::NivasaModuleState;
+use nivasa_core::module::{
+    Module, ModuleLifecycleError, ModuleMetadata, ModuleRuntime, OnApplicationShutdown,
+    OnModuleDestroy, OnModuleInit,
+};
 use nivasa_macros::injectable;
 use std::sync::{Arc, Mutex};
 
@@ -24,6 +26,11 @@ struct HookedModule {
 }
 
 struct BrokenModule;
+
+#[derive(Clone)]
+struct ShutdownMirror {
+    events: Arc<Mutex<Vec<&'static str>>>,
+}
 
 #[async_trait]
 impl Module for HookedModule {
@@ -60,9 +67,24 @@ impl OnModuleDestroy for HookedModule {
 }
 
 #[async_trait]
+impl OnApplicationShutdown for ShutdownMirror {
+    async fn on_application_shutdown(&self) {
+        self.events.lock().unwrap().push("module.shutdown");
+    }
+}
+
+#[async_trait]
+impl app_lifecycle::OnApplicationShutdown for ShutdownMirror {
+    async fn on_application_shutdown(&self) {
+        self.events.lock().unwrap().push("lifecycle.shutdown");
+    }
+}
+
+#[async_trait]
 impl Module for BrokenModule {
     fn metadata(&self) -> ModuleMetadata {
-        ModuleMetadata::new().with_providers(vec![std::any::TypeId::of::<MissingDependencyService>()])
+        ModuleMetadata::new()
+            .with_providers(vec![std::any::TypeId::of::<MissingDependencyService>()])
     }
 
     async fn configure(
@@ -99,7 +121,11 @@ async fn module_runtime_happy_path_tracks_scxml_lifecycle() {
 
     let active = runtime.activate().unwrap();
     assert_eq!(active, NivasaModuleState::Active);
-    assert!(runtime.container().resolve::<LifecycleService>().await.is_ok());
+    assert!(runtime
+        .container()
+        .resolve::<LifecycleService>()
+        .await
+        .is_ok());
 
     let destroyed = runtime.destroy_with_hooks().await.unwrap();
     assert_eq!(destroyed, NivasaModuleState::Destroyed);
@@ -132,11 +158,29 @@ async fn dependency_failures_transition_to_load_failed() {
     let err = runtime.load().await.unwrap_err();
     assert!(matches!(
         err,
-        ModuleLifecycleError::DependencyInjection(nivasa_core::di::error::DiError::ProviderNotFound(_))
+        ModuleLifecycleError::DependencyInjection(
+            nivasa_core::di::error::DiError::ProviderNotFound(_)
+        )
     ));
     assert_eq!(runtime.state(), NivasaModuleState::LoadFailed);
 
     let failed = runtime.abort_load().unwrap();
     assert_eq!(failed, NivasaModuleState::Failed);
     assert!(runtime.is_terminal());
+}
+
+#[tokio::test]
+async fn application_shutdown_hook_shape_stays_consistent_across_public_paths() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let hooks = ShutdownMirror {
+        events: Arc::clone(&events),
+    };
+
+    <ShutdownMirror as OnApplicationShutdown>::on_application_shutdown(&hooks).await;
+    <ShutdownMirror as app_lifecycle::OnApplicationShutdown>::on_application_shutdown(&hooks).await;
+
+    assert_eq!(
+        &*events.lock().unwrap(),
+        &["module.shutdown", "lifecycle.shutdown"]
+    );
 }

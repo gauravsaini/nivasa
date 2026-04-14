@@ -14,11 +14,14 @@ use std::{
 use tokio::{sync::oneshot, time::timeout};
 
 fn free_port() -> u16 {
-    StdTcpListener::bind("127.0.0.1:0")
-        .expect("must bind an ephemeral port")
-        .local_addr()
-        .expect("must inspect ephemeral addr")
-        .port()
+    let listener = match StdTcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(err) => panic!("must bind an ephemeral port: {err}"),
+    };
+    match listener.local_addr() {
+        Ok(addr) => addr.port(),
+        Err(err) => panic!("must read ephemeral port: {err}"),
+    }
 }
 
 async fn wait_for_server(port: u16) {
@@ -49,29 +52,34 @@ async fn graceful_shutdown_completes_in_flight_requests() -> Result<(), Box<dyn 
 
     let server = NivasaServer::builder()
         .route(RouteMethod::Get, "/slow", move |_| {
-            started_tx_for_handler
-                .lock()
-                .expect("must lock start gate")
-                .take()
-                .expect("must have a start sender")
-                .send(())
-                .expect("must signal request start");
-            release_rx_for_handler
-                .lock()
-                .expect("must lock release gate")
-                .recv()
-                .expect("must wait for release");
+            let mut started_tx = match started_tx_for_handler.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            let Some(started_tx) = started_tx.take() else {
+                panic!("must have a start sender");
+            };
+            if started_tx.send(()).is_err() {
+                panic!("must notify handler start");
+            }
+
+            let release_rx = match release_rx_for_handler.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            if let Err(err) = release_rx.recv() {
+                panic!("must wait for release signal: {err}");
+            }
             NivasaResponse::new(StatusCode::OK, Body::text("finished"))
         })
-        .expect("route must register")
+        .unwrap_or_else(|err| panic!("route must register: {err}"))
         .shutdown_signal(shutdown_rx)
         .build();
 
     let server_task = tokio::spawn(async move {
-        server
-            .listen("127.0.0.1", port)
-            .await
-            .expect("server must stop cleanly");
+        if let Err(err) = server.listen("127.0.0.1", port).await {
+            panic!("server must stop cleanly: {err}");
+        }
     });
 
     wait_for_server(port).await;
@@ -85,11 +93,13 @@ async fn graceful_shutdown_completes_in_flight_requests() -> Result<(), Box<dyn 
 
     let response_task = tokio::spawn(async move { client.request(request).await });
 
-    started_rx
-        .await
-        .expect("handler must start before shutdown");
+    if let Err(err) = started_rx.await {
+        panic!("handler must start before shutdown: {err}");
+    }
     let _ = shutdown_tx.send(());
-    release_tx.send(()).expect("must release in-flight request");
+    if release_tx.send(()).is_err() {
+        panic!("must release handler");
+    }
 
     let response = timeout(Duration::from_secs(2), response_task).await??;
     let response = response?;

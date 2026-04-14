@@ -985,7 +985,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 - [x] Implement `NestApplication::create(AppModule)` factory method
 - [x] Implement `.build() -> Result<App>` — resolve all modules, DI, and routes
-- [ ] Implement `.listen(ServerOptions) -> Result<()>` — start HTTP server
+- [x] Implement `.listen(ServerOptions) -> Result<()>` — start HTTP server
 - [x] Implement `ServerOptions` struct: `port`, `host`, `cors`, `global_prefix`, `versioning`
 - [x] Introduce `AppBootstrapConfig` boundary for server-only bootstrap config
 - [x] Use `AppBootstrapConfig::global_prefix()` to prefix all routes during bootstrap
@@ -1077,19 +1077,22 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Write `CONTRIBUTING.md` with contribution guidelines
 - [x] Set up crate publishing order (dependencies first):
   1. [ ] Publish `nivasa-common`
-  2. [ ] Publish `nivasa-core`
-  3. [ ] Publish `nivasa-macros`
-  4. [ ] Publish `nivasa-http`
+  2. [ ] Publish `nivasa-statechart`
+  3. [ ] Publish `nivasa-core`
+  4. [ ] Publish `nivasa-validation`
   5. [ ] Publish `nivasa-routing`
   6. [ ] Publish `nivasa-guards`
   7. [ ] Publish `nivasa-interceptors`
-  8. [ ] Publish `nivasa-pipes`
-  9. [ ] Publish `nivasa-filters`
-  10. [ ] Publish `nivasa-validation`
-  11. [ ] Publish `nivasa-config`
-  12. [ ] Publish `nivasa-websocket`
-  13. [ ] Publish `nivasa` (umbrella crate)
-  14. [ ] Publish `nivasa-cli`
+  8. [ ] Publish `nivasa-filters`
+  9. [ ] Publish `nivasa-websocket`
+  10. [ ] Publish `nivasa-config`
+  11. [ ] Publish `nivasa-pipes`
+  12. [ ] Publish `nivasa-graphql`
+  13. [ ] Publish `nivasa-scheduling`
+  14. [ ] Publish `nivasa-http`
+  15. [ ] Publish `nivasa-macros`
+  16. [ ] Publish `nivasa` (umbrella crate)
+  17. [ ] Publish `nivasa-cli`
 - [ ] Create GitHub release with tag `v0.1.0` and changelog
 - [ ] Announce v0.1.0 release (Reddit r/rust, Hacker News, Twitter/X)
 

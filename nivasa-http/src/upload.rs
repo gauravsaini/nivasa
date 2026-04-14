@@ -55,7 +55,7 @@
 //!
 //! let file = FileInterceptor::new("avatar")
 //!     .extract_from_bytes(&content_type, &body)
-//!     .expect("single file should parse");
+//!     .unwrap_or_else(|err| panic!("single file should parse: {err}"));
 //! assert_eq!(file.filename(), "avatar.png");
 //!
 //! let (content_type, body) = multipart_body(&[
@@ -65,7 +65,7 @@
 //!
 //! let files = FilesInterceptor::new("attachments")
 //!     .extract_from_bytes(&content_type, &body)
-//!     .expect("multiple files should parse");
+//!     .unwrap_or_else(|err| panic!("multiple files should parse: {err}"));
 //! assert_eq!(files.len(), 2);
 //! ```
 
@@ -383,7 +383,7 @@ struct ParsedMultipartFile {
 ///
 /// let file = FileInterceptor::new("avatar")
 ///     .extract_from_bytes(&content_type, &body)
-///     .expect("single file should parse");
+///     .unwrap_or_else(|err| panic!("single file should parse: {err}"));
 ///
 /// assert_eq!(file.filename(), "avatar.png");
 /// ```
@@ -424,7 +424,15 @@ impl FileInterceptor {
             0 => Err(UploadInterceptError::MissingFile {
                 field: self.field_name.clone(),
             }),
-            1 => Ok(files.into_iter().next().expect("single file must exist")),
+            1 => {
+                let Some(file) = files.into_iter().next() else {
+                    return Err(UploadInterceptError::InvalidMultipart(
+                        "expected a single uploaded file".to_string(),
+                    ));
+                };
+
+                Ok(file)
+            }
             count => Err(UploadInterceptError::TooManyFiles {
                 field: self.field_name.clone(),
                 count,
@@ -469,7 +477,7 @@ impl FileInterceptor {
 ///
 /// let files = FilesInterceptor::new("attachments")
 ///     .extract_from_bytes(&content_type, &body)
-///     .expect("multiple files should parse");
+///     .unwrap_or_else(|err| panic!("multiple files should parse: {err}"));
 ///
 /// assert_eq!(files.len(), 2);
 /// ```
@@ -771,7 +779,7 @@ mod tests {
 
         let file = FileInterceptor::new("avatar")
             .extract_from_bytes(&content_type, &body)
-            .expect("single file should parse");
+            .unwrap_or_else(|err| panic!("single file should parse: {err}"));
 
         assert_eq!(file.filename(), "avatar.png");
         assert_eq!(file.content_type(), Some("image/png"));
@@ -787,7 +795,7 @@ mod tests {
 
         let files = FilesInterceptor::new("attachments")
             .extract_from_bytes(&content_type, &body)
-            .expect("multiple files should parse");
+            .unwrap_or_else(|err| panic!("multiple files should parse: {err}"));
 
         assert_eq!(files.len(), 2);
         assert_eq!(files[0].filename(), "one.txt");

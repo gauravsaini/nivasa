@@ -301,18 +301,21 @@ impl RequestPipeline {
     /// request before the pipeline advances to the route-matching outcome.
     ///
     /// ```rust
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use http::Method;
     /// use nivasa_http::{Body, NivasaRequest, RequestPipeline};
     /// use nivasa_routing::RouteDispatchRegistry;
     ///
     /// let request = NivasaRequest::new(Method::GET, "/health", Body::empty());
     /// let mut pipeline = RequestPipeline::new(request);
-    /// pipeline.parse_request().unwrap();
-    /// pipeline.complete_middleware().unwrap();
+    /// pipeline.parse_request()?;
+    /// pipeline.complete_middleware()?;
     /// let routes = RouteDispatchRegistry::<()>::new();
     ///
-    /// let outcome = pipeline.match_route(&routes).unwrap();
+    /// let outcome = pipeline.match_route(&routes)?;
     /// assert!(matches!(outcome, nivasa_routing::RouteDispatchOutcome::NotFound));
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn match_route<'a, T>(
         &mut self,
@@ -370,6 +373,7 @@ impl RequestPipeline {
     /// through the existing SCXML error transitions.
     ///
     /// ```rust,no_run
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use http::Method;
     /// use nivasa_guards::{ExecutionContext, Guard, GuardFuture};
     /// use nivasa_http::{Body, GuardExecutionOutcome, NivasaRequest, RequestPipeline};
@@ -384,39 +388,51 @@ impl RequestPipeline {
     ///     }
     /// }
     ///
-    /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+    /// # let runtime = tokio::runtime::Builder::new_current_thread()
+    /// #     .enable_all()
+    /// #     .build()?;
+    /// # runtime.block_on(async {
     /// let request = NivasaRequest::new(Method::GET, "/health", Body::empty());
     /// let mut pipeline = RequestPipeline::new(request);
     /// let mut routes = RouteDispatchRegistry::new();
     ///
-    /// routes.register_static("GET", "/health", ()).unwrap();
-    /// pipeline.parse_request().unwrap();
-    /// pipeline.complete_middleware().unwrap();
-    /// pipeline.match_route(&routes).unwrap();
+    /// routes.register_static("GET", "/health", ())?;
+    /// pipeline.parse_request()?;
+    /// pipeline.complete_middleware()?;
+    /// pipeline.match_route(&routes)?;
     ///
     /// let outcome = pipeline
     ///     .evaluate_guard_chain(&[&DenyGuard], &ExecutionContext::new(()))
-    ///     .await
-    ///     .unwrap();
+    ///     .await?;
     ///
     /// assert!(matches!(outcome, GuardExecutionOutcome::Denied));
     /// assert_eq!(pipeline.current_state(), NivasaRequestState::ErrorHandling);
-    /// # });
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # })?;
+    /// # Ok(())
+    /// # }
     /// ```
     ///
     /// ```rust,no_run
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use nivasa_guards::ExecutionContext;
     /// use nivasa_http::{Body, GuardExecutionOutcome, NivasaRequest, RequestPipeline};
     /// use http::Method;
     ///
-    /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+    /// # let runtime = tokio::runtime::Builder::new_current_thread()
+    /// #     .enable_all()
+    /// #     .build()?;
+    /// # runtime.block_on(async {
     /// let request = NivasaRequest::new(Method::GET, "/", Body::empty());
     /// let mut pipeline = RequestPipeline::new(request);
     /// let context = ExecutionContext::new(());
     ///
-    /// let outcome = pipeline.evaluate_guard_chain(&[], &context).await.unwrap();
+    /// let outcome = pipeline.evaluate_guard_chain(&[], &context).await?;
     /// assert!(matches!(outcome, GuardExecutionOutcome::Passed));
-    /// # });
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # })?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn evaluate_guard_chain(
         &mut self,
@@ -490,6 +506,7 @@ impl RequestPipeline {
     /// Mark handler execution as complete.
     ///
     /// ```rust
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use http::Method;
     /// use nivasa_http::{Body, NivasaRequest, RequestPipeline};
     /// use nivasa_routing::RouteDispatchRegistry;
@@ -499,17 +516,19 @@ impl RequestPipeline {
     /// let mut pipeline = RequestPipeline::new(request);
     /// let mut routes = RouteDispatchRegistry::new();
     ///
-    /// routes.register_static("GET", "/health", ()).unwrap();
-    /// pipeline.parse_request().unwrap();
-    /// pipeline.complete_middleware().unwrap();
-    /// pipeline.match_route(&routes).unwrap();
-    /// pipeline.pass_guards().unwrap();
-    /// pipeline.complete_interceptors_pre().unwrap();
-    /// pipeline.complete_pipes().unwrap();
+    /// routes.register_static("GET", "/health", ())?;
+    /// pipeline.parse_request()?;
+    /// pipeline.complete_middleware()?;
+    /// pipeline.match_route(&routes)?;
+    /// pipeline.pass_guards()?;
+    /// pipeline.complete_interceptors_pre()?;
+    /// pipeline.complete_pipes()?;
     ///
     /// assert_eq!(pipeline.current_state(), NivasaRequestState::HandlerExecution);
-    /// pipeline.complete_handler().unwrap();
+    /// pipeline.complete_handler()?;
     /// assert_eq!(pipeline.current_state(), NivasaRequestState::InterceptorPost);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn complete_handler(
         &mut self,
