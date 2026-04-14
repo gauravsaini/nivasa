@@ -87,15 +87,18 @@ pub trait HealthIndicator: Send + Sync {
 /// # Example
 ///
 /// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use nivasa_http::{DiskHealthIndicator, HealthIndicator};
 ///
-/// let result = tokio::runtime::Builder::new_current_thread()
+/// let runtime = tokio::runtime::Builder::new_current_thread()
 ///     .enable_all()
-///     .build()
-///     .unwrap()
-///     .block_on(async { DiskHealthIndicator.check().await });
+///     .build()?;
+///
+/// let result = runtime.block_on(async { DiskHealthIndicator.check().await });
 ///
 /// assert_eq!(result.status, nivasa_http::HealthStatus::Up);
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DiskHealthIndicator;
@@ -105,15 +108,19 @@ pub struct DiskHealthIndicator;
 /// # Example
 ///
 /// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use nivasa_http::{HealthIndicator, HealthStatus, MemoryHealthIndicator};
 ///
-/// let result = tokio::runtime::Builder::new_current_thread()
+/// let runtime = tokio::runtime::Builder::new_current_thread()
 ///     .enable_all()
-///     .build()
-///     .unwrap()
+///     .build()?;
+///
+/// let result = runtime
 ///     .block_on(async { MemoryHealthIndicator.check().await });
 ///
 /// assert_eq!(result.status, HealthStatus::Up);
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MemoryHealthIndicator;
@@ -123,16 +130,20 @@ pub struct MemoryHealthIndicator;
 /// # Example
 ///
 /// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use nivasa_http::{DatabaseHealthIndicator, HealthIndicator};
 ///
 /// let indicator = DatabaseHealthIndicator::new(|| true);
-/// let result = tokio::runtime::Builder::new_current_thread()
+/// let runtime = tokio::runtime::Builder::new_current_thread()
 ///     .enable_all()
-///     .build()
-///     .unwrap()
+///     .build()?;
+///
+/// let result = runtime
 ///     .block_on(async { indicator.check().await });
 ///
 /// assert_eq!(result.status, nivasa_http::HealthStatus::Up);
+/// # Ok(())
+/// # }
 /// ```
 pub struct DatabaseHealthIndicator<P> {
     probe: P,
@@ -150,16 +161,20 @@ impl<P> DatabaseHealthIndicator<P> {
 /// # Example
 ///
 /// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use nivasa_http::{HealthIndicator, HttpHealthIndicator};
 ///
 /// let indicator = HttpHealthIndicator::new(|| false);
-/// let result = tokio::runtime::Builder::new_current_thread()
+/// let runtime = tokio::runtime::Builder::new_current_thread()
 ///     .enable_all()
-///     .build()
-///     .unwrap()
+///     .build()?;
+///
+/// let result = runtime
 ///     .block_on(async { indicator.check().await });
 ///
 /// assert_eq!(result.status, nivasa_http::HealthStatus::Down);
+/// # Ok(())
+/// # }
 /// ```
 pub struct HttpHealthIndicator<P> {
     probe: P,
@@ -258,6 +273,7 @@ pub struct HealthCheckResult {
 /// # Example
 ///
 /// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use nivasa_http::{DiskHealthIndicator, HealthCheckService, MemoryHealthIndicator};
 /// use std::sync::Arc;
 ///
@@ -266,14 +282,18 @@ pub struct HealthCheckResult {
 ///     Arc::new(MemoryHealthIndicator),
 /// ]);
 ///
-/// let result = tokio::runtime::Builder::new_current_thread()
+/// let runtime = tokio::runtime::Builder::new_current_thread()
 ///     .enable_all()
 ///     .build()
-///     .unwrap()
+///     ?;
+///
+/// let result = runtime
 ///     .block_on(async { service.check().await });
 ///
 /// assert_eq!(result.status, nivasa_http::HealthStatus::Up);
 /// assert_eq!(result.details.len(), 2);
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Clone, Default)]
 pub struct HealthCheckService {
@@ -308,6 +328,7 @@ impl HealthCheckService {
 /// # Example
 ///
 /// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use nivasa_http::{DiskHealthIndicator, MemoryHealthIndicator, TerminusModule};
 /// use std::sync::Arc;
 ///
@@ -316,13 +337,16 @@ impl HealthCheckService {
 ///     Arc::new(MemoryHealthIndicator),
 /// ]);
 ///
-/// let result = tokio::runtime::Builder::new_current_thread()
+/// let runtime = tokio::runtime::Builder::new_current_thread()
 ///     .enable_all()
-///     .build()
-///     .unwrap()
+///     .build()?;
+///
+/// let result = runtime
 ///     .block_on(async { module.health_check_service().check().await });
 ///
 /// assert_eq!(result.status, nivasa_http::HealthStatus::Up);
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Clone, Default)]
 pub struct TerminusModule {
