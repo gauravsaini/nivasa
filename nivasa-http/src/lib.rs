@@ -30,6 +30,7 @@
 //! server builder path, while [`upload`] contains the focused multipart
 //! helpers.
 
+mod body;
 pub mod graphql;
 mod health;
 mod logging;
@@ -39,6 +40,7 @@ pub mod testing;
 mod throttling;
 pub mod upload;
 
+pub use body::{Body, Html, Text};
 pub use graphql::{GraphQLError, GraphQLModule, GraphQLRequest, GraphQLResponse};
 pub use health::{
     DatabaseHealthIndicator, DiskHealthIndicator, HealthCheckResult, HealthCheckService,
@@ -101,162 +103,6 @@ use tokio::sync::Mutex;
 use tower::{Layer, Service};
 use url::form_urlencoded;
 use uuid::Uuid;
-
-/// Minimal response/request body abstraction for the HTTP wrapper layer.
-///
-/// ```rust
-/// use nivasa_http::Body;
-///
-/// let body = Body::text("hello");
-/// assert_eq!(body.as_bytes(), b"hello");
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Body {
-    Empty,
-    Text(String),
-    Html(String),
-    Json(serde_json::Value),
-    Bytes(Vec<u8>),
-}
-
-impl Body {
-    /// Create an empty body.
-    pub fn empty() -> Self {
-        Self::Empty
-    }
-
-    /// Create a UTF-8 text body.
-    pub fn text(text: impl Into<String>) -> Self {
-        Self::Text(text.into())
-    }
-
-    /// Create an HTML body.
-    pub fn html(html: impl Into<String>) -> Self {
-        Self::Html(html.into())
-    }
-
-    /// Create a JSON body.
-    pub fn json(value: impl Into<serde_json::Value>) -> Self {
-        Self::Json(value.into())
-    }
-
-    /// Create a raw byte body.
-    pub fn bytes(bytes: impl Into<Vec<u8>>) -> Self {
-        Self::Bytes(bytes.into())
-    }
-
-    /// The default content type for this body, if one is known.
-    fn content_type(&self) -> Option<&'static str> {
-        match self {
-            Body::Empty => None,
-            Body::Text(_) => Some("text/plain; charset=utf-8"),
-            Body::Html(_) => Some("text/html; charset=utf-8"),
-            Body::Json(_) => Some("application/json"),
-            Body::Bytes(_) => Some("application/octet-stream"),
-        }
-    }
-
-    /// Whether the body is empty.
-    pub fn is_empty(&self) -> bool {
-        matches!(self, Body::Empty)
-    }
-
-    /// Borrow the body as bytes when possible.
-    pub fn as_bytes(&self) -> Vec<u8> {
-        match self {
-            Body::Empty => Vec::new(),
-            Body::Text(text) => text.as_bytes().to_vec(),
-            Body::Html(html) => html.as_bytes().to_vec(),
-            Body::Json(value) => serde_json::to_vec(value).unwrap_or_default(),
-            Body::Bytes(bytes) => bytes.clone(),
-        }
-    }
-
-    /// Consume the body and return owned bytes.
-    pub fn into_bytes(self) -> Vec<u8> {
-        match self {
-            Body::Empty => Vec::new(),
-            Body::Text(text) => text.into_bytes(),
-            Body::Html(html) => html.into_bytes(),
-            Body::Json(value) => serde_json::to_vec(&value).unwrap_or_default(),
-            Body::Bytes(bytes) => bytes,
-        }
-    }
-}
-
-impl Default for Body {
-    fn default() -> Self {
-        Self::Empty
-    }
-}
-
-impl From<&str> for Body {
-    fn from(value: &str) -> Self {
-        Self::text(value)
-    }
-}
-
-impl From<String> for Body {
-    fn from(value: String) -> Self {
-        Self::text(value)
-    }
-}
-
-/// Explicit text body wrapper for response conversion.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Text<T>(pub T);
-
-impl<T> Text<T> {
-    pub fn into_inner(self) -> T {
-        self.0
-    }
-}
-
-impl<T> From<Text<T>> for Body
-where
-    T: Into<String>,
-{
-    fn from(value: Text<T>) -> Self {
-        Body::text(value.0.into())
-    }
-}
-
-/// Explicit HTML body wrapper for response conversion.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Html<T>(pub T);
-
-impl<T> Html<T> {
-    pub fn into_inner(self) -> T {
-        self.0
-    }
-}
-
-impl<T> From<Html<T>> for Body
-where
-    T: Into<String>,
-{
-    fn from(value: Html<T>) -> Self {
-        Body::html(value.0.into())
-    }
-}
-
-impl From<Vec<u8>> for Body {
-    fn from(value: Vec<u8>) -> Self {
-        Self::bytes(value)
-    }
-}
-
-impl From<&[u8]> for Body {
-    fn from(value: &[u8]) -> Self {
-        Self::bytes(value.to_vec())
-    }
-}
-
-impl From<serde_json::Value> for Body {
-    fn from(value: serde_json::Value) -> Self {
-        Self::json(value)
-    }
-}
 
 fn sanitize_sse_single_line(value: &str) -> String {
     value
@@ -1339,14 +1185,31 @@ impl NextMiddleware {
 /// the bridge without widening the middleware pipeline surface.
 #[derive(Clone)]
 pub struct TowerServiceMiddleware<S> {
-    service: Arc<Mutex<S>>,
+    service: TowerServiceMiddlewareInner<S>,
+}
+
+#[derive(Clone)]
+enum TowerServiceMiddlewareInner<S> {
+    Shared(Arc<Mutex<S>>),
+    Cloned(Arc<dyn Fn() -> S + Send + Sync + 'static>),
 }
 
 impl<S> TowerServiceMiddleware<S> {
     /// Wrap a Tower service so it can be used where a `NivasaMiddleware` is expected.
     pub fn new(service: S) -> Self {
         Self {
-            service: Arc::new(Mutex::new(service)),
+            service: TowerServiceMiddlewareInner::Shared(Arc::new(Mutex::new(service))),
+        }
+    }
+
+    /// Wrap a cloneable Tower service so each request gets its own service instance.
+    pub fn new_cloneable(service: S) -> Self
+    where
+        S: Clone + Send + Sync + 'static,
+    {
+        let service = Arc::new(service);
+        Self {
+            service: TowerServiceMiddlewareInner::Cloned(Arc::new(move || (*service).clone())),
         }
     }
 }
@@ -1365,10 +1228,21 @@ where
     S::Future: Send + 'static,
 {
     async fn use_(&self, req: NivasaRequest, _next: NextMiddleware) -> NivasaResponse {
-        let mut service = self.service.lock().await;
-        match service.call(req).await {
-            Ok(response) => response,
-            Err(error) => match error {},
+        match &self.service {
+            TowerServiceMiddlewareInner::Shared(service) => {
+                let mut service = service.lock().await;
+                match service.call(req).await {
+                    Ok(response) => response,
+                    Err(error) => match error {},
+                }
+            }
+            TowerServiceMiddlewareInner::Cloned(service) => {
+                let mut service = (service.as_ref())();
+                match service.call(req).await {
+                    Ok(response) => response,
+                    Err(error) => match error {},
+                }
+            }
         }
     }
 }
