@@ -91,6 +91,12 @@ use std::{
     task::{Context, Poll},
     time::Instant,
 };
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
+use std::io::Write;
 use tokio::sync::Mutex;
 use tower::{Layer, Service};
 use url::form_urlencoded;
