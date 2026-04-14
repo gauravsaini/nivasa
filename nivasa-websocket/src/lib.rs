@@ -289,7 +289,7 @@ pub struct ServerEventHandle<'a, ClientId> {
 /// ```rust
 /// use nivasa_websocket::RoomEventRegistry;
 ///
-/// let mut rooms = RoomEventRegistry::new();
+/// let mut rooms = RoomEventRegistry::with_namespace("/chat");
 /// rooms.connect("client-1");
 /// rooms.connect("client-2");
 /// rooms.join("lobby", "client-1");
@@ -297,6 +297,7 @@ pub struct ServerEventHandle<'a, ClientId> {
 /// ```
 #[derive(Debug, Clone)]
 pub struct RoomEventRegistry<ClientId> {
+    namespace: String,
     rooms: NamespaceRegistry<ClientId>,
     clients: HashMap<ClientId, Vec<(String, String)>>,
 }
@@ -360,6 +361,26 @@ where
         }
 
         removed
+    }
+
+    /// Remove a client from every room in every namespace.
+    pub fn disconnect(&mut self, client: &ClientId) -> bool {
+        let mut removed_any = false;
+
+        self.namespaces.retain(|_, registry| {
+            let mut namespace_removed = false;
+
+            registry.rooms.retain(|_, members| {
+                let removed = members.remove(client);
+                namespace_removed |= removed;
+                !members.is_empty()
+            });
+
+            removed_any |= namespace_removed;
+            !registry.is_empty()
+        });
+
+        removed_any
     }
 
     /// Return room members inside namespace.
@@ -486,7 +507,21 @@ where
 {
     /// Create empty room-targeted broadcast registry.
     pub fn new() -> Self {
-        Self::default()
+        Self::with_namespace("/")
+    }
+
+    /// Create empty room-targeted broadcast registry for one namespace.
+    pub fn with_namespace(namespace: impl Into<String>) -> Self {
+        Self {
+            namespace: namespace.into(),
+            rooms: NamespaceRegistry::default(),
+            clients: HashMap::new(),
+        }
+    }
+
+    /// Return namespace path used by this room registry.
+    pub fn namespace(&self) -> &str {
+        &self.namespace
     }
 
     /// Register connected client.
@@ -496,12 +531,15 @@ where
 
     /// Remove connected client and room memberships.
     pub fn disconnect(&mut self, client: &ClientId) -> bool {
-        self.clients.remove(client).is_some()
+        let removed_client = self.clients.remove(client).is_some();
+        let removed_rooms = self.rooms.disconnect(client);
+        removed_client || removed_rooms
     }
 
     /// Add connected client to room.
     pub fn join(&mut self, room: impl Into<String>, client: ClientId) -> bool {
-        self.rooms.join("/", room, client)
+        self.rooms
+            .join(self.namespace.clone(), room, client)
     }
 
     /// Return room-scoped broadcast handle.
@@ -519,7 +557,7 @@ where
 
     /// Return members connected to room.
     pub fn room_members(&self, room: &str) -> Vec<ClientId> {
-        self.rooms.members("/", room)
+        self.rooms.members(&self.namespace, room)
     }
 }
 
@@ -528,10 +566,7 @@ where
     ClientId: Clone + Eq + Hash,
 {
     fn default() -> Self {
-        Self {
-            rooms: NamespaceRegistry::default(),
-            clients: HashMap::new(),
-        }
+        Self::with_namespace("/")
     }
 }
 
@@ -567,7 +602,11 @@ where
 {
     /// Emit one event for scoped client.
     pub fn emit(&mut self, event: impl Into<String>, data: impl Into<String>) -> usize {
-        let entry = self.registry.clients.entry(self.client.clone()).or_default();
+        let entry = self
+            .registry
+            .clients
+            .entry(self.client.clone())
+            .or_default();
         entry.push((event.into(), data.into()));
         entry.len()
     }
@@ -605,7 +644,10 @@ where
     pub fn emit(&mut self, event: impl Into<String>, data: impl Into<String>) -> usize {
         let event = event.into();
         let data = data.into();
-        let members = self.registry.rooms.members("/", &self.room);
+        let members = self
+            .registry
+            .rooms
+            .members(&self.registry.namespace, &self.room);
         let mut delivered = 0;
 
         for client in members {
@@ -697,10 +739,9 @@ mod tests {
             registry.events_for(&"client-2"),
             vec![("message".to_string(), "other".to_string())]
         );
-        assert!(!registry.events_for(&"client-1").contains(&(
-            "message".to_string(),
-            "other".to_string()
-        )));
+        assert!(!registry
+            .events_for(&"client-1")
+            .contains(&("message".to_string(), "other".to_string())));
     }
 
     #[test]
@@ -751,12 +792,70 @@ mod tests {
             registry.events_for(&"client-1"),
             vec![("notice".to_string(), "hello room".to_string())]
         );
-        assert_eq!(registry.events_for(&"client-2"), Vec::<(String, String)>::new());
+        assert_eq!(
+            registry.events_for(&"client-2"),
+            Vec::<(String, String)>::new()
+        );
         assert_eq!(
             registry.events_for(&"client-3"),
             vec![("notice".to_string(), "hello room".to_string())]
         );
         assert_eq!(registry.room_members("general").len(), 2);
+    }
+
+    #[test]
+    fn room_event_registry_tracks_namespace_specific_room_state() {
+        let mut registry = RoomEventRegistry::with_namespace("/chat");
+
+        registry.connect("client-1");
+        assert!(registry.join("general", "client-1"));
+
+        assert_eq!(registry.namespace(), "/chat");
+        assert!(registry.rooms.has_namespace("/chat"));
+        assert!(!registry.rooms.has_namespace("/"));
+        assert!(registry.rooms.contains("/chat", "general", &"client-1"));
+        assert!(!registry.rooms.contains("/", "general", &"client-1"));
+    }
+
+    #[test]
+    fn room_event_registry_scopes_membership_by_namespace() {
+        let mut chat = RoomEventRegistry::with_namespace("/chat");
+        let mut admin = RoomEventRegistry::with_namespace("/admin");
+
+        chat.connect("client-1");
+        chat.connect("client-2");
+        admin.connect("client-9");
+
+        assert_eq!(chat.namespace(), "/chat");
+        assert_eq!(admin.namespace(), "/admin");
+
+        assert!(chat.join("general", "client-1"));
+        assert!(chat.join("general", "client-2"));
+        assert!(admin.join("general", "client-9"));
+
+        let mut chat_members = chat.room_members("general");
+        chat_members.sort_unstable();
+        assert_eq!(
+            chat_members,
+            vec!["client-1".to_string(), "client-2".to_string()]
+        );
+        assert_eq!(admin.room_members("general"), vec!["client-9".to_string()]);
+
+        let delivered = {
+            let mut broadcast = chat.to("general");
+            broadcast.emit("notice", "hello chat")
+        };
+
+        assert_eq!(delivered, 2);
+        assert_eq!(
+            chat.events_for(&"client-1"),
+            vec![("notice".to_string(), "hello chat".to_string())]
+        );
+        assert_eq!(
+            chat.events_for(&"client-2"),
+            vec![("notice".to_string(), "hello chat".to_string())]
+        );
+        assert_eq!(admin.events_for(&"client-9"), Vec::<(String, String)>::new());
     }
 
     impl OnGatewayInit for DemoLifecycleGateway {
@@ -932,8 +1031,7 @@ mod tests {
         fn assert_helper_type<T>(_value: &T) {}
 
         let mut namespaces = NamespaceRegistry::new();
-        let client: ClientRoomMembership<'_, &'static str> =
-            namespaces.client("/chat", "client-1");
+        let client: ClientRoomMembership<'_, &'static str> = namespaces.client("/chat", "client-1");
         assert_helper_type(&client);
     }
 }

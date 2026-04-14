@@ -16,6 +16,9 @@ members = [
     "nivasa-common",
     "nivasa-websocket",
     "nivasa-cli",
+    "nivasa-scheduling",
+    "nivasa-graphql",
+    "benches",
 ]
 
 [workspace.package]
@@ -64,8 +67,19 @@ sha2 = "0.10"
 # Async traits
 async-trait = "0.1"
 
+# Scheduling
+chrono = { version = "0.4", features = ["clock"] }
+cron = "0.16.0"
+
+# GraphQL
+async-graphql = { version = "=7.0.17", default-features = false }
+
 # CLI
 clap = { version = "4", features = ["derive"] }
 
 # Testing
 tokio-test = "0.4"
+
+[profile.mutants]
+inherits = "test"
+debug = 0

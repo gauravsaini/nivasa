@@ -1,0 +1,7 @@
+error: `#[resolver]` only supports inherent methods
+ --> tests/trybuild/graphql_invalid_target.rs:4:5
+  |
+4 |     #[resolver("users")]
+  |     ^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `resolver` (in Nightly builds, run with -Z macro-backtrace for more info)

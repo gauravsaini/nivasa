@@ -10,7 +10,8 @@ use crate::openapi::{
 };
 use nivasa_common::HttpException;
 use nivasa_core::{
-    module::ModuleControllerRegistration, DependencyContainer, DiError, Module, ModuleMetadata,
+    module::{ModuleControllerRegistration, RouteThrottleRegistration},
+    DependencyContainer, DiError, Module, ModuleMetadata, OnApplicationShutdown,
 };
 use nivasa_filters::{ExceptionFilter, ExceptionFilterMetadata};
 use nivasa_guards::Guard;
@@ -21,8 +22,10 @@ use nivasa_interceptors::Interceptor;
 use nivasa_pipes::Pipe;
 use nivasa_routing::{RouteDispatchError, RouteMethod};
 use serde_json::{Map, Value};
+use std::any::type_name;
 use std::collections::HashSet;
 use std::future::Future;
+use std::io;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
@@ -171,6 +174,11 @@ impl ServerOptions {
         self.versioning = Some(versioning);
         self
     }
+
+    /// Return the listen address in host:port form for startup reporting.
+    pub fn listen_address(&self) -> String {
+        format_listen_address(&self.host, self.port)
+    }
 }
 
 impl Default for ServerOptions {
@@ -213,6 +221,29 @@ pub struct AppRoute {
     pub method: RouteMethod,
     pub path: String,
     pub handler: &'static str,
+    pub throttle: Option<RouteThrottleRegistration>,
+    pub skip_throttle: bool,
+}
+
+/// Startup reporting data for the root app shell.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppStartupReport {
+    pub banner: String,
+    pub root_module: &'static str,
+    pub routes_registered: usize,
+    pub listen_address: String,
+}
+
+impl AppStartupReport {
+    /// Return the report as display-ready startup log lines.
+    pub fn lines(&self) -> Vec<String> {
+        vec![
+            self.banner.clone(),
+            format!("root module loaded: {}", self.root_module),
+            format!("routes registered: {}", self.routes_registered),
+            format!("listen address: {}", self.listen_address),
+        ]
+    }
 }
 
 /// Errors raised while assembling the minimal application shell.
@@ -235,7 +266,10 @@ impl std::fmt::Display for AppBuildError {
                 write!(f, "duplicate route `{method} {path}` while building app")
             }
             Self::MissingRouteHandler { handler } => {
-                write!(f, "missing route handler `{handler}` while building app server")
+                write!(
+                    f,
+                    "missing route handler `{handler}` while building app server"
+                )
             }
         }
     }
@@ -343,6 +377,34 @@ impl<T> App<T> {
         &self.routes
     }
 
+    /// Build the startup report for banner and logging surfaces.
+    pub fn startup_report(&self) -> AppStartupReport {
+        AppStartupReport {
+            banner: startup_banner(),
+            root_module: type_name::<T>(),
+            routes_registered: self.routes.len(),
+            listen_address: self.bootstrap.listen_address(),
+        }
+    }
+
+    /// Return the startup report as display-ready log lines.
+    pub fn startup_lines(&self) -> Vec<String> {
+        self.startup_report().lines()
+    }
+
+    /// Run application shutdown hooks for testing or controlled teardown.
+    ///
+    /// This is only available when the root module actually exposes an
+    /// application shutdown hook. The app shell consumes itself and then
+    /// runs the root module shutdown callback.
+    pub fn close(self) -> Result<(), AppBuildError>
+    where
+        T: OnApplicationShutdown,
+    {
+        block_on(self.app_module.on_application_shutdown());
+        Ok(())
+    }
+
     /// Build an in-memory server from the resolved app routes.
     ///
     /// The adapter stays honest: routes come from the built app metadata, and
@@ -363,19 +425,49 @@ impl<T> App<T> {
             let handler = Arc::clone(&handler);
             let method = route.method.clone();
             let path = route.path.clone();
-            builder = builder
-                .route(method, path, move |request| (handler)(request))
-                .map_err(|error| match error {
-                    RouteDispatchError::DuplicateRoute { method, path } => {
-                        AppBuildError::DuplicateRoute { method, path }
-                    }
-                    RouteDispatchError::UnsupportedPatternSegment { path, .. } => {
-                        AppBuildError::DuplicateRoute {
-                            method: route.method.as_str().to_string(),
-                            path,
+            builder = if route.skip_throttle {
+                builder
+                    .route(method, path, move |request| (handler)(request))
+                    .map_err(|error| match error {
+                        RouteDispatchError::DuplicateRoute { method, path } => {
+                            AppBuildError::DuplicateRoute { method, path }
                         }
-                    }
-                })?;
+                        RouteDispatchError::UnsupportedPatternSegment { path, .. } => {
+                            AppBuildError::DuplicateRoute {
+                                method: route.method.as_str().to_string(),
+                                path,
+                            }
+                        }
+                    })?
+            } else if let Some(throttle) = route.throttle.clone() {
+                builder
+                    .route_with_throttle(method, path, move |request| (handler)(request), throttle)
+                    .map_err(|error| match error {
+                        RouteDispatchError::DuplicateRoute { method, path } => {
+                            AppBuildError::DuplicateRoute { method, path }
+                        }
+                        RouteDispatchError::UnsupportedPatternSegment { path, .. } => {
+                            AppBuildError::DuplicateRoute {
+                                method: route.method.as_str().to_string(),
+                                path,
+                            }
+                        }
+                    })?
+            } else {
+                builder
+                    .route(method, path, move |request| (handler)(request))
+                    .map_err(|error| match error {
+                        RouteDispatchError::DuplicateRoute { method, path } => {
+                            AppBuildError::DuplicateRoute { method, path }
+                        }
+                        RouteDispatchError::UnsupportedPatternSegment { path, .. } => {
+                            AppBuildError::DuplicateRoute {
+                                method: route.method.as_str().to_string(),
+                                path,
+                            }
+                        }
+                    })?
+            };
         }
 
         Ok(builder.build())
@@ -395,6 +487,11 @@ impl AppBootstrapConfig {
     /// Expose the global route prefix for bootstrap-time route registration.
     pub fn global_prefix(&self) -> Option<&str> {
         self.server.global_prefix.as_deref()
+    }
+
+    /// Return the configured listen address for startup reporting.
+    pub fn listen_address(&self) -> String {
+        self.server.listen_address()
     }
 
     /// Expose the configured versioning surface for bootstrap-time route setup.
@@ -1066,6 +1163,26 @@ fn normalize_version_token(version: &str) -> String {
     format!("v{}", stripped)
 }
 
+fn startup_banner() -> String {
+    format!(
+        r#" _   _ _ _
+| \ | (_) |__   ___  ___  ___
+|  \| | | '_ \ / _ \/ __|/ _ \
+| |\  | | | | |  __/\__ \  __/
+|_| \_|_|_| |_|\___||___/\___|
+Nivasa v{}"#,
+        env!("CARGO_PKG_VERSION")
+    )
+}
+
+fn format_listen_address(host: &str, port: u16) -> String {
+    if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
 fn resolve_routes(
     bootstrap: &AppBootstrapConfig,
     controller_registrations: &[ModuleControllerRegistration],
@@ -1089,6 +1206,8 @@ fn resolve_routes(
                 method,
                 path,
                 handler: route.handler,
+                throttle: route.throttle.clone(),
+                skip_throttle: route.skip_throttle,
             });
         }
     }

@@ -4,11 +4,15 @@ use http::{HeaderValue, Method, StatusCode};
 use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
+use nivasa_common::HttpException;
+use nivasa_filters::{ExceptionFilter, ExceptionFilterFuture, ExceptionFilterMetadata, HttpArgumentsHost};
+use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 use nivasa_http::{
     Body, HelmetMiddleware, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse,
     NivasaServer, RequestIdMiddleware,
 };
 use nivasa_routing::RouteMethod;
+use serde_json::json;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -53,6 +57,62 @@ impl NivasaMiddleware for ModuleScopedMiddleware {
     async fn use_(&self, mut req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
         req.body_mut().clone_from(&Body::text("module"));
         next.run(req).await
+    }
+}
+
+struct ErroringGuard;
+
+impl Guard for ErroringGuard {
+    fn can_activate<'a>(&'a self, _context: &'a GuardExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async { Err(HttpException::forbidden("guard blocked")) })
+    }
+}
+
+struct RequestContextEchoFilter;
+
+impl ExceptionFilterMetadata for RequestContextEchoFilter {
+    fn exception_type(&self) -> Option<&'static str> {
+        Some(std::any::type_name::<HttpException>())
+    }
+}
+
+impl ExceptionFilter<HttpException, NivasaResponse> for RequestContextEchoFilter {
+    fn catch<'a>(
+        &'a self,
+        exception: HttpException,
+        host: HttpArgumentsHost,
+    ) -> ExceptionFilterFuture<'a, NivasaResponse> {
+        Box::pin(async move {
+            let request_context = host.request_context().expect("request context should exist");
+            let authorization = request_context
+                .custom_data("authorization")
+                .and_then(|value| value.as_str())
+                .unwrap_or("missing");
+            let request_id = request_context
+                .custom_data("request_id")
+                .and_then(|value| value.as_str())
+                .unwrap_or("missing");
+            let user_id = request_context
+                .custom_data("user_id")
+                .and_then(|value| value.as_str())
+                .unwrap_or("missing");
+            let module_name = request_context
+                .custom_data("module_name")
+                .and_then(|value| value.as_str())
+                .unwrap_or("missing");
+
+            NivasaResponse::new(
+                StatusCode::from_u16(exception.status_code)
+                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                json!({
+                    "authorization": authorization,
+                    "requestId": request_id,
+                    "userId": user_id,
+                    "moduleName": module_name,
+                    "message": exception.message,
+                }),
+            )
+        })
     }
 }
 
@@ -593,6 +653,107 @@ async fn server_short_circuits_when_middleware_does_not_delegate(
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body.as_ref(), b"blocked by middleware");
     assert!(!called.load(Ordering::SeqCst));
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_seeds_request_id_before_short_circuiting_middleware(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .middleware(BlockingMiddleware)
+        .route(RouteMethod::Get, "/blocked", |_| NivasaResponse::text("handler"))?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("http://127.0.0.1:{port}/blocked"))
+        .body(Full::new(Bytes::new()))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let response_id = response
+        .headers()
+        .get("x-request-id")
+        .expect("request id should be attached to short-circuit response")
+        .to_str()
+        .expect("request id should be valid ascii")
+        .to_owned();
+    let body = response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    Uuid::parse_str(&response_id).expect("seeded request id should be a UUID");
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body.as_ref(), b"blocked by middleware");
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_propagates_request_context_into_guard_error_filters(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .use_global_guard(ErroringGuard)
+        .use_global_filter(RequestContextEchoFilter)
+        .route_with_module_middlewares::<ModuleScopedMiddleware, _>(
+            RouteMethod::Get,
+            "/guarded",
+            vec![ModuleScopedMiddleware],
+            |_| NivasaResponse::text("ok"),
+        )?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("http://127.0.0.1:{port}/guarded"))
+        .header("authorization", "Bearer header.payload.signature")
+        .header("x-user-id", "user-7")
+        .body(Full::new(Bytes::new()))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let response_id = response
+        .headers()
+        .get("x-request-id")
+        .expect("request id should be attached to error response")
+        .to_str()
+        .expect("request id should be valid ascii")
+        .to_owned();
+    let body = response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    Uuid::parse_str(&response_id).expect("seeded request id should be a UUID");
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body)?,
+        json!({
+            "authorization": "Bearer header.payload.signature",
+            "requestId": response_id,
+            "userId": "user-7",
+            "moduleName": "ModuleScopedMiddleware",
+            "message": "guard blocked"
+        })
+    );
     Ok(())
 }
 

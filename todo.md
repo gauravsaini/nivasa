@@ -567,14 +567,14 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 3.4 — Rate Limiting / Throttling
 
-- [ ] Implement `ThrottlerModule` (configurable: TTL, limit per window)
+- [x] Implement `ThrottlerModule` (configurable: TTL, limit per window)
 - [x] Implement `ThrottlerGuard` (apply via `#[guard(ThrottlerGuard)]`)
-- [ ] Implement in-memory store (default)
-- [ ] Define `ThrottlerStorage` trait for pluggable backends (Redis, etc.)
-- [ ] Implement `#[throttle(limit = 10, ttl = 60)]` per-route override
-- [ ] Implement `#[skip_throttle]` to exempt specific routes
-- [ ] Test rate limit enforcement (N+1th request returns 429)
-- [ ] Test per-route override
+- [x] Implement in-memory store (default)
+- [x] Define `ThrottlerStorage` trait for pluggable backends (Redis, etc.)
+- [x] Implement `#[throttle(limit = 10, ttl = 60)]` per-route override
+- [x] Implement `#[skip_throttle]` to exempt specific routes
+- [x] Test rate limit enforcement (N+1th request returns 429)
+- [x] Test per-route override
 
 ---
 
@@ -912,27 +912,27 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 7.2 — Event Emitter Module
 
-- [ ] Implement `EventEmitterModule`
-- [ ] Implement `EventEmitter` injectable service
-- [ ] Implement `#[on_event("event_name")]` decorator on handler methods
-- [ ] Implement `event_emitter.emit("event_name", payload)` — fire event
-- [ ] Support async event handlers
-- [ ] Support wildcard listeners (`#[on_event("user.*")]`)
-- [ ] Test event emission and handler invocation
-- [ ] Test multiple handlers for same event
-- [ ] Test wildcard matching
+- [x] Implement `EventEmitterModule`
+- [x] Implement `EventEmitter` injectable service
+- [x] Implement `#[on_event("event_name")]` decorator on handler methods
+- [x] Implement `event_emitter.emit("event_name", payload)` — fire event
+- [x] Support async event handlers
+- [x] Support wildcard listeners (`#[on_event("user.*")]`)
+- [x] Test event emission and handler invocation
+- [x] Test multiple handlers for same event
+- [x] Test wildcard matching
 
 ### 7.3 — Scheduling Module
 
-- [ ] Implement `ScheduleModule`
-- [ ] Implement `#[cron("0 */5 * * * *")]` decorator — cron-based scheduling
-- [ ] Implement `#[interval(5000)]` decorator — run every N ms
-- [ ] Implement `#[timeout(3000)]` decorator — run once after N ms
-- [ ] Add `cron` crate dependency for cron expression parsing
-- [ ] Support dynamic scheduling (add/remove jobs at runtime)
-- [ ] Test cron job fires at expected times
-- [ ] Test interval job fires repeatedly
-- [ ] Test timeout job fires once
+- [x] Implement `ScheduleModule`
+- [x] Implement `#[cron("0 */5 * * * *")]` decorator — cron-based scheduling
+- [x] Implement `#[interval(5000)]` decorator — run every N ms
+- [x] Implement `#[timeout(3000)]` decorator — run once after N ms
+- [x] Add `cron` crate dependency for cron expression parsing
+- [x] Support dynamic scheduling (add/remove jobs at runtime)
+- [x] Test cron job fires at expected times
+- [x] Test interval job fires repeatedly
+- [x] Test timeout job fires once
 
 ### 7.4 — Health Checks
 
@@ -971,19 +971,20 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 7.6 — GraphQL Support (Optional, Deferred)
 
-- [ ] Evaluate `async-graphql` crate for integration
-- [ ] Implement `GraphQLModule` wrapping async-graphql
-- [ ] Implement `#[resolver]` decorator
-- [ ] Implement `#[query]`, `#[mutation]`, `#[subscription]` decorators
-- [ ] Implement playground UI endpoint
-- [ ] Implement federation support (stretch)
+- [x] Implement minimal GraphQL HTTP endpoint and playground wrapper
+- [x] Evaluate `async-graphql` crate for integration
+- [x] Implement `GraphQLModule` wrapping async-graphql
+- [x] Implement `#[resolver]` decorator
+- [x] Implement `#[query]`, `#[mutation]`, `#[subscription]` decorators
+- [x] Implement playground UI endpoint
+- [x] Implement federation support (stretch)
 
 ---
 
 ## Phase 8: NestApplication Entry Point (`nivasa` main crate)
 
 - [x] Implement `NestApplication::create(AppModule)` factory method
-- [ ] Implement `.build() -> Result<App>` — resolve all modules, DI, and routes
+- [x] Implement `.build() -> Result<App>` — resolve all modules, DI, and routes
 - [ ] Implement `.listen(ServerOptions) -> Result<()>` — start HTTP server
 - [x] Implement `ServerOptions` struct: `port`, `host`, `cors`, `global_prefix`, `versioning`
 - [x] Introduce `AppBootstrapConfig` boundary for server-only bootstrap config
@@ -995,9 +996,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement `.enable_cors()` — minimal transport-side CORS bridge on `ServerOptions`; richer middleware/CorsOptions work remains future
 - [x] Implement `.enable_versioning(VersioningOptions)` — API versioning config
 - [x] Implement `.use_(Middleware)` — apply global middleware (bootstrap-only facade via `AppBootstrapConfig::use_middleware(...)`)
-- [ ] Implement startup banner with ASCII art + version
-- [ ] Implement startup logging: routes registered, modules loaded, listen address
-- [ ] Implement `.close()` — graceful shutdown API (for testing)
+- [x] Implement startup banner with ASCII art + version
+- [x] Implement startup logging: routes registered, root module loaded, listen address
+- [x] Implement `.close()` — graceful shutdown API (for testing)
 
 ---
 
@@ -1041,31 +1042,32 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 10.1 — Testing
 - [ ] Achieve >90% code coverage across all crates
+  - recent HTTP coverage-gap work added explicit coverage for request-context authorization seeding in `nivasa-http/src/server.rs` and the guard-error request path, but the `>90%` threshold is still unproven
 - [x] Add in-process request lifecycle integration coverage (middleware → guard → interceptor → handler → Done)
 - [x] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
 - [x] Write integration tests: module composition (nested modules, imports/exports)
 - [x] Write integration tests: error handling pipeline (exception → filter → response)
-- [ ] Write integration tests: authentication flow (login → JWT → protected route)
+- [x] Write integration tests: authentication flow (login → JWT → protected route)
 - [x] Write integration tests: validation flow (invalid DTO → ValidationPipe → 400 response)
-- [ ] Write integration tests: WebSocket lifecycle
+- [x] Write integration tests: WebSocket lifecycle
 - [x] **SCXML compliance tests:** verify every state in every statechart is reachable by integration tests
 - [x] **SCXML compliance tests:** verify every error transition is exercised (guard denied, validation error, handler error, etc.)
 - [x] **SCXML compliance tests:** verify StatechartTracer log exactly matches expected transition sequence for each test scenario
-- [ ] Set up mutation testing (cargo-mutants) for critical paths
+- [x] Set up mutation testing (cargo-mutants) for critical paths
 - [x] Run `cargo clippy` with all warnings as errors
 - [x] Run `cargo deny check` for license/vulnerability issues
 - [x] Run `cargo audit` for security advisories
 
 ### 10.2 — Benchmarking
-- [ ] Set up benchmark harness (criterion or divan)
+- [x] Set up benchmark harness (criterion or divan)
 - [ ] Benchmark hello-world GET (JSON response) vs Actix Web
 - [ ] Benchmark hello-world GET (JSON response) vs Axum
 - [ ] Benchmark DI container resolution overhead (1, 10, 100 providers)
 - [ ] Benchmark routing performance (10, 100, 1000 routes)
 - [ ] Benchmark full middleware + guard + interceptor pipeline overhead
 - [ ] Benchmark startup time with many modules
-- [ ] Document benchmark results in `BENCHMARKS.md`
-- [ ] Set up CI benchmark regression detection
+- [x] Document benchmark results in `BENCHMARKS.md`
+- [x] Set up CI benchmark regression detection
 
 ### 10.3 — Release Preparation
 - [ ] Final API review: ensure public APIs are consistent and well-named

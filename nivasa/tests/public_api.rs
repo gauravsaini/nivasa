@@ -8,8 +8,9 @@ use nivasa::prelude::{
     all, body, controller, custom_param, delete, file, files, get, head, header, headers,
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
     req, res, scxml_handler, session, App, AppBuildError, AppRoute, ArgumentMetadata,
-    ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost, Middleware,
-    NivasaMiddlewareLayer, Pipe, Reflector, WsArgumentsHost,
+    ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, GraphQLError, GraphQLModule,
+    GraphQLRequest, GraphQLResponse, HttpArgumentsHost, Middleware, NivasaMiddlewareLayer, Pipe,
+    Reflector, WsArgumentsHost,
 };
 use nivasa_http::TestClient;
 use std::any::TypeId;
@@ -152,6 +153,21 @@ fn crate_root_reexports_nest_application_build_as_runtime_shell() {
 }
 
 #[test]
+fn nest_application_reports_startup_banner_routes_and_listen_address() {
+    let app = nivasa::NestApplication::create(DemoModule)
+        .build()
+        .expect("build should assemble the root module shell");
+    let report = app.startup_report();
+
+    assert!(report.banner.contains("Nivasa v"));
+    assert!(report.banner.contains(env!("CARGO_PKG_VERSION")));
+    assert!(report.root_module.contains("DemoModule"));
+    assert_eq!(report.routes_registered, 1);
+    assert_eq!(report.listen_address, "127.0.0.1:3000");
+    assert_eq!(app.startup_lines().len(), 4);
+}
+
+#[test]
 fn nest_application_can_bridge_built_routes_into_test_client() {
     let app = nivasa::NestApplication::create(DemoModule)
         .build()
@@ -214,6 +230,24 @@ fn nest_application_preflight_fails_before_module_configure() {
     assert_eq!(configure_calls.load(Ordering::SeqCst), 0);
 }
 
+#[test]
+fn nest_application_close_invokes_module_shutdown_hook() {
+    let shutdown_calls = Arc::new(AtomicUsize::new(0));
+    let module = ShutdownModule {
+        shutdown_calls: Arc::clone(&shutdown_calls),
+    };
+
+    let app = nivasa::NestApplication::create(module)
+        .build()
+        .expect("build should assemble the root module shell");
+
+    assert_eq!(shutdown_calls.load(Ordering::SeqCst), 0);
+
+    app.close().expect("close should run the module shutdown hook");
+
+    assert_eq!(shutdown_calls.load(Ordering::SeqCst), 1);
+}
+
 #[cfg(feature = "config")]
 #[test]
 fn nest_application_preflight_can_validate_required_config_keys() {
@@ -236,11 +270,13 @@ fn nest_application_preflight_can_validate_required_config_keys() {
             loaded
                 .get("PORT")
                 .and_then(|port| {
-                    port.parse::<u16>().err().map(|_| ConfigValidationIssue::InvalidValue {
-                        key: "PORT".to_string(),
-                        value: port.to_string(),
-                        expected: "unsigned 16-bit integer".to_string(),
-                    })
+                    port.parse::<u16>()
+                        .err()
+                        .map(|_| ConfigValidationIssue::InvalidValue {
+                            key: "PORT".to_string(),
+                            value: port.to_string(),
+                            expected: "unsigned 16-bit integer".to_string(),
+                        })
                 })
                 .into_iter()
                 .collect()
@@ -258,11 +294,11 @@ fn nest_application_preflight_can_validate_required_config_keys() {
 
     let result = nivasa::NestApplication::create(module)
         .with_preflight(move |_module, _bootstrap| {
-            ConfigModule::validate_schema::<StartupSchema>(&loaded).map(|_| ()).map_err(|error| {
-                AppBuildError::PreflightValidation {
+            ConfigModule::validate_schema::<StartupSchema>(&loaded)
+                .map(|_| ())
+                .map_err(|error| AppBuildError::PreflightValidation {
                     message: error.to_string(),
-                }
-            })
+                })
         })
         .build();
 
@@ -364,6 +400,21 @@ fn crate_root_reexports_pipe_surface_as_placeholder_crate() {
 #[allow(unused_imports)]
 fn crate_root_reexports_filter_surface_as_placeholder_crate() {
     use nivasa::filters as filters_crate;
+}
+
+#[test]
+fn crate_root_reexports_graphql_http_surface() {
+    fn _assert_graphql_request_is_in_scope(_: Option<GraphQLRequest>) {}
+    fn _assert_graphql_response_is_in_scope(_: Option<GraphQLResponse>) {}
+    fn _assert_graphql_error_is_in_scope(_: Option<GraphQLError>) {}
+    fn _assert_graphql_module_is_in_scope(_: Option<GraphQLModule>) {}
+
+    let module = GraphQLModule::new(|request: GraphQLRequest| {
+        GraphQLResponse::data(serde_json::json!({ "query": request.query }))
+    })
+    .title("GraphQL");
+
+    let _ = module.endpoint_path("/graphql").playground_path("/graphql");
 }
 
 #[test]
@@ -502,12 +553,64 @@ impl Module for PreflightModule {
     }
 }
 
+struct ShutdownModule {
+    shutdown_calls: Arc<AtomicUsize>,
+}
+
+impl Module for ShutdownModule {
+    fn metadata(&self) -> ModuleMetadata {
+        ModuleMetadata::default()
+    }
+
+    fn configure<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        _container: &'life1 DependencyContainer,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DiError>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn controller_registrations(&self) -> Vec<ModuleControllerRegistration> {
+        Vec::new()
+    }
+}
+
+impl OnApplicationShutdown for ShutdownModule {
+    fn on_application_shutdown<'life0, 'async_trait>(
+        &'life0 self,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        let shutdown_calls = Arc::clone(&self.shutdown_calls);
+
+        Box::pin(async move {
+            shutdown_calls.fetch_add(1, Ordering::SeqCst);
+        })
+    }
+}
+
 #[test]
 fn bootstrap_config_exposes_a_normalized_global_prefix_for_route_setup() {
     let bootstrap =
         nivasa::AppBootstrapConfig::from(ServerOptions::builder().global_prefix(" api/ ").build());
 
     assert_eq!(bootstrap.global_prefix(), Some("/api"));
+}
+
+#[test]
+fn bootstrap_config_exposes_a_listen_address_for_startup_reporting() {
+    let bootstrap = nivasa::AppBootstrapConfig::from(
+        ServerOptions::builder().host("0.0.0.0").port(8080).build(),
+    );
+
+    assert_eq!(bootstrap.listen_address(), "0.0.0.0:8080");
+    assert_eq!(bootstrap.server.listen_address(), "0.0.0.0:8080");
 }
 
 #[test]

@@ -50,8 +50,9 @@ pub mod testing;
 // Re-exports
 pub use di::{DependencyContainer, DiError, Provider, ProviderScope};
 pub use module::{
-    Module, ModuleEntry, ModuleMetadata, ModuleRegistry, ModuleRegistryError,
-    OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy, OnModuleInit,
+    EventEmitter, EventEmitterModule, Module, ModuleEntry, ModuleMetadata, ModuleRegistry,
+    ModuleRegistryError, OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy,
+    OnModuleInit,
 };
 pub use reflector::Reflector;
 pub use testing::{MockProvider, Test, TestingModule, TestingModuleBuilder};

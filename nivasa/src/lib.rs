@@ -66,6 +66,7 @@ pub mod prelude {
         ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost, WsArgumentsHost,
     };
     pub use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
+    pub use nivasa_http::graphql::{GraphQLError, GraphQLModule, GraphQLRequest, GraphQLResponse};
     pub use nivasa_http::upload::MultipartLimits;
     pub use nivasa_http::HttpExceptionFilter;
     pub use nivasa_http::LogContext;
@@ -131,6 +132,7 @@ pub use nivasa_filters::{
     ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost, WsArgumentsHost,
 };
 pub use nivasa_guards::{self, ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
+pub use nivasa_http::graphql::{GraphQLError, GraphQLModule, GraphQLRequest, GraphQLResponse};
 pub use nivasa_http::upload::MultipartLimits;
 pub use nivasa_http::HttpExceptionFilter;
 pub use nivasa_http::LogContext;

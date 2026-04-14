@@ -1,0 +1,24 @@
+[package]
+name = "nivasa-benchmarks"
+description = "Nivasa framework benchmark harness"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+bytes = { workspace = true }
+criterion = "0.5"
+http = { workspace = true }
+http-body-util = { workspace = true }
+hyper-util = { workspace = true }
+nivasa-http = { path = "../nivasa-http" }
+nivasa-routing = { path = "../nivasa-routing" }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+[[bench]]
+name = "hello_world"
+path = "hello_world.rs"
+harness = false

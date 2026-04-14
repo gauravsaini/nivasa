@@ -1,0 +1,5 @@
+error: `#[subscription]` expects a non-empty GraphQL field name like `#[subscription("field_name")]`
+ --> tests/trybuild/graphql_empty_name.rs:6:20
+  |
+6 |     #[subscription("")]
+  |                    ^^

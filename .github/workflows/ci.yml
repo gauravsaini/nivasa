@@ -64,6 +64,22 @@ jobs:
       - name: Cargo Doc
         run: cargo doc --workspace --no-deps
 
+  benchmarks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run benchmark smoke gate
+        run: BENCHMARK_HELLO_WORLD_MAX_UPPER_US=5000 bash benches/check_hello_world_budget.sh
+
   coverage:
     runs-on: ubuntu-latest
     steps:
@@ -81,3 +97,39 @@ jobs:
 
       - name: Generate Coverage
         run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --no-report
+
+  mutants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+
+      - name: Capture changed code
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}" --depth=1
+            diff_base="$(git merge-base HEAD "origin/${{ github.base_ref }}")"
+          else
+            diff_base="$(git rev-parse HEAD^)"
+          fi
+          git diff "$diff_base"...HEAD > /tmp/mutants.diff
+
+      - name: Run cargo-mutants
+        run: cargo mutants --baseline=skip --in-place --in-diff /tmp/mutants.diff --test-workspace --profile=mutants --timeout 300
