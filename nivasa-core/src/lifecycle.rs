@@ -30,7 +30,7 @@
 //!
 //! #[async_trait]
 //! impl OnApplicationShutdown for AppHooks {
-//!     async fn on_application_shutdown(&self, _signal: Option<&str>) {}
+//!     async fn on_application_shutdown(&self) {}
 //! }
 //! ```
 
@@ -93,7 +93,7 @@ pub trait OnApplicationBootstrap: Send + Sync {
     async fn on_application_bootstrap(&self);
 }
 
-/// Called when the application receives a shutdown signal.
+/// Called when the application is shutting down.
 /// Maps to `<onentry>` of the `Draining` state in `nivasa.application.scxml`.
 ///
 /// ```rust,no_run
@@ -104,12 +104,10 @@ pub trait OnApplicationBootstrap: Send + Sync {
 ///
 /// #[async_trait]
 /// impl OnApplicationShutdown for AppHooks {
-///     async fn on_application_shutdown(&self, signal: Option<&str>) {
-///         let _ = signal;
-///     }
+///     async fn on_application_shutdown(&self) {}
 /// }
 /// ```
 #[async_trait]
 pub trait OnApplicationShutdown: Send + Sync {
-    async fn on_application_shutdown(&self, signal: Option<&str>);
+    async fn on_application_shutdown(&self);
 }
