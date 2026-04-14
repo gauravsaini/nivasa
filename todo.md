@@ -1042,6 +1042,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 10.1 — Testing
 - [ ] Achieve >90% code coverage across all crates
+  - recent HTTP coverage-gap work added explicit coverage for request-context authorization seeding in `nivasa-http/src/server.rs` and the guard-error request path, but the `>90%` threshold is still unproven
 - [x] Add in-process request lifecycle integration coverage (middleware → guard → interceptor → handler → Done)
 - [x] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
 - [x] Write integration tests: module composition (nested modules, imports/exports)
