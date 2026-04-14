@@ -8,18 +8,25 @@ use nivasa::prelude::{
     all, body, controller, custom_param, delete, file, files, get, head, header, headers,
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
     req, res, scxml_handler, session, App, AppBuildError, AppRoute, ArgumentMetadata,
-    ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, GraphQLError, GraphQLModule,
-    GraphQLRequest, GraphQLResponse, HttpArgumentsHost, Middleware, NivasaMiddlewareLayer, Pipe,
-    Reflector, WsArgumentsHost,
+    ArgumentsHost, EmptyMutation, EmptySubscription, ExceptionFilter, ExceptionFilterFuture,
+    GraphQLError, GraphQLCoreModule, GraphQLModule, GraphQLRequest, GraphQLResponse,
+    GraphQLSchema, HttpArgumentsHost, Middleware, NivasaMiddlewareLayer, Pipe, Reflector,
+    TestClient, TestResponse, WsArgumentsHost,
 };
-use nivasa_http::TestClient;
+use bytes::Bytes;
+use http_body_util::{BodyExt, Empty};
+use hyper_util::client::legacy::{connect::HttpConnector, Client};
+use hyper_util::rt::TokioExecutor;
 use std::any::TypeId;
+use std::error::Error;
 use std::future::Future;
 use std::pin::Pin;
+use std::net::TcpListener as StdTcpListener;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use tokio::time::{sleep, Duration};
 
 #[test]
 fn crate_root_reexports_app_config_builders() {
@@ -353,6 +360,8 @@ fn prelude_reexports_core_traits_macros_and_http_types() {
     fn _assert_middleware_trait_name_is_in_scope<T: Middleware>() {}
     fn _assert_pipeline_type_is_in_scope(_: Option<RequestPipeline>) {}
     fn _assert_server_builder_is_in_scope(_: Option<NivasaServerBuilder>) {}
+    fn _assert_test_client_is_in_scope(_: Option<TestClient>) {}
+    fn _assert_test_response_is_in_scope(_: Option<TestResponse>) {}
     fn _assert_runtime_module_type_is_in_scope(_: Option<ModuleRuntime<DemoModule>>) {}
 
     fn _asserts_controller_trait_name_is_in_scope<T: Controller>() {}
@@ -404,15 +413,22 @@ fn crate_root_reexports_filter_surface_as_placeholder_crate() {
 
 #[test]
 fn crate_root_reexports_graphql_http_surface() {
+    fn _assert_graphql_schema_is_in_scope(
+        _: Option<GraphQLSchema<EmptyMutation, EmptyMutation, EmptySubscription>>,
+    ) {
+    }
+    fn _assert_core_graphql_module_is_in_scope(
+        _: Option<GraphQLCoreModule<EmptyMutation, EmptyMutation, EmptySubscription>>,
+    ) {
+    }
     fn _assert_graphql_request_is_in_scope(_: Option<GraphQLRequest>) {}
     fn _assert_graphql_response_is_in_scope(_: Option<GraphQLResponse>) {}
     fn _assert_graphql_error_is_in_scope(_: Option<GraphQLError>) {}
     fn _assert_graphql_module_is_in_scope(_: Option<GraphQLModule>) {}
 
-    let module = GraphQLModule::new(|request: GraphQLRequest| {
-        GraphQLResponse::data(serde_json::json!({ "query": request.query }))
-    })
-    .title("GraphQL");
+    let schema = GraphQLSchema::build(EmptyMutation, EmptyMutation, EmptySubscription).finish();
+    let module = GraphQLModule::from_schema(schema)
+        .title("GraphQL");
 
     let _ = module.endpoint_path("/graphql").playground_path("/graphql");
 }
@@ -517,6 +533,50 @@ impl Module for DemoModule {
         vec![ModuleControllerRegistration::new(
             TypeId::of::<DemoController>(),
             vec![ControllerRouteRegistration::new("GET", "health", "health")],
+            Vec::new(),
+        )]
+    }
+}
+
+#[controller("/listen")]
+struct ListenController;
+
+#[impl_controller]
+impl ListenController {
+    #[get("/health")]
+    fn health(&self) -> NivasaResponse {
+        NivasaResponse::text("listen-ready")
+    }
+}
+
+struct ListenModule;
+
+impl Module for ListenModule {
+    fn metadata(&self) -> ModuleMetadata {
+        ModuleMetadata::default().with_controllers(vec![TypeId::of::<ListenController>()])
+    }
+
+    fn configure<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        _container: &'life1 DependencyContainer,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DiError>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn controller_registrations(&self) -> Vec<ModuleControllerRegistration> {
+        vec![ModuleControllerRegistration::new(
+            TypeId::of::<ListenController>(),
+            ListenController::__nivasa_controller_routes()
+                .into_iter()
+                .map(|(method, path, handler)| {
+                    ControllerRouteRegistration::new(method, path, handler)
+                })
+                .collect(),
             Vec::new(),
         )]
     }
@@ -655,6 +715,54 @@ fn bootstrap_config_can_forward_global_middleware_into_the_server_builder() {
         .expect("route registration should succeed");
 
     assert_builder(builder);
+}
+
+fn free_port() -> u16 {
+    StdTcpListener::bind("127.0.0.1:0")
+        .expect("must bind an ephemeral port")
+        .local_addr()
+        .expect("must inspect ephemeral addr")
+        .port()
+}
+
+async fn wait_for_server(port: u16) {
+    for _ in 0..50 {
+        if tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .is_ok()
+        {
+            return;
+        }
+
+        sleep(Duration::from_millis(20)).await;
+    }
+
+    panic!("server did not become ready");
+}
+
+#[tokio::test]
+async fn nest_application_listen_starts_http_server_from_registered_controller_handlers(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let app = nivasa::NestApplication::create(ListenModule);
+    let server_options = ServerOptions::builder().host("127.0.0.1").port(port).build();
+
+    let server_task = tokio::spawn(async move { app.listen(server_options).await });
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Empty<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let uri = format!("http://127.0.0.1:{port}/listen/health").parse()?;
+    let response = client.get(uri).await?;
+
+    assert_eq!(response.status().as_u16(), 200);
+    let body = response.into_body().collect().await?.to_bytes();
+    assert_eq!(body, Bytes::from_static(b"listen-ready"));
+
+    server_task.abort();
+    let _ = server_task.await;
+
+    Ok(())
 }
 
 #[test]

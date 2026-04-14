@@ -66,7 +66,11 @@ pub mod prelude {
         ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost, WsArgumentsHost,
     };
     pub use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
-    pub use nivasa_http::graphql::{GraphQLError, GraphQLModule, GraphQLRequest, GraphQLResponse};
+    pub use nivasa_http::graphql::{
+        EmptyMutation, EmptySubscription, GraphQLError, GraphQLCoreModule,
+        GraphQLCoreRequest, GraphQLCoreResponse, GraphQLModule, GraphQLRequest, GraphQLResponse,
+        GraphQLSchema,
+    };
     pub use nivasa_http::upload::MultipartLimits;
     pub use nivasa_http::HttpExceptionFilter;
     pub use nivasa_http::LogContext;
@@ -74,6 +78,7 @@ pub mod prelude {
     pub use nivasa_http::LoggerModule;
     pub use nivasa_http::LoggerOptions;
     pub use nivasa_http::LoggerService;
+    pub use nivasa_http::testing::{TestClient, TestResponse};
     pub use nivasa_http::NivasaMiddlewareLayer;
     pub use nivasa_http::TowerServiceMiddleware;
     pub use nivasa_http::{
@@ -132,7 +137,10 @@ pub use nivasa_filters::{
     ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, HttpArgumentsHost, WsArgumentsHost,
 };
 pub use nivasa_guards::{self, ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
-pub use nivasa_http::graphql::{GraphQLError, GraphQLModule, GraphQLRequest, GraphQLResponse};
+pub use nivasa_http::graphql::{
+    EmptyMutation, EmptySubscription, GraphQLError, GraphQLCoreModule, GraphQLCoreRequest,
+    GraphQLCoreResponse, GraphQLModule, GraphQLRequest, GraphQLResponse, GraphQLSchema,
+};
 pub use nivasa_http::upload::MultipartLimits;
 pub use nivasa_http::HttpExceptionFilter;
 pub use nivasa_http::LogContext;
@@ -140,6 +148,7 @@ pub use nivasa_http::LoggerFormat;
 pub use nivasa_http::LoggerModule;
 pub use nivasa_http::LoggerOptions;
 pub use nivasa_http::LoggerService;
+pub use nivasa_http::testing::{TestClient, TestResponse};
 pub use nivasa_http::NivasaMiddlewareLayer;
 pub use nivasa_http::TowerServiceMiddleware;
 pub use nivasa_http::{
