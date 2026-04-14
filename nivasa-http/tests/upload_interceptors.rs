@@ -74,3 +74,41 @@ fn file_interceptor_rejects_unknown_fields_when_restricted() {
         }
     );
 }
+
+#[test]
+fn file_interceptor_rejects_whole_stream_limits_before_parsing() {
+    let (content_type, body) = multipart_body(&[(
+        "avatar",
+        "avatar.png",
+        Some("image/png"),
+        b"png-data-too-big",
+    )]);
+
+    let error = FileInterceptor::new("avatar")
+        .with_limits(MultipartLimits::new().whole_stream(8))
+        .extract_from_bytes(&content_type, &body)
+        .expect_err("oversized multipart stream should be rejected");
+
+    assert_eq!(
+        error,
+        UploadInterceptError::StreamTooLarge {
+            limit: 8,
+            actual: body.len(),
+        }
+    );
+}
+
+#[test]
+fn file_interceptor_rejects_missing_mime_type_when_restricted() {
+    let (content_type, body) = multipart_body(&[("avatar", "avatar.bin", None, b"binary")]);
+
+    let error = FileInterceptor::new("avatar")
+        .with_limits(MultipartLimits::new().allowed_mime_types(["image/png"]))
+        .extract_from_bytes(&content_type, &body)
+        .expect_err("missing mime type should be rejected when restricted");
+
+    assert_eq!(
+        error,
+        UploadInterceptError::DisallowedMimeType { mime_type: None }
+    );
+}
