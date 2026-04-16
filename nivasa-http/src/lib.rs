@@ -31,23 +31,18 @@
 //! helpers.
 
 mod body;
-mod request;
-mod response;
 pub mod graphql;
 mod health;
 mod logging;
 mod pipeline;
+mod request;
+mod response;
 mod server;
 pub mod testing;
 mod throttling;
 pub mod upload;
 
 pub use body::{Body, Html, Text};
-pub use request::{FromRequest, Json, NivasaRequest, Query, RequestExtractError};
-pub use response::{
-    ControllerResponse, Download, HttpExceptionFilter, IntoResponse, NivasaResponse,
-    NivasaResponseBuilder, Redirect, Sse, SseEvent, StreamBody,
-};
 pub use graphql::{GraphQLError, GraphQLModule, GraphQLRequest, GraphQLResponse};
 pub use health::{
     DatabaseHealthIndicator, DiskHealthIndicator, HealthCheckResult, HealthCheckService,
@@ -60,6 +55,11 @@ pub use logging::{
     LoggerService,
 };
 pub use nivasa_core::module::RouteThrottleRegistration;
+pub use request::{FromRequest, Json, NivasaRequest, Query, RequestExtractError};
+pub use response::{
+    ControllerResponse, Download, HttpExceptionFilter, IntoResponse, NivasaResponse,
+    NivasaResponseBuilder, Redirect, Sse, SseEvent, StreamBody,
+};
 pub use server::{CorsOptions, GlobalFilterBinding};
 pub use throttling::{
     InMemoryThrottlerStorage, ThrottlerGuard, ThrottlerModule, ThrottlerOptions,
@@ -82,9 +82,27 @@ use flate2::Compression;
 use http::header::CONTENT_TYPE;
 use nivasa_common::HttpException;
 use serde::de::DeserializeOwned;
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
+use http::Response;
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
+use http::header::HeaderValue;
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
+use std::io::Write;
 use std::{
-    convert::Infallible,
     collections::HashMap,
+    convert::Infallible,
     fmt,
     future::Future,
     pin::Pin,
@@ -92,12 +110,6 @@ use std::{
     task::{Context, Poll},
     time::Instant,
 };
-#[cfg(any(
-    feature = "compression-gzip",
-    feature = "compression-deflate",
-    feature = "compression-brotli"
-))]
-use std::io::Write;
 use tokio::sync::Mutex;
 use tower::{Layer, Service};
 use uuid::Uuid;

@@ -1,3 +1,4 @@
+use crate::Body;
 use http::{
     header::{HeaderName, HeaderValue},
     HeaderMap, Method, Request, Uri,
@@ -422,4 +423,3 @@ where
             })
     }
 }
-use crate::body::Body;
