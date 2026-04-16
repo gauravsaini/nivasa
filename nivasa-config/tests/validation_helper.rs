@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use nivasa_config::{
-    ConfigBootstrapError, ConfigModule, ConfigOptions, ConfigSchema, ConfigValidationError,
-    ConfigValidationIssue,
+    ConfigBootstrapError, ConfigException, ConfigModule, ConfigOptions, ConfigSchema,
+    ConfigService, ConfigValidationError, ConfigValidationIssue,
 };
 
 #[test]
@@ -106,6 +106,32 @@ impl ConfigSchema for BootstrapSchema {
                     value: port.to_string(),
                     expected: "unsigned 16-bit integer".to_string(),
                 })
+        })
+            .into_iter()
+            .collect()
+    }
+}
+
+struct DefaultedSchema;
+
+impl ConfigSchema for DefaultedSchema {
+    fn required_keys() -> &'static [&'static str] {
+        &["HOST", "PORT", "API_KEY"]
+    }
+
+    fn defaults() -> &'static [(&'static str, &'static str)] {
+        &[("PORT", "3000"), ("SCHEME", "https")]
+    }
+
+    fn validate(loaded: &BTreeMap<String, String>) -> Vec<ConfigValidationIssue> {
+        loaded
+            .get("PORT")
+            .and_then(|port| {
+                port.parse::<u16>().err().map(|_| ConfigValidationIssue::InvalidValue {
+                    key: "PORT".to_string(),
+                    value: port.to_string(),
+                    expected: "unsigned 16-bit integer".to_string(),
+                })
             })
             .into_iter()
             .collect()
@@ -138,6 +164,43 @@ fn config_schema_validation_reports_missing_and_invalid_values_together() {
     assert_eq!(
         error.to_string(),
         "missing required config key: API_KEY; invalid config value for PORT: abc (unsigned 16-bit integer)"
+    );
+}
+
+#[test]
+fn config_schema_validation_applies_defaults_without_overriding_loaded_values() {
+    let loaded = BTreeMap::from([
+        ("HOST".to_string(), "127.0.0.1".to_string()),
+        ("API_KEY".to_string(), "secret".to_string()),
+    ]);
+
+    let validated = ConfigModule::validate_schema::<DefaultedSchema>(&loaded)
+        .expect("schema validation should succeed");
+
+    assert_eq!(validated.get("HOST").map(String::as_str), Some("127.0.0.1"));
+    assert_eq!(validated.get("API_KEY").map(String::as_str), Some("secret"));
+    assert_eq!(validated.get("PORT").map(String::as_str), Some("3000"));
+    assert_eq!(validated.get("SCHEME").map(String::as_str), Some("https"));
+}
+
+#[test]
+fn config_service_get_helpers_cover_default_fallback_and_missing_keys() {
+    let service = ConfigService::from_values(BTreeMap::from([
+        ("PORT".to_string(), "3000".to_string()),
+        ("BROKEN_PORT".to_string(), "abc".to_string()),
+    ]));
+
+    assert_eq!(service.get_raw("PORT"), Some("3000"));
+    assert_eq!(service.get::<u16>("PORT"), Some(3000));
+    assert_eq!(service.get::<u16>("BROKEN_PORT"), None);
+    assert_eq!(service.get_or_default("BROKEN_PORT", 80), 80);
+    assert_eq!(service.get_or_default("MISSING", 80), 80);
+
+    assert_eq!(
+        service.get_or_throw("MISSING"),
+        Err(ConfigException::MissingKey {
+            key: "MISSING".to_string(),
+        })
     );
 }
 

@@ -2,7 +2,7 @@
 //!
 //! Nivasa framework routing primitives.
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, collections::HashMap};
 
 /// A normalized route pattern.
 ///
@@ -427,11 +427,15 @@ impl From<String> for RouteMethod {
 #[derive(Debug, Clone)]
 pub struct RouteRegistry<T> {
     routes: Vec<RouteEntry<T>>,
+    first_segment_index: RouteFirstSegmentIndex,
 }
 
 impl<T> Default for RouteRegistry<T> {
     fn default() -> Self {
-        Self { routes: Vec::new() }
+        Self {
+            routes: Vec::new(),
+            first_segment_index: RouteFirstSegmentIndex::default(),
+        }
     }
 }
 
@@ -461,6 +465,7 @@ impl<T> RouteRegistry<T> {
         self.routes.push(RouteEntry { pattern, value });
         self.routes
             .sort_by(|left, right| left.pattern.cmp_specificity(&right.pattern));
+        self.rebuild_first_segment_index();
         Ok(())
     }
 
@@ -483,14 +488,25 @@ impl<T> RouteRegistry<T> {
     }
 
     pub fn resolve(&self, path: &str) -> Option<&T> {
-        self.routes
-            .iter()
-            .find(|entry| entry.pattern.matches(path))
-            .map(|entry| &entry.value)
+        let normalized_path = normalize_path(path.to_string());
+        self.candidate_route_indices(&normalized_path)
+            .into_iter()
+            .find_map(|index| {
+                self.routes
+                    .get(index)
+                    .and_then(|entry| entry.pattern.matches(&normalized_path).then_some(&entry.value))
+            })
     }
 
     pub fn resolve_entry(&self, path: &str) -> Option<&RouteEntry<T>> {
-        self.routes.iter().find(|entry| entry.pattern.matches(path))
+        let normalized_path = normalize_path(path.to_string());
+        self.candidate_route_indices(&normalized_path)
+            .into_iter()
+            .find_map(|index| {
+                self.routes.get(index).and_then(|entry| {
+                    entry.pattern.matches(&normalized_path).then_some(entry)
+                })
+            })
     }
 
     pub fn contains(&self, path: &str) -> bool {
@@ -514,11 +530,15 @@ impl<T> RouteRegistry<T> {
 #[derive(Debug, Clone)]
 pub struct RouteDispatchRegistry<T> {
     routes: Vec<RouteDispatchEntry<T>>,
+    first_segment_index: RouteFirstSegmentIndex,
 }
 
 impl<T> Default for RouteDispatchRegistry<T> {
     fn default() -> Self {
-        Self { routes: Vec::new() }
+        Self {
+            routes: Vec::new(),
+            first_segment_index: RouteFirstSegmentIndex::default(),
+        }
     }
 }
 
@@ -576,6 +596,7 @@ impl<T> RouteDispatchRegistry<T> {
         });
         self.routes
             .sort_by(|left, right| left.pattern.cmp_specificity(&right.pattern));
+        self.rebuild_first_segment_index();
         Ok(())
     }
 
@@ -657,7 +678,11 @@ impl<T> RouteDispatchRegistry<T> {
         let mut exact_version_entries = Vec::new();
         let mut unversioned_entries = Vec::new();
 
-        for entry in &self.routes {
+        for index in self.candidate_route_indices(&normalized_path) {
+            let Some(entry) = self.routes.get(index) else {
+                continue;
+            };
+
             if !entry.pattern.matches(&normalized_path) {
                 continue;
             }
@@ -886,6 +911,73 @@ impl<T> RouteDispatchRegistry<T> {
     ) -> Option<RouteDispatchMatch<'_, T>> {
         let version = accept_value.and_then(parse_api_version_accept);
         self.resolve_match_versioned(method, path, version.as_deref())
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct RouteFirstSegmentIndex {
+    anchored: HashMap<String, Vec<usize>>,
+    fallback: Vec<usize>,
+}
+
+impl RouteFirstSegmentIndex {
+    fn rebuild<T, F>(routes: &[T], first_segment: F) -> Self
+    where
+        F: Fn(&T) -> Option<String>,
+    {
+        let mut anchored = HashMap::new();
+        let mut fallback = Vec::new();
+
+        for (index, route) in routes.iter().enumerate() {
+            match first_segment(route) {
+                Some(segment) => anchored.entry(segment).or_insert_with(Vec::new).push(index),
+                None => fallback.push(index),
+            }
+        }
+
+        Self { anchored, fallback }
+    }
+
+    fn candidate_indices(&self, path: &str) -> Vec<usize> {
+        let Some(first_segment) = first_path_segment(path) else {
+            return self.fallback.clone();
+        };
+
+        let Some(anchored) = self.anchored.get(first_segment) else {
+            return self.fallback.clone();
+        };
+
+        if self.fallback.is_empty() {
+            return anchored.clone();
+        }
+
+        let mut candidate_indices = Vec::with_capacity(anchored.len() + self.fallback.len());
+        merge_sorted_indices(&mut candidate_indices, anchored, &self.fallback);
+        candidate_indices
+    }
+}
+
+impl<T> RouteRegistry<T> {
+    fn rebuild_first_segment_index(&mut self) {
+        self.first_segment_index = RouteFirstSegmentIndex::rebuild(&self.routes, |entry| {
+            route_pattern_first_segment(&entry.pattern)
+        });
+    }
+
+    fn candidate_route_indices(&self, path: &str) -> Vec<usize> {
+        self.first_segment_index.candidate_indices(path)
+    }
+}
+
+impl<T> RouteDispatchRegistry<T> {
+    fn rebuild_first_segment_index(&mut self) {
+        self.first_segment_index = RouteFirstSegmentIndex::rebuild(&self.routes, |entry| {
+            route_pattern_first_segment(&entry.pattern)
+        });
+    }
+
+    fn candidate_route_indices(&self, path: &str) -> Vec<usize> {
+        self.first_segment_index.candidate_indices(path)
     }
 }
 
@@ -1282,6 +1374,38 @@ fn merge_route_paths(prefix: String, path: String) -> String {
         (false, true) => normalized_prefix.to_string(),
         (false, false) => format!("{}/{}", normalized_prefix, normalized_path),
     }
+}
+
+fn route_pattern_first_segment(pattern: &RoutePattern) -> Option<String> {
+    match pattern {
+        RoutePattern::Static(segments) => segments.first().cloned(),
+        RoutePattern::Pattern(segments) => match segments.first()? {
+            RoutePatternSegment::Literal(value) => Some(value.clone()),
+            _ => None,
+        },
+    }
+}
+
+fn first_path_segment(path: &str) -> Option<&str> {
+    path.split('/').find(|segment| !segment.is_empty())
+}
+
+fn merge_sorted_indices(dst: &mut Vec<usize>, left: &[usize], right: &[usize]) {
+    let mut left_index = 0;
+    let mut right_index = 0;
+
+    while left_index < left.len() && right_index < right.len() {
+        if left[left_index] <= right[right_index] {
+            dst.push(left[left_index]);
+            left_index += 1;
+        } else {
+            dst.push(right[right_index]);
+            right_index += 1;
+        }
+    }
+
+    dst.extend_from_slice(&left[left_index..]);
+    dst.extend_from_slice(&right[right_index..]);
 }
 
 fn version_segment(version: &str) -> String {
