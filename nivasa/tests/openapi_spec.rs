@@ -17,7 +17,10 @@ impl OpenApiControllerMetadataProvider for ManualUsersController {
     }
 
     fn api_operation_metadata() -> Vec<(&'static str, Option<&'static str>)> {
-        vec![("show", Some("Get a user")), ("create", Some("Create a user"))]
+        vec![
+            ("show", Some("Get a user")),
+            ("create", Some("Create a user")),
+        ]
     }
 
     fn api_param_metadata() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
@@ -45,7 +48,9 @@ fn openapi_builder_collects_controller_route_and_api_metadata() {
     let document = build_openapi_document(
         "Users API",
         "1.0.0",
-        [OpenApiControllerMetadata::from_provider::<ManualUsersController>()],
+        [OpenApiControllerMetadata::from_provider::<
+            ManualUsersController,
+        >()],
     );
 
     assert_eq!(document.openapi, "3.0.0");
@@ -99,7 +104,9 @@ fn openapi_spec_includes_all_routes_with_correct_methods() {
     let document = build_openapi_document(
         "Users API",
         "1.0.0",
-        [OpenApiControllerMetadata::from_provider::<ManualUsersController>()],
+        [OpenApiControllerMetadata::from_provider::<
+            ManualUsersController,
+        >()],
     );
 
     let user_by_id = document
@@ -126,7 +133,9 @@ fn openapi_spec_includes_request_and_response_schemas() {
     let document = build_openapi_document(
         "Users API",
         "1.0.0",
-        [OpenApiControllerMetadata::from_provider::<ManualUsersController>()],
+        [OpenApiControllerMetadata::from_provider::<
+            ManualUsersController,
+        >()],
     );
 
     let create = &document.paths["/users"]["post"];

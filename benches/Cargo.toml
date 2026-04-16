@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 actix-web = "4"
+async-trait = "0.1"
 bytes = { workspace = true }
 criterion = "0.5"
 http = { workspace = true }
@@ -16,6 +17,9 @@ http-body-util = { workspace = true }
 hyper-util = { workspace = true }
 axum = "0.8"
 nivasa-core = { path = "../nivasa-core" }
+nivasa-common = { path = "../nivasa-common" }
+nivasa-guards = { path = "../nivasa-guards" }
+nivasa-interceptors = { path = "../nivasa-interceptors" }
 nivasa-http = { path = "../nivasa-http" }
 nivasa-routing = { path = "../nivasa-routing" }
 serde_json = { workspace = true }
@@ -34,4 +38,14 @@ harness = false
 [[bench]]
 name = "routing"
 path = "routing.rs"
+harness = false
+
+[[bench]]
+name = "pipeline_overhead"
+path = "pipeline_overhead.rs"
+harness = false
+
+[[bench]]
+name = "startup_modules"
+path = "startup_modules.rs"
 harness = false

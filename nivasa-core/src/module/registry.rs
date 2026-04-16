@@ -381,10 +381,7 @@ impl ModuleRegistry {
     /// let sources = registry.import_sources_by_id(TypeId::of::<AppModule>()).unwrap();
     /// assert!(sources.contains(&TypeId::of::<LeafModule>()));
     /// ```
-    pub fn import_sources_by_id(
-        &self,
-        module: TypeId,
-    ) -> Result<Vec<TypeId>, ModuleRegistryError> {
+    pub fn import_sources_by_id(&self, module: TypeId) -> Result<Vec<TypeId>, ModuleRegistryError> {
         let entry = self
             .entries
             .get(&module)

@@ -54,8 +54,8 @@
 //! assert!(form.validate().is_ok());
 //! ```
 
-use serde::Serialize;
 use serde::Deserialize;
+use serde::Serialize;
 use std::{
     borrow::Borrow,
     collections::{BTreeMap, BTreeSet},
@@ -505,8 +505,7 @@ mod tests {
                 .with_constraint("min_length", "must be at least 3 characters"),
         );
         errors.push(
-            ValidationError::new("email")
-                .with_constraint("is_email", "must contain an @ symbol"),
+            ValidationError::new("email").with_constraint("is_email", "must contain an @ symbol"),
         );
 
         let json = serde_json::to_value(&errors).unwrap();
@@ -579,7 +578,10 @@ mod tests {
 
     #[test]
     fn matches_regex_accepts_matching_values() {
-        assert!(matches_regex("alice@example.com", r"^[^@\s]+@[^@\s]+\.[^@\s]+$"));
+        assert!(matches_regex(
+            "alice@example.com",
+            r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+        ));
     }
 
     #[test]
@@ -616,10 +618,7 @@ mod tests {
         }
 
         impl GroupAwareForm {
-            fn validate_inner(
-                &self,
-                context: &ValidationContext,
-            ) -> Result<(), ValidationErrors> {
+            fn validate_inner(&self, context: &ValidationContext) -> Result<(), ValidationErrors> {
                 let mut errors = ValidationErrors::new();
 
                 if self.username.trim().len() < 3 {

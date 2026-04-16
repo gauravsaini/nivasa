@@ -208,7 +208,9 @@ impl ProviderRegistry {
     /// assert_eq!(metadata.scope, ProviderScope::Singleton);
     /// ```
     pub fn metadata_by_id(&self, type_id: TypeId) -> Option<ProviderMetadata> {
-        self.entries.get(&type_id).map(|entry| entry.metadata.clone())
+        self.entries
+            .get(&type_id)
+            .map(|entry| entry.metadata.clone())
     }
 
     /// Returns a snapshot of all registered providers and their metadata.

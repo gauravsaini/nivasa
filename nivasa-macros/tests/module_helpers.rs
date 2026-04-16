@@ -98,7 +98,10 @@ fn module_macro_exposes_registration_metadata_helpers() {
     assert_eq!(AppModule::__nivasa_module_metadata(), metadata);
     assert!(!AppModule::__nivasa_module_metadata().is_global);
     assert_eq!(controller_registrations.len(), 1);
-    assert_eq!(controller_registrations[0].controller, TypeId::of::<AppController>());
+    assert_eq!(
+        controller_registrations[0].controller,
+        TypeId::of::<AppController>()
+    );
     assert_eq!(controller_registrations[0].routes.len(), 1);
     assert_eq!(controller_registrations[0].routes[0].method, "GET");
     assert_eq!(controller_registrations[0].routes[0].path, "/app/health");

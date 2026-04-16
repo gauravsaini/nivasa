@@ -2,7 +2,7 @@ use nivasa::openapi::{
     build_openapi_document, OpenApiControllerMetadata, OpenApiControllerMetadataProvider,
 };
 use openapiv3::{
-    Components, Info, MediaType, OpenAPI, ObjectType, Operation, Parameter, ParameterData,
+    Components, Info, MediaType, ObjectType, OpenAPI, Operation, Parameter, ParameterData,
     ParameterSchemaOrContent, PathItem, PathStyle, Paths, ReferenceOr, RequestBody, Response,
     Responses, Schema, SchemaData, SchemaKind, SecurityRequirement, SecurityScheme, StatusCode,
     Type,
@@ -23,7 +23,10 @@ impl OpenApiControllerMetadataProvider for ManualUsersController {
     }
 
     fn api_operation_metadata() -> Vec<(&'static str, Option<&'static str>)> {
-        vec![("show", Some("Get a user")), ("create", Some("Create a user"))]
+        vec![
+            ("show", Some("Get a user")),
+            ("create", Some("Create a user")),
+        ]
     }
 
     fn api_param_metadata() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
@@ -51,7 +54,9 @@ fn openapi_spec_validates_against_openapi_3_0_spec() {
     let document = build_openapi_document(
         "Users API",
         "1.0.0",
-        [OpenApiControllerMetadata::from_provider::<ManualUsersController>()],
+        [OpenApiControllerMetadata::from_provider::<
+            ManualUsersController,
+        >()],
     );
 
     let openapi = to_openapiv3_document(&document);
@@ -130,10 +135,7 @@ fn to_openapiv3_document(document: &nivasa::openapi::OpenApiDocument) -> OpenAPI
     }
 }
 
-fn convert_operation(
-    path: &str,
-    operation: &nivasa::openapi::OpenApiOperation,
-) -> Operation {
+fn convert_operation(path: &str, operation: &nivasa::openapi::OpenApiOperation) -> Operation {
     let mut responses = Responses::default();
     responses.responses = operation
         .responses
@@ -232,7 +234,11 @@ fn convert_operation(
         servers: Vec::new(),
         description: None,
         external_docs: None,
-        operation_id: Some(format!("{}_{}", path.trim_matches('/').replace('/', "_"), "op")),
+        operation_id: Some(format!(
+            "{}_{}",
+            path.trim_matches('/').replace('/', "_"),
+            "op"
+        )),
         extensions: Default::default(),
     }
 }

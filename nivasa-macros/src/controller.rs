@@ -7,8 +7,9 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input, parse_quote,
     spanned::Spanned,
-    Attribute, Error, Expr, ExprLit, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, ItemStruct, Lit,
-    LitInt, LitStr, Meta, PatType, Path, Result, Token,
+    Attribute, Error, Expr, ExprLit, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl,
+    ItemStruct, Lit, LitInt, LitStr, Meta, MetaNameValue, PatType, Path, Result,
+    Token, Type,
 };
 
 const ROUTE_MARKER_PREFIX: &str = "nivasa-route:";
@@ -19,6 +20,8 @@ const INTERCEPTOR_MARKER_PREFIX: &str = "nivasa-interceptor:";
 const FILTER_MARKER_PREFIX: &str = "nivasa-filter:";
 const PIPE_MARKER_PREFIX: &str = "nivasa-pipe:";
 const SET_METADATA_MARKER_PREFIX: &str = "nivasa-set-metadata:";
+const THROTTLE_MARKER_PREFIX: &str = "nivasa-throttle:";
+const SKIP_THROTTLE_MARKER_PREFIX: &str = "nivasa-skip-throttle:";
 
 #[derive(Debug, Default, Clone)]
 struct ControllerArgs {
@@ -55,6 +58,8 @@ struct ControllerMethodBinding {
     interceptors: Vec<String>,
     filters: Vec<String>,
     metadata: Vec<MetadataBinding>,
+    throttle: Option<ThrottleBinding>,
+    skip_throttle: bool,
     operation: Option<OperationBinding>,
     api_params: Vec<ApiParamBinding>,
     api_responses: Vec<ApiResponseBinding>,
@@ -62,6 +67,14 @@ struct ControllerMethodBinding {
     api_bearer_auth: bool,
     health_check: bool,
     response: Option<ResponseBinding>,
+    dispatch: ControllerDispatchKind,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum ControllerDispatchKind {
+    NoArgs,
+    Request,
+    Unsupported,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -86,6 +99,12 @@ enum ParameterExtractorKind {
 struct ResponseBinding {
     status_code: Option<u16>,
     headers: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone)]
+struct ThrottleBinding {
+    limit: u32,
+    ttl_secs: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -189,6 +208,56 @@ impl ParameterExtractorKind {
     }
 }
 
+fn is_nivasa_request_type(ty: &Type) -> bool {
+    ty.to_token_stream()
+        .to_string()
+        .replace(' ', "")
+        .ends_with("NivasaRequest")
+}
+
+fn controller_dispatch_kind(
+    method: &ImplItemFn,
+    parameters: &[ParameterBinding],
+    unit_struct: bool,
+) -> ControllerDispatchKind {
+    if !unit_struct || method.sig.asyncness.is_some() {
+        return ControllerDispatchKind::Unsupported;
+    }
+
+    let inputs = method.sig.inputs.iter().collect::<Vec<_>>();
+    let Some(first_input) = inputs.first() else {
+        return ControllerDispatchKind::Unsupported;
+    };
+
+    if !matches!(first_input, FnArg::Receiver(_)) {
+        return ControllerDispatchKind::Unsupported;
+    }
+
+    let params = inputs.iter().skip(1).collect::<Vec<_>>();
+
+    if params.is_empty() && parameters.is_empty() {
+        return ControllerDispatchKind::NoArgs;
+    }
+
+    if params.len() == 1 && is_nivasa_request_arg(params[0]) {
+        return ControllerDispatchKind::Request;
+    }
+
+    ControllerDispatchKind::Unsupported
+}
+
+fn is_nivasa_request_arg(input: &FnArg) -> bool {
+    let FnArg::Typed(pat_type) = input else {
+        return false;
+    };
+
+    match pat_type.ty.as_ref() {
+        Type::Reference(reference) => is_nivasa_request_type(reference.elem.as_ref()),
+        Type::Path(path) => is_nivasa_request_type(&Type::Path(path.clone())),
+        _ => false,
+    }
+}
+
 impl Parse for ControllerArgs {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek(LitStr) {
@@ -286,6 +355,8 @@ fn expand_controller(
     let mut controller_filters = Vec::new();
     let mut controller_metadata = Vec::new();
     let mut controller_tags = Vec::new();
+    let mut controller_throttle: Option<ThrottleBinding> = None;
+    let mut controller_skip_throttle = false;
     let mut retained_attrs = Vec::new();
 
     for attr in input.attrs.drain(..) {
@@ -303,7 +374,29 @@ fn expand_controller(
                                 Some(metadata) => controller_metadata.extend(metadata),
                                 None => match parse_api_tags_binding(&attr)? {
                                     Some(tags) => controller_tags.extend(tags),
-                                    None => retained_attrs.push(attr),
+                                    None => match parse_throttle_binding(&attr)? {
+                                        Some(binding) => {
+                                            if controller_throttle.is_some() {
+                                                return Err(Error::new(
+                                                    attr.span(),
+                                                    "duplicate `#[throttle]` entry in controller",
+                                                ));
+                                            }
+                                            controller_throttle = Some(binding);
+                                        }
+                                        None => match parse_skip_throttle_binding(&attr)? {
+                                            Some(()) => {
+                                                if controller_skip_throttle {
+                                                    return Err(Error::new(
+                                                    attr.span(),
+                                                    "duplicate `#[skip_throttle]` entry in controller",
+                                                ));
+                                                }
+                                                controller_skip_throttle = true;
+                                            }
+                                            None => retained_attrs.push(attr),
+                                        },
+                                    },
                                 },
                             },
                         },
@@ -347,6 +440,17 @@ fn expand_controller(
             #tag
         }
     });
+    let controller_throttle_default = controller_throttle
+        .as_ref()
+        .map(|binding| {
+            let limit = binding.limit;
+            let ttl_secs = binding.ttl_secs;
+            quote! {
+                Some((#limit, #ttl_secs))
+            }
+        })
+        .unwrap_or_else(|| quote!(None));
+    let controller_skip_throttle = controller_skip_throttle;
 
     Ok(quote! {
         #input
@@ -386,6 +490,15 @@ fn expand_controller(
                 vec![
                     #(#controller_roles),*
                 ]
+            }
+
+            pub fn __nivasa_controller_throttle_default(
+            ) -> Option<(u32, u64)> {
+                #controller_throttle_default
+            }
+
+            pub fn __nivasa_controller_skip_throttle() -> bool {
+                #controller_skip_throttle
             }
 
             pub fn __nivasa_controller_interceptors() -> Vec<&'static str> {
@@ -479,6 +592,19 @@ fn pipe_marker_attr(pipes: &[Path]) -> Attribute {
         &format!("{PIPE_MARKER_PREFIX} {payload}"),
         proc_macro2::Span::call_site(),
     );
+    parse_quote!(#[doc = #marker])
+}
+
+fn throttle_marker_attr(limit: u32, ttl_secs: u64) -> Attribute {
+    let marker = LitStr::new(
+        &format!("{THROTTLE_MARKER_PREFIX} limit={limit},ttl={ttl_secs}"),
+        proc_macro2::Span::call_site(),
+    );
+    parse_quote!(#[doc = #marker])
+}
+
+fn skip_throttle_marker_attr() -> Attribute {
+    let marker = LitStr::new(SKIP_THROTTLE_MARKER_PREFIX, proc_macro2::Span::call_site());
     parse_quote!(#[doc = #marker])
 }
 
@@ -843,6 +969,146 @@ fn parse_set_metadata_binding(attr: &Attribute) -> Result<Option<Vec<MetadataBin
     }]))
 }
 
+fn parse_throttle_binding(attr: &Attribute) -> Result<Option<ThrottleBinding>> {
+    if attr_path_matches(attr, "throttle") {
+        let mut limit: Option<u32> = None;
+        let mut ttl_secs: Option<u64> = None;
+
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("limit") {
+                if limit.is_some() {
+                    return Err(meta.error("duplicate `limit` entry in `#[throttle]`"));
+                }
+                let value: LitInt = meta.value()?.parse()?;
+                limit = Some(value.base10_parse()?);
+                return Ok(());
+            }
+
+            if meta.path.is_ident("ttl") {
+                if ttl_secs.is_some() {
+                    return Err(meta.error("duplicate `ttl` entry in `#[throttle]`"));
+                }
+                let value: LitInt = meta.value()?.parse()?;
+                ttl_secs = Some(value.base10_parse()?);
+                return Ok(());
+            }
+
+            Err(meta.error("expected `limit` or `ttl` in `#[throttle]`"))
+        })?;
+
+        let limit = limit
+            .ok_or_else(|| Error::new(attr.span(), "`#[throttle]` requires a `limit` entry"))?;
+        let ttl_secs = ttl_secs
+            .ok_or_else(|| Error::new(attr.span(), "`#[throttle]` requires a `ttl` entry"))?;
+
+        if limit == 0 || ttl_secs == 0 {
+            return Err(Error::new(
+                attr.span(),
+                "`#[throttle]` limit and ttl must be greater than zero",
+            ));
+        }
+
+        return Ok(Some(ThrottleBinding { limit, ttl_secs }));
+    }
+
+    if !attr.path().is_ident("doc") {
+        return Ok(None);
+    }
+
+    let Meta::NameValue(meta) = &attr.meta else {
+        return Ok(None);
+    };
+
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(doc), ..
+    }) = &meta.value
+    else {
+        return Ok(None);
+    };
+
+    let value = doc.value();
+    let Some(rest) = value.trim().strip_prefix(THROTTLE_MARKER_PREFIX) else {
+        return Ok(None);
+    };
+
+    let mut limit: Option<u32> = None;
+    let mut ttl_secs: Option<u64> = None;
+
+    for part in rest.trim().split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+
+        let Some((key, value)) = part.split_once('=') else {
+            return Err(Error::new(doc.span(), "invalid controller throttle marker"));
+        };
+
+        match key.trim() {
+            "limit" => {
+                if limit.is_some() {
+                    return Err(Error::new(doc.span(), "invalid controller throttle marker"));
+                }
+                limit =
+                    Some(value.trim().parse().map_err(|_| {
+                        Error::new(doc.span(), "invalid controller throttle marker")
+                    })?);
+            }
+            "ttl" => {
+                if ttl_secs.is_some() {
+                    return Err(Error::new(doc.span(), "invalid controller throttle marker"));
+                }
+                ttl_secs =
+                    Some(value.trim().parse().map_err(|_| {
+                        Error::new(doc.span(), "invalid controller throttle marker")
+                    })?);
+            }
+            _ => return Err(Error::new(doc.span(), "invalid controller throttle marker")),
+        }
+    }
+
+    match (limit, ttl_secs) {
+        (Some(limit), Some(ttl_secs)) if limit > 0 && ttl_secs > 0 => {
+            Ok(Some(ThrottleBinding { limit, ttl_secs }))
+        }
+        _ => Err(Error::new(doc.span(), "invalid controller throttle marker")),
+    }
+}
+
+fn parse_skip_throttle_binding(attr: &Attribute) -> Result<Option<()>> {
+    if attr_path_matches(attr, "skip_throttle") {
+        if !matches!(&attr.meta, Meta::Path(_)) {
+            return Err(Error::new(
+                attr.span(),
+                "`#[skip_throttle]` does not accept arguments",
+            ));
+        }
+
+        return Ok(Some(()));
+    }
+
+    if !attr.path().is_ident("doc") {
+        return Ok(None);
+    }
+
+    let Meta::NameValue(meta) = &attr.meta else {
+        return Ok(None);
+    };
+
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(doc), ..
+    }) = &meta.value
+    else {
+        return Ok(None);
+    };
+
+    if doc.value().trim() == SKIP_THROTTLE_MARKER_PREFIX {
+        return Ok(Some(()));
+    }
+
+    Ok(None)
+}
+
 fn parse_api_tags_binding(attr: &Attribute) -> Result<Option<Vec<LitStr>>> {
     if !attr_path_matches(attr, "api_tags") {
         return Ok(None);
@@ -901,13 +1167,16 @@ fn parse_api_param_binding(attr: &Attribute) -> Result<Option<ApiParamBinding>> 
         Err(meta.error("expected `name = \"...\"` or `description = \"...\"` in `#[api_param]`"))
     })?;
 
-    let name = name.ok_or_else(|| Error::new(attr.span(), "`#[api_param]` requires a `name` entry"))?;
-    let description = description.ok_or_else(|| {
-        Error::new(attr.span(), "`#[api_param]` requires a `description` entry")
-    })?;
+    let name =
+        name.ok_or_else(|| Error::new(attr.span(), "`#[api_param]` requires a `name` entry"))?;
+    let description = description
+        .ok_or_else(|| Error::new(attr.span(), "`#[api_param]` requires a `description` entry"))?;
 
     if name.value().trim().is_empty() {
-        return Err(Error::new(name.span(), "`#[api_param]` name cannot be empty"));
+        return Err(Error::new(
+            name.span(),
+            "`#[api_param]` name cannot be empty",
+        ));
     }
 
     if description.value().trim().is_empty() {
@@ -959,15 +1228,10 @@ fn parse_api_response_binding(attr: &Attribute) -> Result<Option<ApiResponseBind
         ))
     })?;
 
-    let status = status.ok_or_else(|| {
-        Error::new(
-            attr.span(),
-            "`#[api_response]` requires a `status` entry",
-        )
-    })?;
-    let ty = ty.ok_or_else(|| {
-        Error::new(attr.span(), "`#[api_response]` requires a `type` entry")
-    })?;
+    let status = status
+        .ok_or_else(|| Error::new(attr.span(), "`#[api_response]` requires a `status` entry"))?;
+    let ty =
+        ty.ok_or_else(|| Error::new(attr.span(), "`#[api_response]` requires a `type` entry"))?;
     let description = description.ok_or_else(|| {
         Error::new(
             attr.span(),
@@ -976,7 +1240,10 @@ fn parse_api_response_binding(attr: &Attribute) -> Result<Option<ApiResponseBind
     })?;
 
     let status = status.base10_parse::<u16>().map_err(|_| {
-        Error::new(status.span(), "`#[api_response]` status must be a valid u16")
+        Error::new(
+            status.span(),
+            "`#[api_response]` status must be a valid u16",
+        )
     })?;
 
     if description.value().trim().is_empty() {
@@ -1064,9 +1331,8 @@ fn parse_api_operation_binding(attr: &Attribute) -> Result<Option<OperationBindi
         Err(meta.error("expected `summary = \"...\"` in `#[api_operation]`"))
     })?;
 
-    let summary = summary.ok_or_else(|| {
-        Error::new(attr.span(), "`#[api_operation]` requires a `summary` entry")
-    })?;
+    let summary = summary
+        .ok_or_else(|| Error::new(attr.span(), "`#[api_operation]` requires a `summary` entry"))?;
 
     if summary.value().trim().is_empty() {
         return Err(Error::new(
@@ -1207,7 +1473,10 @@ fn parse_parameter_pipe(attr: &Attribute) -> Result<Option<Vec<ParameterPipeBind
         paths
             .into_iter()
             .map(|path| ParameterPipeBinding {
-                pipe: LitStr::new(&path.to_token_stream().to_string().replace(' ', ""), path.span()),
+                pipe: LitStr::new(
+                    &path.to_token_stream().to_string().replace(' ', ""),
+                    path.span(),
+                ),
             })
             .collect(),
     ))
@@ -1507,6 +1776,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
     let self_ty = input.self_ty.clone();
     let generics = input.generics.clone();
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let unit_struct = true;
 
     let mut methods = Vec::new();
     let mut seen_routes = HashSet::new();
@@ -1525,6 +1795,8 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         let mut interceptor_bindings = Vec::new();
         let mut filter_bindings = Vec::new();
         let mut metadata_bindings = Vec::new();
+        let mut throttle_binding: Option<ThrottleBinding> = None;
+        let mut skip_throttle_binding = false;
         let mut operation_binding: Option<OperationBinding> = None;
         let mut api_param_bindings = Vec::new();
         let mut api_response_bindings = Vec::new();
@@ -1556,11 +1828,11 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                                     }
                                     None => match parse_api_param_binding(&attr)? {
                                         Some(param) => api_param_bindings.push(param),
-                                    None => match parse_api_response_binding(&attr)? {
-                                        Some(response) => api_response_bindings.push(response),
-                                        None => match parse_api_body_binding(&attr)? {
-                                            Some(body) => {
-                                                if api_body_binding.is_some() {
+                                        None => match parse_api_response_binding(&attr)? {
+                                            Some(response) => api_response_bindings.push(response),
+                                            None => match parse_api_body_binding(&attr)? {
+                                                Some(body) => {
+                                                    if api_body_binding.is_some() {
                                                         return Err(Error::new(
                                                             attr.span(),
                                                             "a controller method can only use one `#[api_body]` attribute",
@@ -1568,7 +1840,8 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                                                     }
                                                     api_body_binding = Some(body);
                                                 }
-                                                None => match parse_api_bearer_auth_binding(&attr)? {
+                                                None => match parse_api_bearer_auth_binding(&attr)?
+                                                {
                                                     Some(()) => {
                                                         if api_bearer_auth_binding {
                                                             return Err(Error::new(
@@ -1578,7 +1851,8 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                                                         }
                                                         api_bearer_auth_binding = true;
                                                     }
-                                                    None => match parse_health_check_binding(&attr)? {
+                                                    None => match parse_health_check_binding(&attr)?
+                                                    {
                                                         Some(()) => {
                                                             if health_check_binding {
                                                                 return Err(Error::new(
@@ -1598,14 +1872,41 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                                                                 }
                                                                 method_route = Some(binding);
                                                             }
-                                                            None => match parse_pipe_binding(&attr)? {
+                                                            None => match parse_pipe_binding(&attr)?
+                                                            {
                                                                 Some(mut pipes) => {
                                                                     method_pipe_attr_count += 1;
-                                                                    pipe_bindings.append(&mut pipes);
+                                                                    pipe_bindings
+                                                                        .append(&mut pipes);
                                                                 }
-                                                                None => match parse_response_binding(&attr)? {
-                                                                    Some(binding) => response_bindings.push(binding),
-                                                                    None => retained_attrs.push(attr),
+                                                                None => match parse_throttle_binding(&attr)? {
+                                                                    Some(binding) => {
+                                                                        if throttle_binding.is_some() {
+                                                                            return Err(Error::new(
+                                                                                attr.span(),
+                                                                                "a controller method can only use one `#[throttle]` attribute",
+                                                                            ));
+                                                                        }
+                                                                        throttle_binding = Some(binding);
+                                                                    }
+                                                                    None => match parse_skip_throttle_binding(&attr)? {
+                                                                        Some(()) => {
+                                                                            if skip_throttle_binding {
+                                                                                return Err(Error::new(
+                                                                                    attr.span(),
+                                                                                    "a controller method can only use one `#[skip_throttle]` attribute",
+                                                                                ));
+                                                                            }
+                                                                            skip_throttle_binding = true;
+                                                                        }
+                                                                        None => match parse_response_binding(&attr)? {
+                                                                            Some(binding) => {
+                                                                                response_bindings
+                                                                                    .push(binding)
+                                                                            }
+                                                                            None => retained_attrs.push(attr),
+                                                                        },
+                                                                    },
                                                                 },
                                                             },
                                                         },
@@ -1644,7 +1945,9 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             || !api_response_bindings.is_empty()
             || api_body_binding.is_some()
             || api_bearer_auth_binding
-            || health_check_binding;
+            || health_check_binding
+            || throttle_binding.is_some()
+            || skip_throttle_binding;
         let response = if response_bindings.is_empty() {
             None
         } else {
@@ -1668,6 +1971,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
 
             Some(merged)
         };
+        let dispatch = controller_dispatch_kind(method, &parameters, unit_struct);
 
         if method_route.is_none() && has_controller_metadata {
             return Err(Error::new(
@@ -1700,6 +2004,12 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                 interceptors: interceptor_bindings,
                 filters: filter_bindings,
                 metadata: metadata_bindings,
+                throttle: if skip_throttle_binding {
+                    None
+                } else {
+                    throttle_binding.clone()
+                },
+                skip_throttle: skip_throttle_binding,
                 operation: operation_binding,
                 api_params: api_param_bindings,
                 api_responses: api_response_bindings,
@@ -1707,6 +2017,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                 api_bearer_auth: api_bearer_auth_binding,
                 health_check: health_check_binding,
                 response,
+                dispatch,
             });
         }
     }
@@ -1721,6 +2032,38 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                 Self::__nivasa_controller_join_route(Self::__NIVASA_CONTROLLER_PATH, #route_path),
                 stringify!(#handler),
             )
+        }
+    });
+
+    let route_handler_registrations = methods.iter().filter_map(|method| {
+        let route_path = &method.route.path;
+        let handler = &method.handler;
+        let full_path = quote! {
+            Self::__nivasa_controller_join_route(Self::__NIVASA_CONTROLLER_PATH, #route_path)
+        };
+
+        match method.dispatch {
+            ControllerDispatchKind::NoArgs => Some(quote! {
+                ::nivasa_http::register_controller_route_handler(
+                    #full_path,
+                    stringify!(#handler),
+                    ::std::sync::Arc::new(move |_request: &::nivasa_http::NivasaRequest| {
+                        let controller = Self;
+                        ::nivasa_http::IntoResponse::into_response(controller.#handler())
+                    }),
+                );
+            }),
+            ControllerDispatchKind::Request => Some(quote! {
+                ::nivasa_http::register_controller_route_handler(
+                    #full_path,
+                    stringify!(#handler),
+                    ::std::sync::Arc::new(move |request: &::nivasa_http::NivasaRequest| {
+                        let controller = Self;
+                        ::nivasa_http::IntoResponse::into_response(controller.#handler(request))
+                    }),
+                );
+            }),
+            ControllerDispatchKind::Unsupported => None,
         }
     });
 
@@ -1902,6 +2245,39 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
         }
     });
 
+    let throttle_entries = methods.iter().map(|method| {
+        let handler = &method.handler;
+        let throttle = method
+            .throttle
+            .as_ref()
+            .map(|binding| {
+                let limit = binding.limit;
+                let ttl_secs = binding.ttl_secs;
+                quote! {
+                    Some((#limit, #ttl_secs))
+                }
+            })
+            .unwrap_or_else(|| quote!(None));
+        let skip = method.skip_throttle;
+
+        quote! {
+            (
+                stringify!(#handler),
+                {
+                    let controller_throttle = Self::__nivasa_controller_throttle_default();
+                    let controller_skip_throttle = Self::__nivasa_controller_skip_throttle();
+
+                    if controller_skip_throttle || #skip {
+                        None
+                    } else {
+                        #throttle.or(controller_throttle)
+                    }
+                },
+                #skip || Self::__nivasa_controller_skip_throttle()
+            )
+        }
+    });
+
     let api_param_entries = methods.iter().map(|method| {
         let handler = &method.handler;
         let params = method.api_params.iter().map(|param| {
@@ -2017,7 +2393,12 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                 }
             }
 
+            pub fn __nivasa_controller_register_route_handlers() {
+                #(#route_handler_registrations)*
+            }
+
             pub fn __nivasa_controller_routes() -> Vec<(&'static str, String, &'static str)> {
+                Self::__nivasa_controller_register_route_handlers();
                 vec![
                     #(#route_entries),*
                 ]
@@ -2083,6 +2464,13 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             ) -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
                 vec![
                     #(#metadata_entries),*
+                ]
+            }
+
+            pub fn __nivasa_controller_throttle_metadata(
+            ) -> Vec<(&'static str, Option<(u32, u64)>, bool)> {
+                vec![
+                    #(#throttle_entries),*
                 ]
             }
 
@@ -2235,6 +2623,143 @@ pub fn pipe(attr: TokenStream, item: TokenStream) -> TokenStream {
     Error::new(
         proc_macro2::Span::call_site(),
         "`#[pipe]` only supports controller structs, controller method parameters, and inherent controller methods",
+    )
+    .to_compile_error()
+    .into()
+}
+
+pub fn throttle(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let parsed =
+        match syn::punctuated::Punctuated::<MetaNameValue, Token![,]>::parse_terminated
+            .parse2(proc_macro2::TokenStream::from(attr))
+        {
+            Ok(parsed) => parsed,
+            Err(error) => return error.to_compile_error().into(),
+        };
+
+    let mut limit: Option<u32> = None;
+    let mut ttl_secs: Option<u64> = None;
+
+    for kv in parsed {
+        let Some(ident) = kv.path.get_ident() else {
+            return Error::new(
+                kv.path.span(),
+                "`#[throttle]` expects `limit = <int>, ttl = <int>`",
+            )
+            .to_compile_error()
+            .into();
+        };
+
+        let value = match &kv.value {
+            Expr::Lit(ExprLit {
+                lit: Lit::Int(value),
+                ..
+            }) => value,
+            _ => {
+                return Error::new(
+                    kv.span(),
+                    "`#[throttle]` expects integer values for `limit` and `ttl`",
+                )
+                .to_compile_error()
+                .into();
+            }
+        };
+
+        let parsed_value = match value.base10_parse::<u64>() {
+            Ok(value) => value,
+            Err(error) => return Error::new(kv.span(), error).to_compile_error().into(),
+        };
+
+        match ident.to_string().as_str() {
+            "limit" => {
+                if limit.is_some() {
+                    return Error::new(kv.span(), "duplicate `limit` entry in `#[throttle]`")
+                        .to_compile_error()
+                        .into();
+                }
+                limit = Some(parsed_value as u32);
+            }
+            "ttl" => {
+                if ttl_secs.is_some() {
+                    return Error::new(kv.span(), "duplicate `ttl` entry in `#[throttle]`")
+                        .to_compile_error()
+                        .into();
+                }
+                ttl_secs = Some(parsed_value);
+            }
+            other => {
+                return Error::new(
+                    kv.span(),
+                    format!("unknown `#[throttle]` key `{other}`; expected `limit` or `ttl`"),
+                )
+                .to_compile_error()
+                .into();
+            }
+        }
+    }
+
+    let Some(limit) = limit else {
+        return Error::new(
+            proc_macro2::Span::call_site(),
+            "`#[throttle]` requires a `limit` entry",
+        )
+        .to_compile_error()
+        .into();
+    };
+    let Some(ttl_secs) = ttl_secs else {
+        return Error::new(
+            proc_macro2::Span::call_site(),
+            "`#[throttle]` requires a `ttl` entry",
+        )
+        .to_compile_error()
+        .into();
+    };
+
+    let throttle_attr = throttle_marker_attr(limit, ttl_secs);
+
+    if let Ok(mut method) = syn::parse::<ImplItemFn>(item.clone()) {
+        method.attrs.insert(0, throttle_attr);
+        return quote!(#method).into();
+    }
+
+    if let Ok(mut item_struct) = syn::parse::<ItemStruct>(item.clone()) {
+        item_struct.attrs.insert(0, throttle_attr);
+        return quote!(#item_struct).into();
+    }
+
+    Error::new(
+        proc_macro2::Span::call_site(),
+        "`#[throttle]` only supports controller structs and inherent controller methods",
+    )
+    .to_compile_error()
+    .into()
+}
+
+pub fn skip_throttle(attr: TokenStream, item: TokenStream) -> TokenStream {
+    if !attr.is_empty() {
+        return Error::new(
+            proc_macro2::Span::call_site(),
+            "`#[skip_throttle]` does not accept arguments",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let skip_attr = skip_throttle_marker_attr();
+
+    if let Ok(mut method) = syn::parse::<ImplItemFn>(item.clone()) {
+        method.attrs.insert(0, skip_attr);
+        return quote!(#method).into();
+    }
+
+    if let Ok(mut item_struct) = syn::parse::<ItemStruct>(item.clone()) {
+        item_struct.attrs.insert(0, skip_attr);
+        return quote!(#item_struct).into();
+    }
+
+    Error::new(
+        proc_macro2::Span::call_site(),
+        "`#[skip_throttle]` only supports controller structs and inherent controller methods",
     )
     .to_compile_error()
     .into()

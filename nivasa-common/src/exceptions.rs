@@ -301,7 +301,11 @@ mod tests {
         );
         assert_exception_case!(HttpException::not_implemented, 501, "Not Implemented");
         assert_exception_case!(HttpException::bad_gateway, 502, "Bad Gateway");
-        assert_exception_case!(HttpException::service_unavailable, 503, "Service Unavailable");
+        assert_exception_case!(
+            HttpException::service_unavailable,
+            503,
+            "Service Unavailable"
+        );
         assert_exception_case!(HttpException::gateway_timeout, 504, "Gateway Timeout");
     }
 
@@ -362,7 +366,10 @@ mod tests {
         assert_eq!(ex.to_string(), "500 Internal Server Error: Something broke");
 
         let err: &dyn std::error::Error = &ex;
-        assert_eq!(err.source().map(ToString::to_string), Some("disk failed".into()));
+        assert_eq!(
+            err.source().map(ToString::to_string),
+            Some("disk failed".into())
+        );
 
         let json = serde_json::to_value(&ex).unwrap();
         assert_eq!(
@@ -374,5 +381,4 @@ mod tests {
             })
         );
     }
-
 }

@@ -119,20 +119,37 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let controller_registrations = controllers.iter().map(|controller| {
         quote! {
-            nivasa_core::module::ModuleControllerRegistration::new(
-                std::any::TypeId::of::<#controller>(),
-                #controller::__nivasa_controller_routes()
-                    .into_iter()
-                    .map(|(method, path, handler)| {
-                        nivasa_core::module::ControllerRouteRegistration::new(
-                            method,
-                            path,
-                            handler,
-                        )
-                    })
-                    .collect(),
-                Self::__nivasa_module_middlewares(),
-            )
+            {
+                let throttle_metadata = #controller::__nivasa_controller_throttle_metadata();
+
+                nivasa_core::module::ModuleControllerRegistration::new(
+                    std::any::TypeId::of::<#controller>(),
+                    #controller::__nivasa_controller_routes()
+                        .into_iter()
+                        .map(|(method, path, handler)| {
+                            let mut route = nivasa_core::module::ControllerRouteRegistration::new(
+                                method,
+                                path,
+                                handler,
+                            );
+
+                            if let Some((_, throttle, skip_throttle)) = throttle_metadata
+                                .iter()
+                                .find(|(candidate, _, _)| *candidate == handler)
+                            {
+                                if *skip_throttle {
+                                    route = route.skip_throttle();
+                                } else if let Some((limit, ttl_secs)) = throttle {
+                                    route = route.with_throttle(*limit, *ttl_secs);
+                                }
+                            }
+
+                            route
+                        })
+                        .collect(),
+                    Self::__nivasa_module_middlewares(),
+                )
+            }
         }
     });
 

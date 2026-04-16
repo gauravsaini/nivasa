@@ -204,9 +204,8 @@ impl ScxmlDocument {
             buf.clear();
         }
 
-        let metadata = metadata.ok_or_else(|| {
-            ParseError::Invalid("Missing <scxml> root element".to_string())
-        })?;
+        let metadata = metadata
+            .ok_or_else(|| ParseError::Invalid("Missing <scxml> root element".to_string()))?;
 
         Ok(ScxmlDocument {
             metadata,
@@ -239,8 +238,8 @@ impl ScxmlDocument {
                 *metadata = Some(parse_scxml_attrs(e)?);
             }
             "state" => {
-                let id = get_attr(e, "id")?
-                    .unwrap_or_else(|| format!("__anonymous_{}", states.len()));
+                let id =
+                    get_attr(e, "id")?.unwrap_or_else(|| format!("__anonymous_{}", states.len()));
                 let initial = get_attr(e, "initial")?;
                 let parent = parent_stack.last().cloned();
 
@@ -273,8 +272,8 @@ impl ScxmlDocument {
                 *current_state_id = Some(id);
             }
             "parallel" => {
-                let id = get_attr(e, "id")?
-                    .unwrap_or_else(|| format!("__parallel_{}", states.len()));
+                let id =
+                    get_attr(e, "id")?.unwrap_or_else(|| format!("__parallel_{}", states.len()));
                 let parent = parent_stack.last().cloned();
 
                 if let Some(ref parent_id) = parent {
@@ -306,8 +305,7 @@ impl ScxmlDocument {
                 *current_state_id = Some(id);
             }
             "final" => {
-                let id = get_attr(e, "id")?
-                    .unwrap_or_else(|| format!("__final_{}", states.len()));
+                let id = get_attr(e, "id")?.unwrap_or_else(|| format!("__final_{}", states.len()));
                 let parent = parent_stack.last().cloned();
 
                 if let Some(ref parent_id) = parent {
@@ -556,7 +554,8 @@ mod tests {
 
     #[test]
     fn test_content_hash_deterministic() {
-        let scxml = r#"<?xml version="1.0"?><scxml version="1.0" initial="a"><state id="a"/></scxml>"#;
+        let scxml =
+            r#"<?xml version="1.0"?><scxml version="1.0" initial="a"><state id="a"/></scxml>"#;
         let doc1 = ScxmlDocument::from_str(scxml).unwrap();
         let doc2 = ScxmlDocument::from_str(scxml).unwrap();
         assert_eq!(doc1.content_hash(), doc2.content_hash());

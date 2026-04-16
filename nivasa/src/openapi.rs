@@ -174,12 +174,18 @@ pub fn build_openapi_document(
             .api_operations
             .into_iter()
             .collect::<BTreeMap<_, _>>();
-        let params = controller.api_params.into_iter().collect::<BTreeMap<_, _>>();
+        let params = controller
+            .api_params
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
         let responses = controller
             .api_responses
             .into_iter()
             .collect::<BTreeMap<_, _>>();
-        let bodies = controller.api_bodies.into_iter().collect::<BTreeMap<_, _>>();
+        let bodies = controller
+            .api_bodies
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
         let bearer_auth = controller
             .api_bearer_auth
             .into_iter()
@@ -265,7 +271,9 @@ pub fn build_openapi_document(
 
             let operation = OpenApiOperation {
                 tags: tags.clone(),
-                summary: operations.get(handler).and_then(|summary| summary.map(str::to_string)),
+                summary: operations
+                    .get(handler)
+                    .and_then(|summary| summary.map(str::to_string)),
                 parameters: parameter_entries,
                 request_body,
                 responses: response_entries,

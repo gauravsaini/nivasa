@@ -1,8 +1,14 @@
 use crate::{Body, Json, NivasaRequest, NivasaResponse, NivasaServerBuilder};
+use async_graphql::{ObjectType, SubscriptionType};
 use http::StatusCode;
+pub use nivasa_graphql::{
+    EmptyMutation, EmptySubscription, GraphQLModule as GraphQLCoreModule,
+    GraphQLRequest as GraphQLCoreRequest, GraphQLResponse as GraphQLCoreResponse, GraphQLSchema,
+};
 use nivasa_routing::{RouteDispatchError, RouteMethod};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
+use std::future::Future;
 use std::sync::Arc;
 
 /// GraphQL HTTP request envelope.
@@ -90,6 +96,31 @@ impl GraphQLModule {
         }
     }
 
+    /// Build a GraphQL HTTP wrapper from a real async-graphql schema.
+    pub fn from_schema<Q, M, S>(schema: GraphQLSchema<Q, M, S>) -> Self
+    where
+        Q: ObjectType + Send + Sync + 'static,
+        M: ObjectType + Send + Sync + 'static,
+        S: SubscriptionType + Send + Sync + 'static,
+    {
+        Self::from_graphql_module(GraphQLCoreModule::from_schema(schema))
+    }
+
+    /// Build a GraphQL HTTP wrapper from a real async-graphql module.
+    pub fn from_graphql_module<Q, M, S>(module: GraphQLCoreModule<Q, M, S>) -> Self
+    where
+        Q: ObjectType + Send + Sync + 'static,
+        M: ObjectType + Send + Sync + 'static,
+        S: SubscriptionType + Send + Sync + 'static,
+    {
+        Self {
+            endpoint_path: "/graphql".to_string(),
+            playground_path: "/graphql".to_string(),
+            title: "Nivasa GraphQL".to_string(),
+            executor: core_graphql_executor(module),
+        }
+    }
+
     pub fn endpoint_path(mut self, path: impl Into<String>) -> Self {
         self.endpoint_path = path.into();
         self
@@ -147,6 +178,88 @@ fn execute_graphql_request(request: &NivasaRequest, executor: GraphQLExecutor) -
 
     let response = executor(request);
     NivasaResponse::json(response.into_json())
+}
+
+fn core_graphql_executor<Q, M, S>(module: GraphQLCoreModule<Q, M, S>) -> GraphQLExecutor
+where
+    Q: ObjectType + Send + Sync + 'static,
+    M: ObjectType + Send + Sync + 'static,
+    S: SubscriptionType + Send + Sync + 'static,
+{
+    let module = Arc::new(module);
+
+    Arc::new(move |request| {
+        let request = to_core_graphql_request(request);
+        let module = Arc::clone(&module);
+        let response = block_on_graphql(async move { module.execute(request).await });
+        from_core_graphql_response(response)
+    })
+}
+
+fn to_core_graphql_request(request: GraphQLRequest) -> GraphQLCoreRequest {
+    let mut payload = Map::new();
+    payload.insert("query".to_string(), Value::String(request.query));
+
+    if let Some(operation_name) = request.operation_name {
+        payload.insert("operationName".to_string(), Value::String(operation_name));
+    }
+
+    if let Some(variables) = request.variables {
+        payload.insert("variables".to_string(), variables);
+    }
+
+    if let Some(extensions) = request.extensions {
+        payload.insert("extensions".to_string(), extensions);
+    }
+
+    serde_json::from_value(Value::Object(payload))
+        .expect("GraphQL request envelope must convert into async-graphql request")
+}
+
+fn from_core_graphql_response(response: GraphQLCoreResponse) -> GraphQLResponse {
+    let errors = response
+        .errors
+        .into_iter()
+        .map(|error| GraphQLError {
+            message: error.message,
+            extensions: error.extensions.map(|extensions| {
+                serde_json::to_value(extensions)
+                    .expect("GraphQL error extensions must serialize")
+            }),
+        })
+        .collect();
+
+    GraphQLResponse {
+        data: Some(
+            serde_json::to_value(response.data).expect("GraphQL response data must serialize"),
+        ),
+        errors,
+    }
+}
+
+fn block_on_graphql<F, T>(future: F) -> T
+where
+    F: Future<Output = T> + Send + 'static,
+    T: Send + 'static,
+{
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => match handle.runtime_flavor() {
+            tokio::runtime::RuntimeFlavor::MultiThread => {
+                tokio::task::block_in_place(|| handle.block_on(future))
+            }
+            tokio::runtime::RuntimeFlavor::CurrentThread => std::thread::spawn(move || {
+                handle.block_on(future)
+            })
+            .join()
+            .expect("GraphQL runtime thread panicked"),
+            _ => tokio::task::block_in_place(|| handle.block_on(future)),
+        },
+        Err(_) => tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("GraphQL runtime must build")
+            .block_on(future),
+    }
 }
 
 fn graphql_playground_html(title: &str, endpoint_path: &str) -> String {

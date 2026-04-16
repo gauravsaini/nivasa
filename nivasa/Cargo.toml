@@ -24,6 +24,10 @@ nivasa-websocket = { path = "../nivasa-websocket", optional = true }
 
 [dev-dependencies]
 openapiv3 = "2.2"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "time"] }
+bytes = { workspace = true }
+http-body-util = { workspace = true }
+hyper-util = { workspace = true }
 
 [features]
 default = []

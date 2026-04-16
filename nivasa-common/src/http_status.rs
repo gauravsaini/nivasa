@@ -356,7 +356,10 @@ mod tests {
 
     #[test]
     fn converts_from_numeric_and_http_status_code() {
-        assert_eq!(HttpStatus::try_from(503).unwrap(), HttpStatus::ServiceUnavailable);
+        assert_eq!(
+            HttpStatus::try_from(503).unwrap(),
+            HttpStatus::ServiceUnavailable
+        );
         assert_eq!(
             HttpStatus::try_from(StatusCode::NOT_FOUND).unwrap(),
             HttpStatus::NotFound

@@ -358,10 +358,7 @@ impl<S: StatechartSpec> StatechartEngine<S> {
     /// let next = engine.send_event(DemoEvent::Finish).unwrap();
     /// assert_eq!(next, DemoState::Done);
     /// ```
-    pub fn send_event(
-        &mut self,
-        event: S::Event,
-    ) -> Result<S::State, InvalidTransitionError<S>> {
+    pub fn send_event(&mut self, event: S::Event) -> Result<S::State, InvalidTransitionError<S>> {
         let from = format!("{:?}", self.current_state);
         let event_str = format!("{:?}", event);
 
@@ -647,10 +644,8 @@ mod tests {
 
     #[test]
     fn test_snapshot_and_recent_transitions() {
-        let mut engine = StatechartEngine::<TestSpec>::with_tracer(
-            TestState::Idle,
-            Box::new(LoggingTracer),
-        );
+        let mut engine =
+            StatechartEngine::<TestSpec>::with_tracer(TestState::Idle, Box::new(LoggingTracer));
         engine.send_event(TestEvent::Start).unwrap();
         engine.send_event(TestEvent::Finish).unwrap();
 

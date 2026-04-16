@@ -82,12 +82,7 @@ impl TestClient {
     }
 }
 
-fn build_request(
-    method: Method,
-    path: String,
-    headers: HeaderMap,
-    body: Body,
-) -> NivasaRequest {
+fn build_request(method: Method, path: String, headers: HeaderMap, body: Body) -> NivasaRequest {
     let mut request = Request::builder()
         .method(method)
         .uri(path)

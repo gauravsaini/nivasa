@@ -16,7 +16,7 @@ use nivasa_core::{
 use nivasa_filters::{ExceptionFilter, ExceptionFilterMetadata};
 use nivasa_guards::Guard;
 use nivasa_http::{
-    NivasaMiddleware, NivasaRequest, NivasaResponse, NivasaServer, NivasaServerBuilder,
+    NivasaMiddleware, NivasaResponse, NivasaServer, NivasaServerBuilder,
 };
 use nivasa_interceptors::Interceptor;
 use nivasa_pipes::Pipe;
@@ -253,6 +253,7 @@ pub enum AppBuildError {
     DependencyInjection(DiError),
     DuplicateRoute { method: String, path: String },
     MissingRouteHandler { handler: String },
+    Listen(io::Error),
 }
 
 impl std::fmt::Display for AppBuildError {
@@ -271,6 +272,7 @@ impl std::fmt::Display for AppBuildError {
                     "missing route handler `{handler}` while building app server"
                 )
             }
+            Self::Listen(error) => write!(f, "listen error: {error}"),
         }
     }
 }
@@ -280,6 +282,12 @@ impl std::error::Error for AppBuildError {}
 impl From<DiError> for AppBuildError {
     fn from(value: DiError) -> Self {
         Self::DependencyInjection(value)
+    }
+}
+
+impl From<io::Error> for AppBuildError {
+    fn from(value: io::Error) -> Self {
+        Self::Listen(value)
     }
 }
 
@@ -343,6 +351,23 @@ impl<T: Module> NestApplication<T> {
             controller_registrations,
             routes,
         })
+    }
+
+    /// Build the application and start the HTTP server on the provided options.
+    pub async fn listen(self, server: ServerOptions) -> Result<(), AppBuildError> {
+        let Self {
+            app_module,
+            preflight,
+            ..
+        } = self;
+
+        let app = Self {
+            app_module,
+            bootstrap: AppBootstrapConfig::from(server),
+            preflight,
+        };
+
+        app.build()?.listen().await
     }
 }
 
@@ -471,6 +496,20 @@ impl<T> App<T> {
         }
 
         Ok(builder.build())
+    }
+
+    /// Start the HTTP server using controller handlers registered by macros.
+    pub async fn listen(self) -> Result<(), AppBuildError> {
+        let host = self.bootstrap.server.host.clone();
+        let port = self.bootstrap.server.port;
+        let global_prefix = self.bootstrap.global_prefix().map(str::to_string);
+
+        let server = self.to_server(move |route| {
+            let lookup_path = controller_lookup_path(global_prefix.as_deref(), route.path.as_str());
+            nivasa_http::resolve_controller_route_handler(&lookup_path, route.handler)
+        })?;
+
+        server.listen(host, port).await.map_err(AppBuildError::from)
     }
 }
 
@@ -1215,6 +1254,37 @@ fn resolve_routes(
     Ok(routes)
 }
 
+fn controller_lookup_path(global_prefix: Option<&str>, path: &str) -> String {
+    let path = normalize_route_path(path);
+
+    let Some(prefix) = global_prefix else {
+        return path;
+    };
+
+    let prefix = normalize_route_path(prefix);
+    if prefix == "/" {
+        return path;
+    }
+
+    if path == prefix {
+        return String::from("/");
+    }
+
+    let Some(rest) = path.strip_prefix(prefix.as_str()) else {
+        return path;
+    };
+
+    let Some(rest) = rest.strip_prefix('/') else {
+        return path;
+    };
+
+    if rest.is_empty() {
+        String::from("/")
+    } else {
+        format!("/{}", rest)
+    }
+}
+
 fn block_on<F>(future: F) -> F::Output
 where
     F: Future,
@@ -1239,7 +1309,7 @@ fn noop_waker() -> Waker {
 
 type AppPreflightHook<T> =
     Box<dyn Fn(&T, &AppBootstrapConfig) -> Result<(), AppBuildError> + Send + Sync + 'static>;
-pub type AppRouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
+pub type AppRouteHandler = nivasa_http::AppRouteHandler;
 
 fn noop_raw_waker() -> RawWaker {
     RawWaker::new(std::ptr::null(), &NOOP_WAKER_VTABLE)

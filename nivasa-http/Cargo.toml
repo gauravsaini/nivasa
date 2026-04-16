@@ -31,6 +31,8 @@ nivasa-guards = { path = "../nivasa-guards" }
 nivasa-interceptors = { path = "../nivasa-interceptors" }
 nivasa-pipes = { path = "../nivasa-pipes" }
 nivasa-routing = { path = "../nivasa-routing" }
+nivasa-graphql = { path = "../nivasa-graphql" }
+async-graphql = { workspace = true }
 nivasa-statechart = { path = "../nivasa-statechart" }
 tokio = { workspace = true }
 serde = { workspace = true }

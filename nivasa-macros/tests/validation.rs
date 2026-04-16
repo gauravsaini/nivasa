@@ -583,10 +583,22 @@ fn dto_validation_groups_fire_for_matching_group() {
         .validate_with(&ValidationContext::new().with_group("create"))
         .unwrap_err();
     assert_eq!(errors.len(), 4);
-    assert!(errors.errors().iter().any(|error| error.field == "create_email"));
-    assert!(errors.errors().iter().any(|error| error.field == "password"));
-    assert!(errors.errors().iter().any(|error| error.field == "always_email"));
-    assert!(errors.errors().iter().any(|error| error.field == "child.email"));
+    assert!(errors
+        .errors()
+        .iter()
+        .any(|error| error.field == "create_email"));
+    assert!(errors
+        .errors()
+        .iter()
+        .any(|error| error.field == "password"));
+    assert!(errors
+        .errors()
+        .iter()
+        .any(|error| error.field == "always_email"));
+    assert!(errors
+        .errors()
+        .iter()
+        .any(|error| error.field == "child.email"));
 }
 
 #[test]

@@ -1,7 +1,7 @@
+use nivasa_statechart::parser::ScxmlDocument;
 use std::env;
 use std::fs;
 use std::path::Path;
-use nivasa_statechart::parser::ScxmlDocument;
 
 fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
