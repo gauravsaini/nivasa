@@ -19,12 +19,17 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-fn free_port() -> u16 {
-    StdTcpListener::bind("127.0.0.1:0")
-        .expect("must bind an ephemeral port")
-        .local_addr()
-        .expect("must inspect ephemeral addr")
-        .port()
+const BASELINE_PORTS: &[u16] = &[32123, 32124, 32125];
+const FULL_PORTS: &[u16] = &[32133, 32134, 32135];
+
+fn pick_port(candidates: &[u16]) -> u16 {
+    for port in candidates {
+        if StdTcpListener::bind(("127.0.0.1", *port)).is_ok() {
+            return *port;
+        }
+    }
+
+    panic!("benchmark could not reserve a fixed loopback port");
 }
 
 async fn wait_for_server(port: u16) {
@@ -212,7 +217,7 @@ fn bench_pipeline_overhead(c: &mut Criterion) {
     let client = build_client();
     let mut group = c.benchmark_group("pipeline_overhead");
 
-    let baseline_port = free_port();
+    let baseline_port = pick_port(BASELINE_PORTS);
     let (baseline_shutdown_tx, baseline_shutdown_rx) = oneshot::channel();
     let baseline_server =
         build_baseline_server(baseline_shutdown_rx).expect("baseline server must build");
@@ -237,7 +242,7 @@ fn bench_pipeline_overhead(c: &mut Criterion) {
         },
     );
 
-    let full_port = free_port();
+    let full_port = pick_port(FULL_PORTS);
     let (full_shutdown_tx, full_shutdown_rx) = oneshot::channel();
     let full_server =
         build_full_pipeline_server(full_shutdown_rx).expect("full pipeline server must build");
