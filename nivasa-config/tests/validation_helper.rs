@@ -138,6 +138,40 @@ impl ConfigSchema for DefaultedSchema {
     }
 }
 
+struct StrictlyValidatedSchema;
+
+impl ConfigSchema for StrictlyValidatedSchema {
+    fn required_keys() -> &'static [&'static str] {
+        &["HOST", "PORT"]
+    }
+
+    fn validate(loaded: &BTreeMap<String, String>) -> Vec<ConfigValidationIssue> {
+        let mut issues = Vec::new();
+
+        if let Some(host) = loaded.get("HOST") {
+            if !host.starts_with("127.") {
+                issues.push(ConfigValidationIssue::InvalidValue {
+                    key: "HOST".to_string(),
+                    value: host.to_string(),
+                    expected: "loopback address".to_string(),
+                });
+            }
+        }
+
+        if let Some(port) = loaded.get("PORT") {
+            if port.parse::<u16>().is_err() {
+                issues.push(ConfigValidationIssue::InvalidValue {
+                    key: "PORT".to_string(),
+                    value: port.to_string(),
+                    expected: "unsigned 16-bit integer".to_string(),
+                });
+            }
+        }
+
+        issues
+    }
+}
+
 #[test]
 fn config_schema_validation_reports_missing_and_invalid_values_together() {
     let loaded = BTreeMap::from([
@@ -201,6 +235,63 @@ fn config_service_get_helpers_cover_default_fallback_and_missing_keys() {
         Err(ConfigException::MissingKey {
             key: "MISSING".to_string(),
         })
+    );
+}
+
+#[test]
+fn load_env_parses_export_prefixes_quotes_and_invalid_lines() {
+    let path = write_temp_env_file(
+        "# comment line\n\
+export NIVASA_CONFIG_TEST_EXPORTED=\"from export\"\n\
+NIVASA_CONFIG_TEST_SINGLE='single quoted'\n\
+NIVASA_CONFIG_TEST_SPACED =  spaced value  \n\
+=ignored\n\
+not-an-assignment\n",
+    );
+    let options = ConfigOptions::new().with_env_file_path(path.to_string_lossy().to_string());
+
+    let loaded = ConfigModule::load_env(&options).expect("env file should load");
+
+    assert_eq!(
+        loaded.get("NIVASA_CONFIG_TEST_EXPORTED").map(String::as_str),
+        Some("from export")
+    );
+    assert_eq!(
+        loaded.get("NIVASA_CONFIG_TEST_SINGLE").map(String::as_str),
+        Some("single quoted")
+    );
+    assert_eq!(
+        loaded.get("NIVASA_CONFIG_TEST_SPACED").map(String::as_str),
+        Some("spaced value")
+    );
+    assert!(!loaded.contains_key("ignored"));
+    assert!(!loaded.contains_key("not-an-assignment"));
+}
+
+#[test]
+fn validate_schema_aggregates_custom_validation_issues_with_required_keys() {
+    let loaded = BTreeMap::from([
+        ("HOST".to_string(), "10.0.0.1".to_string()),
+        ("PORT".to_string(), "abc".to_string()),
+    ]);
+
+    let error = ConfigModule::validate_schema::<StrictlyValidatedSchema>(&loaded)
+        .expect_err("schema validation should fail");
+
+    assert_eq!(
+        error.issues(),
+        &[
+            ConfigValidationIssue::InvalidValue {
+                key: "HOST".to_string(),
+                value: "10.0.0.1".to_string(),
+                expected: "loopback address".to_string(),
+            },
+            ConfigValidationIssue::InvalidValue {
+                key: "PORT".to_string(),
+                value: "abc".to_string(),
+                expected: "unsigned 16-bit integer".to_string(),
+            },
+        ]
     );
 }
 
