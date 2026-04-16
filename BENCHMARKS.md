@@ -34,11 +34,11 @@ Routing benchmark baseline:
 - `routing_dispatch/dispatch_static_route/10`: to be collected
 - `routing_dispatch/dispatch_static_route/100`: to be collected
 - `routing_dispatch/dispatch_static_route/1000`: to be collected
-- `pipeline_overhead/full_stack_roundtrip/baseline`: to be collected
-- `pipeline_overhead/full_stack_roundtrip/middleware_guard_interceptor`: to be collected
-- `startup_modules/bootstrap/1`: to be collected
-- `startup_modules/bootstrap/10`: to be collected
-- `startup_modules/bootstrap/25`: to be collected
+- `pipeline_overhead/full_stack_roundtrip/baseline`: blocked in this environment by ephemeral-port bind permission failure
+- `pipeline_overhead/full_stack_roundtrip/middleware_guard_interceptor`: blocked in this environment by ephemeral-port bind permission failure
+- `startup_modules/bootstrap/1`: `4.2147 µs` to `5.7422 µs`
+- `startup_modules/bootstrap/10`: `76.755 µs` to `90.848 µs`
+- `startup_modules/bootstrap/25`: `235.25 µs` to `236.73 µs`
 
 - `di_resolution/resolve_cached_singleton/1`: `194.75 ns` to `195.45 ns`
 - `di_resolution/resolve_cached_singleton/10`: `183.14 ns` to `191.01 ns`
@@ -46,4 +46,6 @@ Routing benchmark baseline:
 
 CI now runs a coarse budget gate for the DI resolution benchmark in addition to the benchmark target. The gate is intentionally loose and meant to catch obvious regressions rather than replace a full historical Criterion baseline service.
 
-The startup benchmark implementation is staged in `benches/startup_modules.rs`, but the bench target still needs Cargo manifest wiring before it can run under `cargo bench`.
+The startup benchmark implementation is wired in `benches/startup_modules.rs` and now runs under `cargo bench`.
+
+Pipeline overhead is wired too, but this environment currently rejects the ephemeral-port bind that the benchmark uses to start the local server.
