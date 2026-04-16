@@ -1,8 +1,7 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 use syn::{
-    Error, FnArg, ImplItemFn, LitStr, Meta, Path, Token, punctuated::Punctuated,
-    spanned::Spanned,
+    punctuated::Punctuated, spanned::Spanned, Error, FnArg, ImplItemFn, LitStr, Meta, Path, Token,
 };
 
 const GUARD_MARKER_PREFIX: &str = "nivasa-guard:";
@@ -52,10 +51,7 @@ fn expand_subscribe_message(
     event: LitStr,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let method_name = &method.sig.ident;
-    let helper_name = format_ident!(
-        "__nivasa_subscribe_message_metadata_for_{}",
-        method_name
-    );
+    let helper_name = format_ident!("__nivasa_subscribe_message_metadata_for_{}", method_name);
     let guard_helper_name = format_ident!(
         "__nivasa_subscribe_message_guard_metadata_for_{}",
         method_name
@@ -119,7 +115,10 @@ fn collect_guard_names(method: &ImplItemFn) -> syn::Result<Vec<LitStr>> {
             }
 
             guards.extend(paths.into_iter().map(|path| {
-                LitStr::new(&path.to_token_stream().to_string().replace(' ', ""), path.span())
+                LitStr::new(
+                    &path.to_token_stream().to_string().replace(' ', ""),
+                    path.span(),
+                )
             }));
             continue;
         }
@@ -194,7 +193,10 @@ fn collect_interceptor_names(method: &ImplItemFn) -> syn::Result<Vec<LitStr>> {
             }
 
             interceptors.extend(paths.into_iter().map(|path| {
-                LitStr::new(&path.to_token_stream().to_string().replace(' ', ""), path.span())
+                LitStr::new(
+                    &path.to_token_stream().to_string().replace(' ', ""),
+                    path.span(),
+                )
             }));
             continue;
         }

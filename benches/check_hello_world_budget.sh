@@ -3,16 +3,26 @@ set -euo pipefail
 
 # Coarse CI smoke gate: catches catastrophic benchmark regressions without pretending
 # to replace the real Criterion output or a full historical baseline service.
-max_upper_us="${BENCHMARK_HELLO_WORLD_MAX_UPPER_US:-5000}"
+max_upper_us="${BENCHMARK_DI_RESOLUTION_MAX_UPPER_US:-5000}"
 
 output="$(
-  cargo bench -p nivasa-benchmarks --bench hello_world -- --quick --noplot 2>&1
+  cargo bench -p nivasa-benchmarks --bench di_resolution -- --quick --noplot 2>&1
 )"
 
-time_line="$(printf '%s\n' "$output" | grep -m1 'time:[[:space:]]*\[')"
+time_line="$(
+  printf '%s\n' "$output" | awk '
+    /di_resolution\/resolve_cached_singleton\/[0-9]+$/ {
+      getline
+      getline
+      getline
+      print
+      exit
+    }
+  '
+)"
 if [ -z "$time_line" ]; then
   printf '%s\n' "$output"
-  echo "failed to find Criterion time line for hello_world_get_json_response" >&2
+  echo "failed to find Criterion time line for di_resolution/resolve_cached_singleton" >&2
   exit 1
 fi
 
@@ -32,7 +42,7 @@ upper_us="$(
 
 awk -v upper="$upper_us" -v limit="$max_upper_us" 'BEGIN {
   if (upper > limit) {
-    printf("hello_world_get_json_response upper bound %.2f us exceeds budget %.2f us\n", upper, limit) > "/dev/stderr";
+    printf("di_resolution/resolve_cached_singleton upper bound %.2f us exceeds budget %.2f us\n", upper, limit) > "/dev/stderr";
     exit 1;
   }
 }'

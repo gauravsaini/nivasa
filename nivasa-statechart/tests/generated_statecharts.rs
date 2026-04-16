@@ -1,11 +1,10 @@
 use nivasa_statechart::codegen;
 use nivasa_statechart::parser::ScxmlDocument;
 use nivasa_statechart::{
-    GENERATED_STATECHARTS, StatechartEngine, StatechartTracer, TransitionKind,
-    NivasaApplicationEvent, NivasaApplicationState, NivasaApplicationStatechart,
-    NivasaModuleEvent, NivasaModuleState, NivasaModuleStatechart,
-    NivasaProviderEvent, NivasaProviderState, NivasaProviderStatechart,
-    NivasaRequestEvent, NivasaRequestState, NivasaRequestStatechart,
+    NivasaApplicationEvent, NivasaApplicationState, NivasaApplicationStatechart, NivasaModuleEvent,
+    NivasaModuleState, NivasaModuleStatechart, NivasaProviderEvent, NivasaProviderState,
+    NivasaProviderStatechart, NivasaRequestEvent, NivasaRequestState, NivasaRequestStatechart,
+    StatechartEngine, StatechartTracer, TransitionKind, GENERATED_STATECHARTS,
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -75,7 +74,9 @@ fn assert_valid_trace<S>(
 
     let recent = engine.recent_transitions();
     assert_eq!(recent.len(), expected.len());
-    assert!(recent.iter().all(|record| record.kind == TransitionKind::Valid));
+    assert!(recent
+        .iter()
+        .all(|record| record.kind == TransitionKind::Valid));
 
     let recent = recent
         .into_iter()
@@ -102,7 +103,9 @@ fn assert_invalid_trace<S>(
 
     let recent = engine.recent_transitions();
     assert_eq!(recent.len(), expected.len());
-    assert!(recent.iter().all(|record| record.kind == TransitionKind::Invalid));
+    assert!(recent
+        .iter()
+        .all(|record| record.kind == TransitionKind::Invalid));
 
     let recent = recent
         .into_iter()
@@ -175,9 +178,8 @@ fn generated_registry_matches_source_scxml_hashes() {
 
 #[test]
 fn application_bootstrap_path_reaches_running() {
-    let (mut engine, tracer) = traced_engine::<NivasaApplicationStatechart>(
-        NivasaApplicationState::ResolvingModules,
-    );
+    let (mut engine, tracer) =
+        traced_engine::<NivasaApplicationStatechart>(NivasaApplicationState::ResolvingModules);
 
     assert_eq!(
         engine.valid_events(),
@@ -219,9 +221,8 @@ fn application_bootstrap_path_reaches_running() {
 
 #[test]
 fn application_container_state_enters_its_initial_child() {
-    let (engine, tracer) = traced_engine::<NivasaApplicationStatechart>(
-        NivasaApplicationState::Running,
-    );
+    let (engine, tracer) =
+        traced_engine::<NivasaApplicationStatechart>(NivasaApplicationState::Running);
 
     assert_eq!(engine.current_state(), NivasaApplicationState::Listening);
     assert_eq!(
@@ -233,10 +234,12 @@ fn application_container_state_enters_its_initial_child() {
 
 #[test]
 fn application_container_states_enter_their_initial_children() {
-    let (engine, tracer) = traced_engine::<NivasaApplicationStatechart>(
-        NivasaApplicationState::Bootstrapping,
+    let (engine, tracer) =
+        traced_engine::<NivasaApplicationStatechart>(NivasaApplicationState::Bootstrapping);
+    assert_eq!(
+        engine.current_state(),
+        NivasaApplicationState::ResolvingModules
     );
-    assert_eq!(engine.current_state(), NivasaApplicationState::ResolvingModules);
     assert_eq!(
         engine.valid_events(),
         vec![
@@ -246,10 +249,12 @@ fn application_container_states_enter_their_initial_children() {
     );
     assert_valid_trace(&engine, &tracer, &[]);
 
-    let (engine, tracer) = traced_engine::<NivasaApplicationStatechart>(
-        NivasaApplicationState::ShuttingDown,
+    let (engine, tracer) =
+        traced_engine::<NivasaApplicationStatechart>(NivasaApplicationState::ShuttingDown);
+    assert_eq!(
+        engine.current_state(),
+        NivasaApplicationState::DestroyingModules
     );
-    assert_eq!(engine.current_state(), NivasaApplicationState::DestroyingModules);
     assert_eq!(
         engine.valid_events(),
         vec![NivasaApplicationEvent::ModulesDestroyed],
@@ -259,9 +264,8 @@ fn application_container_states_enter_their_initial_children() {
 
 #[test]
 fn application_failure_path_reaches_terminated() {
-    let (mut engine, tracer) = traced_engine::<NivasaApplicationStatechart>(
-        NivasaApplicationState::ResolvingModules,
-    );
+    let (mut engine, tracer) =
+        traced_engine::<NivasaApplicationStatechart>(NivasaApplicationState::ResolvingModules);
 
     drive_and_assert_trace(
         &mut engine,
@@ -283,9 +287,8 @@ fn application_failure_path_reaches_terminated() {
 
 #[test]
 fn application_shutdown_path_reaches_shutdown_complete() {
-    let (mut engine, tracer) = traced_engine::<NivasaApplicationStatechart>(
-        NivasaApplicationState::Listening,
-    );
+    let (mut engine, tracer) =
+        traced_engine::<NivasaApplicationStatechart>(NivasaApplicationState::Listening);
 
     drive_and_assert_trace(
         &mut engine,
@@ -338,29 +341,23 @@ fn application_error_transitions_short_circuit_to_bootstrap_failed() {
         drive_and_assert_trace(
             &mut engine,
             &tracer,
-            &[(
-                event,
-                NivasaApplicationState::BootstrapFailed,
-            )],
+            &[(event, NivasaApplicationState::BootstrapFailed)],
         );
 
-        assert_eq!(engine.current_state(), NivasaApplicationState::BootstrapFailed);
+        assert_eq!(
+            engine.current_state(),
+            NivasaApplicationState::BootstrapFailed
+        );
         assert_eq!(
             *tracer.transitions.lock().unwrap(),
-            vec![(
-                from.to_string(),
-                event_name,
-                "BootstrapFailed".to_string(),
-            )],
+            vec![(from.to_string(), event_name, "BootstrapFailed".to_string(),)],
         );
     }
 }
 
 #[test]
 fn module_happy_path_reaches_destroyed() {
-    let (mut engine, tracer) = traced_engine::<NivasaModuleStatechart>(
-        NivasaModuleState::Unloaded,
-    );
+    let (mut engine, tracer) = traced_engine::<NivasaModuleStatechart>(NivasaModuleState::Unloaded);
 
     drive_and_assert_trace(
         &mut engine,
@@ -386,10 +383,7 @@ fn module_happy_path_reaches_destroyed() {
                 NivasaModuleEvent::ModuleInit,
                 NivasaModuleState::Initialized,
             ),
-            (
-                NivasaModuleEvent::ModuleActivate,
-                NivasaModuleState::Active,
-            ),
+            (NivasaModuleEvent::ModuleActivate, NivasaModuleState::Active),
             (
                 NivasaModuleEvent::ModuleDestroy,
                 NivasaModuleState::Destroying,
@@ -429,29 +423,20 @@ fn module_error_transitions_short_circuit_to_load_failed() {
         drive_and_assert_trace(
             &mut engine,
             &tracer,
-            &[(
-                event,
-                NivasaModuleState::LoadFailed,
-            )],
+            &[(event, NivasaModuleState::LoadFailed)],
         );
 
         assert_eq!(engine.current_state(), NivasaModuleState::LoadFailed);
         assert_eq!(
             *tracer.transitions.lock().unwrap(),
-            vec![(
-                from.to_string(),
-                event_name,
-                "LoadFailed".to_string(),
-            )],
+            vec![(from.to_string(), event_name, "LoadFailed".to_string(),)],
         );
     }
 }
 
 #[test]
 fn module_load_failure_short_circuits_to_failed() {
-    let (mut engine, tracer) = traced_engine::<NivasaModuleStatechart>(
-        NivasaModuleState::Unloaded,
-    );
+    let (mut engine, tracer) = traced_engine::<NivasaModuleStatechart>(NivasaModuleState::Unloaded);
 
     drive_and_assert_trace(
         &mut engine,
@@ -465,10 +450,7 @@ fn module_load_failure_short_circuits_to_failed() {
                 NivasaModuleEvent::ErrorImportMissing,
                 NivasaModuleState::LoadFailed,
             ),
-            (
-                NivasaModuleEvent::ModuleAbort,
-                NivasaModuleState::Failed,
-            ),
+            (NivasaModuleEvent::ModuleAbort, NivasaModuleState::Failed),
         ],
     );
 
@@ -515,29 +497,24 @@ fn provider_error_transitions_short_circuit_to_resolution_failed() {
         drive_and_assert_trace(
             &mut engine,
             &tracer,
-            &[(
-                event,
-                NivasaProviderState::ResolutionFailed,
-            )],
+            &[(event, NivasaProviderState::ResolutionFailed)],
         );
 
-        assert_eq!(engine.current_state(), NivasaProviderState::ResolutionFailed);
+        assert_eq!(
+            engine.current_state(),
+            NivasaProviderState::ResolutionFailed
+        );
         assert_eq!(
             *tracer.transitions.lock().unwrap(),
-            vec![(
-                from.to_string(),
-                event_name,
-                "ResolutionFailed".to_string(),
-            )],
+            vec![(from.to_string(), event_name, "ResolutionFailed".to_string(),)],
         );
     }
 }
 
 #[test]
 fn provider_happy_path_reaches_disposed() {
-    let (mut engine, tracer) = traced_engine::<NivasaProviderStatechart>(
-        NivasaProviderState::Unregistered,
-    );
+    let (mut engine, tracer) =
+        traced_engine::<NivasaProviderStatechart>(NivasaProviderState::Unregistered);
 
     drive_and_assert_trace(
         &mut engine,
@@ -575,9 +552,8 @@ fn provider_happy_path_reaches_disposed() {
 
 #[test]
 fn provider_resolution_failure_short_circuits_to_failed() {
-    let (mut engine, tracer) = traced_engine::<NivasaProviderStatechart>(
-        NivasaProviderState::Resolving,
-    );
+    let (mut engine, tracer) =
+        traced_engine::<NivasaProviderStatechart>(NivasaProviderState::Resolving);
 
     drive_and_assert_trace(
         &mut engine,
@@ -599,9 +575,8 @@ fn provider_resolution_failure_short_circuits_to_failed() {
 
 #[test]
 fn request_happy_path_reaches_done() {
-    let (mut engine, tracer) = traced_engine::<NivasaRequestStatechart>(
-        NivasaRequestState::Received,
-    );
+    let (mut engine, tracer) =
+        traced_engine::<NivasaRequestStatechart>(NivasaRequestState::Received);
 
     assert_eq!(
         engine.valid_events(),
@@ -647,10 +622,7 @@ fn request_happy_path_reaches_done() {
                 NivasaRequestEvent::InterceptorsPostComplete,
                 NivasaRequestState::SendingResponse,
             ),
-            (
-                NivasaRequestEvent::ResponseSent,
-                NivasaRequestState::Done,
-            ),
+            (NivasaRequestEvent::ResponseSent, NivasaRequestState::Done),
         ],
     );
 
@@ -659,9 +631,8 @@ fn request_happy_path_reaches_done() {
 
 #[test]
 fn request_guard_denied_short_circuits_to_done() {
-    let (mut engine, tracer) = traced_engine::<NivasaRequestStatechart>(
-        NivasaRequestState::GuardChain,
-    );
+    let (mut engine, tracer) =
+        traced_engine::<NivasaRequestStatechart>(NivasaRequestState::GuardChain);
 
     drive_and_assert_trace(
         &mut engine,
@@ -675,10 +646,7 @@ fn request_guard_denied_short_circuits_to_done() {
                 NivasaRequestEvent::FilterHandled,
                 NivasaRequestState::SendingResponse,
             ),
-            (
-                NivasaRequestEvent::ErrorSend,
-                NivasaRequestState::Done,
-            ),
+            (NivasaRequestEvent::ErrorSend, NivasaRequestState::Done),
         ],
     );
 
@@ -714,9 +682,8 @@ fn invalid_event_in_generated_application_state_panics_in_debug() {
 
 #[test]
 fn request_validation_error_short_circuits_to_done() {
-    let (mut engine, tracer) = traced_engine::<NivasaRequestStatechart>(
-        NivasaRequestState::PipeTransform,
-    );
+    let (mut engine, tracer) =
+        traced_engine::<NivasaRequestStatechart>(NivasaRequestState::PipeTransform);
 
     drive_and_assert_trace(
         &mut engine,
@@ -730,10 +697,7 @@ fn request_validation_error_short_circuits_to_done() {
                 NivasaRequestEvent::FilterHandled,
                 NivasaRequestState::SendingResponse,
             ),
-            (
-                NivasaRequestEvent::ErrorSend,
-                NivasaRequestState::Done,
-            ),
+            (NivasaRequestEvent::ErrorSend, NivasaRequestState::Done),
         ],
     );
 
@@ -742,9 +706,8 @@ fn request_validation_error_short_circuits_to_done() {
 
 #[test]
 fn request_handler_error_short_circuits_to_done() {
-    let (mut engine, tracer) = traced_engine::<NivasaRequestStatechart>(
-        NivasaRequestState::HandlerExecution,
-    );
+    let (mut engine, tracer) =
+        traced_engine::<NivasaRequestStatechart>(NivasaRequestState::HandlerExecution);
 
     drive_and_assert_trace(
         &mut engine,
@@ -758,10 +721,7 @@ fn request_handler_error_short_circuits_to_done() {
                 NivasaRequestEvent::FilterHandled,
                 NivasaRequestState::SendingResponse,
             ),
-            (
-                NivasaRequestEvent::ErrorSend,
-                NivasaRequestState::Done,
-            ),
+            (NivasaRequestEvent::ErrorSend, NivasaRequestState::Done),
         ],
     );
 
@@ -770,9 +730,8 @@ fn request_handler_error_short_circuits_to_done() {
 
 #[test]
 fn request_handler_stage_interceptor_error_short_circuits_to_done() {
-    let (mut engine, tracer) = traced_engine::<NivasaRequestStatechart>(
-        NivasaRequestState::HandlerExecution,
-    );
+    let (mut engine, tracer) =
+        traced_engine::<NivasaRequestStatechart>(NivasaRequestState::HandlerExecution);
 
     drive_and_assert_trace(
         &mut engine,
@@ -786,10 +745,7 @@ fn request_handler_stage_interceptor_error_short_circuits_to_done() {
                 NivasaRequestEvent::FilterHandled,
                 NivasaRequestState::SendingResponse,
             ),
-            (
-                NivasaRequestEvent::ErrorSend,
-                NivasaRequestState::Done,
-            ),
+            (NivasaRequestEvent::ErrorSend, NivasaRequestState::Done),
         ],
     );
 
@@ -798,9 +754,8 @@ fn request_handler_stage_interceptor_error_short_circuits_to_done() {
 
 #[test]
 fn tracer_receives_generated_request_transitions() {
-    let (mut engine, tracer) = traced_engine::<NivasaRequestStatechart>(
-        NivasaRequestState::Received,
-    );
+    let (mut engine, tracer) =
+        traced_engine::<NivasaRequestStatechart>(NivasaRequestState::Received);
 
     drive_and_assert_trace(
         &mut engine,

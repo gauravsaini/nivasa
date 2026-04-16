@@ -206,9 +206,7 @@ impl<M: Module> ModuleRuntime<M> {
     }
 
     /// Run module configure, then mark providers registered.
-    pub async fn register_providers(
-        &mut self,
-    ) -> Result<NivasaModuleState, ModuleLifecycleError> {
+    pub async fn register_providers(&mut self) -> Result<NivasaModuleState, ModuleLifecycleError> {
         self.module.configure(&self.container).await?;
         self.send_event(NivasaModuleEvent::ProvidersRegistered)
     }
@@ -318,9 +316,7 @@ impl<M: Module> ModuleRuntime<M> {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn activate_after_init(
-        &mut self,
-    ) -> Result<NivasaModuleState, ModuleLifecycleError> {
+    pub async fn activate_after_init(&mut self) -> Result<NivasaModuleState, ModuleLifecycleError> {
         self.initialize()?;
         self.activate()
     }
@@ -401,9 +397,7 @@ impl<M: Module + OnModuleDestroy> ModuleRuntime<M> {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn destroy_with_hooks(
-        &mut self,
-    ) -> Result<NivasaModuleState, ModuleLifecycleError> {
+    pub async fn destroy_with_hooks(&mut self) -> Result<NivasaModuleState, ModuleLifecycleError> {
         self.begin_destroy()?;
         self.module.on_module_destroy().await;
         self.complete_destroy()

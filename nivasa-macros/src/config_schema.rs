@@ -1,9 +1,8 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    parse_macro_input,
-    spanned::Spanned,
-    Attribute, Data, DeriveInput, Error, Fields, LitStr, Result,
+    parse_macro_input, spanned::Spanned, Attribute, Data, DeriveInput, Error, Fields, LitStr,
+    Result,
 };
 
 pub fn config_schema_impl(input: TokenStream) -> TokenStream {
@@ -103,9 +102,7 @@ fn parse_schema_attr(attr: &Attribute) -> Result<SchemaFieldArgs> {
             args.default = Some(value);
             Ok(())
         } else {
-            Err(meta.error(
-                "unknown `#[schema]` entry; expected `default = \"...\"`",
-            ))
+            Err(meta.error("unknown `#[schema]` entry; expected `default = \"...\"`"))
         }
     })?;
 

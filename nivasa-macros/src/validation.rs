@@ -1,13 +1,12 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input,
     parse::{Parse, ParseStream},
+    parse_macro_input,
     punctuated::Punctuated,
     spanned::Spanned,
-    Attribute, Data, DeriveInput, Error, Expr, ExprLit, ExprUnary, Field, Fields,
-    GenericArgument, Lit, LitInt, LitStr, Meta, Path, PathArguments, Result, Token, Type,
-    TypePath, UnOp,
+    Attribute, Data, DeriveInput, Error, Expr, ExprLit, ExprUnary, Field, Fields, GenericArgument,
+    Lit, LitInt, LitStr, Meta, Path, PathArguments, Result, Token, Type, TypePath, UnOp,
 };
 
 pub fn dto_impl(input: TokenStream) -> TokenStream {
@@ -155,8 +154,8 @@ fn build_field_checks(
         .filter(|attr| attr.path().is_ident("validate_if"))
         .try_fold(Vec::new(), |mut guards, attr| {
             let condition = parse_validate_if_condition(attr)?;
-            let source_field = find_field_by_ident(all_fields, &condition.source_field).ok_or_else(
-                || {
+            let source_field = find_field_by_ident(all_fields, &condition.source_field)
+                .ok_or_else(|| {
                     Error::new(
                         condition.source_field.span(),
                         format!(
@@ -164,10 +163,12 @@ fn build_field_checks(
                             condition.source_field
                         ),
                     )
-                },
-            )?;
+                })?;
             ensure_validate_if_source_type(&source_field.ty, attr)?;
-            guards.push(build_validate_if_guard(source_field, &condition.expected_value));
+            guards.push(build_validate_if_guard(
+                source_field,
+                &condition.expected_value,
+            ));
             Ok::<_, Error>(guards)
         })?;
     let mut checks = Vec::new();
@@ -299,8 +300,7 @@ fn build_field_checks(
             ensure_numeric_bound_type(field_ty, attr, "min")?;
             let bound = parse_numeric_bound(attr, "min")?;
             let bound_expr = &bound.expr;
-            let message =
-                LitStr::new(&format!("must be at least {}", bound.display), attr.span());
+            let message = LitStr::new(&format!("must be at least {}", bound.display), attr.span());
 
             checks.push(quote! {
                 if (*#field_value_access as f64) < ((#bound_expr) as f64) {
@@ -314,8 +314,7 @@ fn build_field_checks(
             ensure_numeric_bound_type(field_ty, attr, "max")?;
             let bound = parse_numeric_bound(attr, "max")?;
             let bound_expr = &bound.expr;
-            let message =
-                LitStr::new(&format!("must be at most {}", bound.display), attr.span());
+            let message = LitStr::new(&format!("must be at most {}", bound.display), attr.span());
 
             checks.push(quote! {
                 if (*#field_value_access as f64) > ((#bound_expr) as f64) {
@@ -334,7 +333,11 @@ fn build_field_checks(
                     &quote!(context),
                 )?);
             } else {
-                checks.push(build_nested_validation_check(field, attr, &quote!(context))?);
+                checks.push(build_nested_validation_check(
+                    field,
+                    attr,
+                    &quote!(context),
+                )?);
             }
         } else if attr.path().is_ident("min_length") {
             let min_length = parse_min_length(attr)?;
@@ -474,7 +477,10 @@ fn build_nested_validation_check_with_access(
     }
 
     build_nested_validation_check_direct(
-        LitStr::new(&field.ident.as_ref().unwrap().to_string(), field.ident.as_ref().unwrap().span()),
+        LitStr::new(
+            &field.ident.as_ref().unwrap().to_string(),
+            field.ident.as_ref().unwrap().span(),
+        ),
         field_access.clone(),
         context_access.clone(),
     )
@@ -607,9 +613,7 @@ impl Parse for ValidateIfCondition {
         let expected_value: LitStr = input.parse()?;
 
         if !input.is_empty() {
-            return Err(input.error(
-                "expected `#[validate_if(field_name, \"value\")]`",
-            ));
+            return Err(input.error("expected `#[validate_if(field_name, \"value\")]`"));
         }
 
         Ok(Self {
@@ -853,16 +857,36 @@ fn is_int_like_type(ty: &Type) -> bool {
 fn is_numeric_primitive(ident: &syn::Ident) -> bool {
     matches!(
         ident.to_string().as_str(),
-        "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
-            | "u128" | "usize" | "f32" | "f64"
+        "i8" | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
+            | "f32"
+            | "f64"
     )
 }
 
 fn is_integer_primitive(ident: &syn::Ident) -> bool {
     matches!(
         ident.to_string().as_str(),
-        "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
-            | "u128" | "usize"
+        "i8" | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
     )
 }
 
@@ -964,9 +988,12 @@ struct NumericBound {
 }
 
 fn parse_numeric_bound(attr: &Attribute, rule_name: &str) -> Result<NumericBound> {
-    let expr = attr
-        .parse_args::<Expr>()
-        .map_err(|_| Error::new(attr.span(), format!("expected `#[{}(<number>)]`", rule_name)))?;
+    let expr = attr.parse_args::<Expr>().map_err(|_| {
+        Error::new(
+            attr.span(),
+            format!("expected `#[{}(<number>)]`", rule_name),
+        )
+    })?;
 
     if !is_numeric_bound_expr(&expr) {
         return Err(Error::new(
@@ -1012,12 +1039,7 @@ fn parse_groups(attr: &Attribute) -> Result<Vec<LitStr>> {
 
     let groups = attr
         .parse_args_with(Punctuated::<LitStr, Token![,]>::parse_terminated)
-        .map_err(|_| {
-            Error::new(
-                attr.span(),
-                "expected `#[groups(\"create\", \"update\")]`",
-            )
-        })?
+        .map_err(|_| Error::new(attr.span(), "expected `#[groups(\"create\", \"update\")]`"))?
         .into_iter()
         .collect::<Vec<_>>();
 
@@ -1074,10 +1096,6 @@ fn parse_custom_validate_path(attr: &Attribute) -> Result<Path> {
         ));
     }
 
-    attr.parse_args::<Path>().map_err(|_| {
-        Error::new(
-            attr.span(),
-            "expected `#[custom_validate(path_to_fn)]`",
-        )
-    })
+    attr.parse_args::<Path>()
+        .map_err(|_| Error::new(attr.span(), "expected `#[custom_validate(path_to_fn)]`"))
 }

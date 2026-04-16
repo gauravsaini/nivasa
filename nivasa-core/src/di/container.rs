@@ -9,8 +9,8 @@ use crate::di::provider::{
     ClassProvider, FactoryProvider, LifecycleProvider, Provider, ProviderMetadata, ProviderScope,
     ValueProvider,
 };
-use async_trait::async_trait;
 use crate::di::registry::ProviderRegistry;
+use async_trait::async_trait;
 
 #[derive(Clone)]
 struct CachedInstance {

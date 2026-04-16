@@ -9,7 +9,8 @@ impl ChatGateway {
     #[nivasa_macros::post("/messages")]
     fn publish(
         #[nivasa_macros::pipe(TrimPipe)]
-        #[nivasa_macros::message_body("payload")] payload: String,
+        #[nivasa_macros::message_body("payload")]
+        payload: String,
         #[nivasa_macros::message_body] raw: String,
     ) {
         let _ = (payload, raw);
@@ -22,20 +23,12 @@ fn websocket_message_body_emits_parameter_metadata() {
         ChatGateway::__nivasa_controller_parameter_metadata(),
         vec![(
             "publish",
-            vec![
-                ("message_body", Some("payload")),
-                ("message_body", None),
-            ],
+            vec![("message_body", Some("payload")), ("message_body", None),],
         )],
     );
     assert_eq!(
         ChatGateway::__nivasa_controller_parameter_pipe_metadata(),
-        vec![
-            (
-                "publish",
-                vec![vec!["TrimPipe"], vec![]],
-            )
-        ],
+        vec![("publish", vec![vec!["TrimPipe"], vec![]],)],
     );
 }
 

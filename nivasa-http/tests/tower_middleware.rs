@@ -15,6 +15,10 @@ use std::{
         Arc,
     },
 };
+use tokio::{
+    sync::Barrier,
+    time::{timeout, Duration},
+};
 use tower::{service_fn, Layer, Service};
 use tower_http::cors::CorsLayer;
 
@@ -54,6 +58,38 @@ async fn tower_service_middleware_wraps_a_tower_service() {
 }
 
 struct PrefixMiddleware;
+
+#[derive(Clone)]
+struct CloneableGateService {
+    started: Arc<AtomicUsize>,
+    gate: Arc<Barrier>,
+}
+
+impl Service<NivasaRequest> for CloneableGateService {
+    type Response = NivasaResponse;
+    type Error = Infallible;
+    type Future = std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>,
+    >;
+
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, request: NivasaRequest) -> Self::Future {
+        let started = Arc::clone(&self.started);
+        let gate = Arc::clone(&self.gate);
+
+        Box::pin(async move {
+            started.fetch_add(1, Ordering::SeqCst);
+            gate.wait().await;
+            Ok(NivasaResponse::new(StatusCode::OK, request.body().clone()))
+        })
+    }
+}
 
 #[async_trait]
 impl NivasaMiddleware for PrefixMiddleware {
@@ -97,6 +133,43 @@ async fn nivasa_middleware_layer_wraps_a_tower_service() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.body(), &Body::text("layer: payload"));
+}
+
+#[tokio::test]
+async fn tower_service_middleware_clones_cloneable_services_without_serializing() {
+    let started = Arc::new(AtomicUsize::new(0));
+    let gate = Arc::new(Barrier::new(2));
+    let service = CloneableGateService {
+        started: Arc::clone(&started),
+        gate: Arc::clone(&gate),
+    };
+
+    let middleware = nivasa_http::TowerServiceMiddleware::new_cloneable(service);
+
+    let future_a = middleware.use_(
+        NivasaRequest::new(Method::POST, "/clone-a", Body::text("one")),
+        NextMiddleware::new(|_| async move {
+            panic!("cloneable tower service should not delegate to next");
+        }),
+    );
+    let future_b = middleware.use_(
+        NivasaRequest::new(Method::POST, "/clone-b", Body::text("two")),
+        NextMiddleware::new(|_| async move {
+            panic!("cloneable tower service should not delegate to next");
+        }),
+    );
+
+    let (response_a, response_b) = timeout(Duration::from_secs(1), async move {
+        tokio::join!(future_a, future_b)
+    })
+    .await
+    .expect("cloneable tower service should complete without serializing");
+
+    assert_eq!(started.load(Ordering::SeqCst), 2);
+    assert_eq!(response_a.status(), StatusCode::OK);
+    assert_eq!(response_b.status(), StatusCode::OK);
+    assert_eq!(response_a.body(), &Body::text("one"));
+    assert_eq!(response_b.body(), &Body::text("two"));
 }
 
 struct HttpRequestCompatService<S> {

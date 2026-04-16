@@ -259,6 +259,52 @@ impl ExceptionFilterMetadata for FullLifecycleFilter {
     }
 }
 
+struct PathParamLifecycleGuard {
+    log: LifecycleLog,
+}
+
+impl Guard for PathParamLifecycleGuard {
+    fn can_activate<'a>(&'a self, context: &'a GuardExecutionContext) -> GuardFuture<'a> {
+        Box::pin(async move {
+            self.log.push("guard");
+
+            let request = context
+                .request::<NivasaRequest>()
+                .expect("guard context must carry the request");
+            assert_eq!(request.path(), "/lifecycle/users/42");
+            assert_eq!(request.body(), &Body::text("  from-middleware  "));
+
+            Ok(true)
+        })
+    }
+}
+
+struct PathParamLifecycleInterceptor {
+    log: LifecycleLog,
+}
+
+impl Interceptor for PathParamLifecycleInterceptor {
+    type Response = NivasaResponse;
+
+    fn intercept(
+        &self,
+        context: &InterceptorExecutionContext,
+        next: CallHandler<Self::Response>,
+    ) -> InterceptorFuture<Self::Response> {
+        let log = self.log.clone();
+
+        assert_eq!(context.request_method(), Some("GET"));
+        assert_eq!(context.request_path(), Some("/lifecycle/users/42"));
+
+        Box::pin(async move {
+            log.push("interceptor.pre");
+            let response = next.handle().await?;
+            log.push("interceptor.post");
+            Ok(response.with_header("x-path-interceptor", "applied"))
+        })
+    }
+}
+
 #[controller("/lifecycle")]
 struct LifecycleController;
 
@@ -271,6 +317,25 @@ impl LifecycleController {
         assert_eq!(request.body(), &Body::text("from-middleware"));
 
         NivasaResponse::text("handler").with_header("x-handler", "applied")
+    }
+}
+
+#[controller("/lifecycle")]
+struct PathParamLifecycleController;
+
+#[impl_controller]
+impl PathParamLifecycleController {
+    #[nivasa_macros::get("/users/:id")]
+    #[nivasa_macros::guard(PathParamLifecycleGuard)]
+    #[nivasa_macros::interceptor(PathParamLifecycleInterceptor)]
+    fn show(&self, request: &NivasaRequest) -> NivasaResponse {
+        let user_id = request
+            .path_param("id")
+            .expect("controller route must expose path captures");
+
+        assert_eq!(request.body(), &Body::text("  from-middleware  "));
+
+        NivasaResponse::text(format!("user-{user_id}")).with_header("x-handler", "applied")
     }
 }
 
@@ -521,6 +586,83 @@ async fn request_lifecycle_allows_pre_processing_interceptors_to_add_request_hea
     assert_eq!(
         log.snapshot(),
         vec!["guard", "interceptor.pre", "interceptor.post"]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn request_lifecycle_routes_controller_path_params_through_a_real_server(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let log = LifecycleLog::new();
+    let controller = PathParamLifecycleController;
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let (method, path, handler_name) = PathParamLifecycleController::__nivasa_controller_routes()
+        .into_iter()
+        .next()
+        .expect("controller must expose a route");
+
+    assert_eq!(handler_name, "show");
+
+    let server = NivasaServer::builder()
+        .middleware(FullLifecycleMiddleware { log: log.clone() })
+        .use_global_guard(PathParamLifecycleGuard { log: log.clone() })
+        .interceptor(PathParamLifecycleInterceptor { log: log.clone() })
+        .route(method, path, {
+            let log = log.clone();
+            move |request| {
+                log.push("handler");
+                run_controller_action_with_request(request, |request| controller.show(request))
+            }
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("http://127.0.0.1:{port}/lifecycle/users/42"))
+        .body(Full::new(Bytes::new()))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let handler_header = response
+        .headers()
+        .get("x-handler")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let interceptor_header = response
+        .headers()
+        .get("x-path-interceptor")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let body = response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(handler_header.as_deref(), Some("applied"));
+    assert_eq!(interceptor_header.as_deref(), Some("applied"));
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body)?,
+        json!({ "data": "user-42" })
+    );
+    assert_eq!(
+        log.snapshot(),
+        vec![
+            "middleware",
+            "guard",
+            "interceptor.pre",
+            "handler",
+            "interceptor.post"
+        ]
     );
 
     Ok(())

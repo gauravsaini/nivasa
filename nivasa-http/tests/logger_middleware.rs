@@ -33,10 +33,7 @@ impl NivasaMiddleware for UsersModule {
     }
 }
 
-fn run_with_buffered_subscriber<R>(
-    buffer: Arc<Mutex<Vec<u8>>>,
-    f: impl FnOnce() -> R,
-) -> R {
+fn run_with_buffered_subscriber<R>(buffer: Arc<Mutex<Vec<u8>>>, f: impl FnOnce() -> R) -> R {
     let subscriber = tracing_subscriber::fmt()
         .without_time()
         .with_ansi(false)
@@ -116,7 +113,10 @@ fn logger_middleware_uses_response_user_id_when_request_is_missing_it() {
             });
 
             let response = middleware
-                .use_(NivasaRequest::new(Method::GET, "/logger", Body::empty()), next)
+                .use_(
+                    NivasaRequest::new(Method::GET, "/logger", Body::empty()),
+                    next,
+                )
                 .await;
 
             let logs = String::from_utf8(buffer.lock().expect("buffer lock").clone())
@@ -130,6 +130,45 @@ fn logger_middleware_uses_response_user_id_when_request_is_missing_it() {
             assert!(logs.contains("method=GET"));
             assert!(logs.contains("path=/logger"));
             assert!(logs.contains("status=200"));
+        });
+    });
+}
+
+#[test]
+fn logger_middleware_seeds_request_id_for_server_requests_without_one() {
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    run_with_buffered_subscriber(Arc::clone(&buffer), || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+
+        runtime.block_on(async {
+            let server = NivasaServer::builder()
+                .middleware(LoggerMiddleware::new())
+                .route_with_module_middlewares::<UsersModule, _>(
+                    RouteMethod::Get,
+                    "/logger",
+                    Vec::<UsersModule>::new(),
+                    |_request| NivasaResponse::new(StatusCode::OK, Body::text("ok")),
+                )
+                .expect("module route registers")
+                .build();
+
+            let response = TestClient::new(server).get("/logger").send().await;
+            let request_id = response
+                .header("x-request-id")
+                .expect("server should seed a request id");
+
+            let logs = String::from_utf8(buffer.lock().expect("buffer lock").clone())
+                .expect("logs must be utf-8");
+
+            assert_eq!(response.status(), StatusCode::OK.as_u16());
+            assert_eq!(response.text(), "ok");
+            assert!(!request_id.is_empty());
+            assert!(logs.contains(&format!("request_id={request_id}")));
+            assert!(logs.contains("module_name=UsersModule"));
+            assert!(logs.contains("path=/logger"));
         });
     });
 }

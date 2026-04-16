@@ -2025,9 +2025,9 @@ fn versioned_routes_for_request(
 }
 
 fn build_response(status: StatusCode, response: NivasaResponse) -> Response<Full<Bytes>> {
-    let mut hyper_response = Response::new(Full::new(Bytes::from(response.body().as_bytes())));
+    let (parts, body) = response.into_inner().into_parts();
+    let mut hyper_response = Response::from_parts(parts, Full::new(body.into_shared_bytes()));
     *hyper_response.status_mut() = status;
-    *hyper_response.headers_mut() = response.headers().clone();
     hyper_response
 }
 

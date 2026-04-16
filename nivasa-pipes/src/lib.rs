@@ -447,9 +447,7 @@ impl Pipe for ParseUuidPipe {
             .ok_or_else(|| HttpException::bad_request("ParseUuidPipe expects a string value"))?;
 
         let parsed = Uuid::parse_str(input).map_err(|_| {
-            HttpException::bad_request(format!(
-                "ParseUuidPipe could not parse `{input}` as a UUID"
-            ))
+            HttpException::bad_request(format!("ParseUuidPipe could not parse `{input}` as a UUID"))
         })?;
 
         Ok(Value::from(parsed.to_string()))
@@ -789,7 +787,8 @@ mod tests {
         let metadata = ArgumentMetadata::new(6);
 
         assert_eq!(
-            pipe.transform(json!("  hello   world  "), metadata).unwrap(),
+            pipe.transform(json!("  hello   world  "), metadata)
+                .unwrap(),
             json!("hello   world")
         );
     }
@@ -813,7 +812,8 @@ mod tests {
         }));
 
         assert_eq!(
-            pipe.transform(Value::Null, ArgumentMetadata::new(8)).unwrap(),
+            pipe.transform(Value::Null, ArgumentMetadata::new(8))
+                .unwrap(),
             json!({
                 "role": "guest"
             })
@@ -1052,7 +1052,9 @@ mod tests {
         let chain = PipeChain::new(TrimPipe::new(), ParseBoolPipe::new());
 
         assert_eq!(
-            chain.transform(json!("  true  "), ArgumentMetadata::new(8)).unwrap(),
+            chain
+                .transform(json!("  true  "), ArgumentMetadata::new(8))
+                .unwrap(),
             json!(true)
         );
     }
@@ -1089,7 +1091,9 @@ mod tests {
             .with_metatype(TypeId::of::<u64>())
             .with_data_type("param");
 
-        let output = chain.transform(json!("  spaced  "), metadata.clone()).unwrap();
+        let output = chain
+            .transform(json!("  spaced  "), metadata.clone())
+            .unwrap();
 
         assert_eq!(output, json!("  spaced  "));
 

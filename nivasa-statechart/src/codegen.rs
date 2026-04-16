@@ -100,7 +100,12 @@ pub fn generate_rust_with_spec_path(doc: &ScxmlDocument, spec_path: &str) -> Str
     out.push('\n');
 
     // valid_events_for
-    out.push_str(&generate_valid_events_fn(&chart_name, doc, &states, &events));
+    out.push_str(&generate_valid_events_fn(
+        &chart_name,
+        doc,
+        &states,
+        &events,
+    ));
     out.push('\n');
 
     // enter_initial_state
@@ -126,7 +131,12 @@ pub fn generate_rust_with_spec_path(doc: &ScxmlDocument, spec_path: &str) -> Str
     out.push('\n');
 
     // StatechartSpec impl
-    out.push_str(&generate_spec_impl(&chart_name, &hash, initial_state, spec_path));
+    out.push_str(&generate_spec_impl(
+        &chart_name,
+        &hash,
+        initial_state,
+        spec_path,
+    ));
 
     out
 }
@@ -407,9 +417,7 @@ impl CaseConvert for str {
                 let mut chars = s.chars();
                 match chars.next() {
                     None => String::new(),
-                    Some(f) => {
-                        f.to_uppercase().to_string() + chars.as_str()
-                    }
+                    Some(f) => f.to_uppercase().to_string() + chars.as_str(),
                 }
             })
             .collect()
@@ -477,10 +485,19 @@ mod tests {
         assert!(code.contains("Stopped"), "Missing Stopped variant");
         assert!(code.contains("AppStart"), "Missing AppStart event");
         assert!(code.contains("AppStop"), "Missing AppStop event");
-        assert!(code.contains("test_app_transition"), "Missing transition fn");
+        assert!(
+            code.contains("test_app_transition"),
+            "Missing transition fn"
+        );
         assert!(code.contains("TestAppHandler"), "Missing handler trait");
-        assert!(code.contains("on_enter_idle"), "Missing on_enter_idle handler");
-        assert!(code.contains("on_enter_running"), "Missing on_enter_running handler");
+        assert!(
+            code.contains("on_enter_idle"),
+            "Missing on_enter_idle handler"
+        );
+        assert!(
+            code.contains("on_enter_running"),
+            "Missing on_enter_running handler"
+        );
         assert!(code.contains("TestAppStatechart"), "Missing spec struct");
         assert!(code.contains("sha256:"), "Missing SCXML hash");
     }
@@ -538,6 +555,8 @@ mod tests {
         let code = generate_rust(&doc);
 
         assert!(code.contains("compound_enter_initial_state"));
-        assert!(code.contains("CompoundState::Parent => compound_enter_initial_state(CompoundState::Child)"));
+        assert!(code.contains(
+            "CompoundState::Parent => compound_enter_initial_state(CompoundState::Child)"
+        ));
     }
 }

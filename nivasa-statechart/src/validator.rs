@@ -125,10 +125,7 @@ pub fn validate(doc: &ScxmlDocument) -> ValidationResult {
         if !doc.has_state(initial) {
             errors.push(ValidationError {
                 rule: ValidationRule::MissingInitial,
-                message: format!(
-                    "Initial state '{}' does not exist in the document",
-                    initial
-                ),
+                message: format!("Initial state '{}' does not exist in the document", initial),
                 state_id: None,
             });
         }
@@ -179,7 +176,10 @@ pub fn validate(doc: &ScxmlDocument) -> ValidationResult {
                 if !parent_reachable {
                     warnings.push(ValidationError {
                         rule: ValidationRule::Unreachable,
-                        message: format!("State '{}' is not reachable from initial state", state.id),
+                        message: format!(
+                            "State '{}' is not reachable from initial state",
+                            state.id
+                        ),
                         state_id: Some(state.id.clone()),
                     });
                 }
@@ -216,8 +216,7 @@ pub fn validate(doc: &ScxmlDocument) -> ValidationResult {
                     rule: ValidationRule::NonDeterministic,
                     message: format!(
                         "State '{}' has multiple transitions for event '{:?}' without conditions",
-                        state.id,
-                        transition.event
+                        state.id, transition.event
                     ),
                     state_id: Some(state.id.clone()),
                 });
@@ -289,9 +288,9 @@ fn compute_reachable(doc: &ScxmlDocument, initial: &str) -> HashSet<StateId> {
 fn is_valid_event_name(name: &str) -> bool {
     let name = name.trim_end_matches(".*");
     !name.is_empty()
-        && name
-            .split('.')
-            .all(|token| !token.is_empty() && token.chars().all(|c| c.is_alphanumeric() || c == '_'))
+        && name.split('.').all(|token| {
+            !token.is_empty() && token.chars().all(|c| c.is_alphanumeric() || c == '_')
+        })
 }
 
 #[cfg(test)]
@@ -320,7 +319,10 @@ mod tests {
         let doc = ScxmlDocument::from_str(scxml).unwrap();
         let result = validate(&doc);
         assert!(!result.is_valid());
-        assert!(result.errors.iter().any(|e| e.rule == ValidationRule::InvalidTarget));
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.rule == ValidationRule::InvalidTarget));
     }
 
     #[test]
@@ -332,7 +334,10 @@ mod tests {
         let doc = ScxmlDocument::from_str(scxml).unwrap();
         let result = validate(&doc);
         assert!(!result.is_valid());
-        assert!(result.errors.iter().any(|e| e.rule == ValidationRule::MissingInitial));
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.rule == ValidationRule::MissingInitial));
     }
 
     #[test]
@@ -345,7 +350,10 @@ mod tests {
         let doc = ScxmlDocument::from_str(scxml).unwrap();
         let result = validate(&doc);
         // b is a dead-end (not final, no transitions)
-        assert!(result.warnings.iter().any(|w| w.rule == ValidationRule::DeadEnd));
+        assert!(result
+            .warnings
+            .iter()
+            .any(|w| w.rule == ValidationRule::DeadEnd));
     }
 
     #[test]

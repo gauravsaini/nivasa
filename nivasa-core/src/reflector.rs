@@ -60,11 +60,7 @@ impl Reflector {
     ///     Some(vec!["admin".to_string(), "editor".to_string()])
     /// );
     /// ```
-    pub fn get_handler_metadata<T>(
-        &self,
-        context: &RequestContext,
-        key: &str,
-    ) -> Option<T>
+    pub fn get_handler_metadata<T>(&self, context: &RequestContext, key: &str) -> Option<T>
     where
         T: DeserializeOwned,
     {
@@ -92,11 +88,7 @@ impl Reflector {
     ///     Some("UsersController".to_string())
     /// );
     /// ```
-    pub fn get_class_metadata<T>(
-        &self,
-        context: &RequestContext,
-        key: &str,
-    ) -> Option<T>
+    pub fn get_class_metadata<T>(&self, context: &RequestContext, key: &str) -> Option<T>
     where
         T: DeserializeOwned,
     {
@@ -124,11 +116,7 @@ impl Reflector {
     ///     Some("req-123".to_string())
     /// );
     /// ```
-    pub fn get_custom_data<T>(
-        &self,
-        context: &RequestContext,
-        key: &str,
-    ) -> Option<T>
+    pub fn get_custom_data<T>(&self, context: &RequestContext, key: &str) -> Option<T>
     where
         T: DeserializeOwned,
     {
@@ -159,11 +147,7 @@ impl Reflector {
     ///     Some("UsersController".to_string())
     /// );
     /// ```
-    pub fn get_metadata<T>(
-        &self,
-        context: &RequestContext,
-        key: &str,
-    ) -> Option<T>
+    pub fn get_metadata<T>(&self, context: &RequestContext, key: &str) -> Option<T>
     where
         T: DeserializeOwned,
     {
@@ -311,7 +295,10 @@ mod tests {
         );
         assert_eq!(reflector.get_metadata::<String>(&context, "missing"), None);
         assert_eq!(reflector.get_roles(&context), None);
-        assert_eq!(reflector.get_request_data::<RequestSnapshot>(&context), None);
+        assert_eq!(
+            reflector.get_request_data::<RequestSnapshot>(&context),
+            None
+        );
     }
 
     #[test]

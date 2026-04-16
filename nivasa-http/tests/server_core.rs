@@ -225,6 +225,96 @@ async fn server_applies_global_guards_to_multiple_routes() -> Result<(), Box<dyn
 }
 
 #[tokio::test]
+async fn server_returns_not_found_for_unmatched_routes() -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let handler_called = Arc::new(AtomicBool::new(false));
+    let handler_called_for_route = Arc::clone(&handler_called);
+
+    let server = NivasaServer::builder()
+        .route(RouteMethod::Get, "/known", move |_| {
+            handler_called_for_route.store(true, Ordering::SeqCst);
+            NivasaResponse::text("known")
+        })
+        .expect("route must register")
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Empty<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let response = client
+        .get(format!("http://127.0.0.1:{port}/missing").parse()?)
+        .await?;
+
+    assert_eq!(response.status(), http::StatusCode::NOT_FOUND);
+    let body = response.into_body().collect().await?.to_bytes();
+    assert_eq!(body, Bytes::from_static(b"not found"));
+    assert!(!handler_called.load(Ordering::SeqCst));
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_returns_method_not_allowed_for_wrong_method() -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let handler_called = Arc::new(AtomicBool::new(false));
+    let handler_called_for_route = Arc::clone(&handler_called);
+
+    let server = NivasaServer::builder()
+        .route(RouteMethod::Get, "/known", move |_| {
+            handler_called_for_route.store(true, Ordering::SeqCst);
+            NivasaResponse::text("known")
+        })
+        .expect("route must register")
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Empty<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("http://127.0.0.1:{port}/known"))
+        .body(Empty::<Bytes>::new())?;
+    let response = client.request(request).await?;
+
+    assert_eq!(response.status(), http::StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(
+        response.headers().get(http::header::ALLOW).unwrap(),
+        "GET"
+    );
+    let body = response.into_body().collect().await?.to_bytes();
+    assert_eq!(body, Bytes::from_static(b"method not allowed"));
+    assert!(!handler_called.load(Ordering::SeqCst));
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
 async fn server_applies_global_pipes_before_handler_execution() -> Result<(), Box<dyn Error>> {
     let port = free_port();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();

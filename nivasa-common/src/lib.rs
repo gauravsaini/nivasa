@@ -37,7 +37,7 @@ pub mod exceptions;
 pub mod http_status;
 
 pub use exceptions::HttpException;
-pub use http_status::HttpStatus;
+pub use http_status::{HttpStatus, InvalidHttpStatus};
 
 type OpaqueRequestValue = Box<dyn Any + Send + Sync>;
 
