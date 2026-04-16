@@ -51,7 +51,33 @@ fn versioned_selection_prefers_exact_routes_and_falls_back_cleanly() {
             path: "/users".to_string(),
             allowed_methods: vec!["POST".to_string()],
         }
-    );
+        );
+    }
+
+#[test]
+fn versioned_selection_still_considers_fallback_bucket_routes() {
+    let mut registry = RouteDispatchRegistry::new();
+
+    registry
+        .register_header_versioned_route("GET", "1", "/users", "versioned")
+        .unwrap();
+    registry
+        .register_pattern("GET", "/:slug?", "fallback")
+        .unwrap();
+
+    let exact = registry.select_header_versioned("/users", Some("1"));
+    assert_eq!(exact.path(), "/users");
+    assert_eq!(exact.version(), Some("v1"));
+    assert!(exact.exact_version_match());
+    assert_eq!(exact.len(), 1);
+    assert_eq!(exact.resolve("GET"), Some(&"versioned"));
+
+    let fallback = registry.select_header_versioned("/users", Some("2"));
+    assert_eq!(fallback.path(), "/users");
+    assert_eq!(fallback.version(), Some("v2"));
+    assert!(!fallback.exact_version_match());
+    assert_eq!(fallback.len(), 1);
+    assert_eq!(fallback.resolve("GET"), Some(&"fallback"));
 }
 
 #[test]
