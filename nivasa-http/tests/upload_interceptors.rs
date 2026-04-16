@@ -112,3 +112,63 @@ fn file_interceptor_rejects_missing_mime_type_when_restricted() {
         UploadInterceptError::DisallowedMimeType { mime_type: None }
     );
 }
+
+#[test]
+fn file_interceptor_rejects_field_too_large_when_per_field_limit_is_exceeded() {
+    let (content_type, body) = multipart_body(&[(
+        "avatar",
+        "avatar.png",
+        Some("image/png"),
+        b"too-large",
+    )]);
+
+    let error = FileInterceptor::new("avatar")
+        .with_limits(MultipartLimits::new().field_limit("avatar", 4))
+        .extract_from_bytes(&content_type, &body)
+        .expect_err("oversized field should be rejected");
+
+    assert_eq!(
+        error,
+        UploadInterceptError::FieldTooLarge {
+            field: "avatar".to_string(),
+            limit: 4,
+            actual: "too-large".len(),
+        }
+    );
+}
+
+#[test]
+fn file_interceptor_reports_too_many_files_for_a_single_field() {
+    let (content_type, body) = multipart_body(&[
+        ("avatar", "one.png", Some("image/png"), b"first"),
+        ("avatar", "two.png", Some("image/png"), b"second"),
+    ]);
+
+    let error = FileInterceptor::new("avatar")
+        .extract_from_bytes(&content_type, &body)
+        .expect_err("multiple files should be rejected for single-file extraction");
+
+    assert_eq!(
+        error,
+        UploadInterceptError::TooManyFiles {
+            field: "avatar".to_string(),
+            count: 2,
+        }
+    );
+}
+
+#[test]
+fn files_interceptor_reports_missing_file_when_no_matching_field_exists() {
+    let (content_type, body) = multipart_body(&[("resume", "resume.pdf", Some("application/pdf"), b"pdf")]);
+
+    let error = FilesInterceptor::new("avatar")
+        .extract_from_bytes(&content_type, &body)
+        .expect_err("missing matching file should be rejected");
+
+    assert_eq!(
+        error,
+        UploadInterceptError::MissingFile {
+            field: "avatar".to_string(),
+        }
+    );
+}

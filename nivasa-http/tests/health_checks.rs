@@ -4,8 +4,8 @@ use http_body_util::{BodyExt, Empty};
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use hyper_util::rt::TokioExecutor;
 use nivasa_http::{
-    Body, HealthCheckService, HealthIndicator, HealthIndicatorResult, HealthStatus, NivasaResponse,
-    NivasaServer,
+    Body, DatabaseHealthIndicator, HealthCheckService, HealthIndicator, HealthIndicatorResult,
+    HealthStatus, HttpHealthIndicator, NivasaResponse, NivasaServer,
 };
 use nivasa_routing::RouteMethod;
 use std::{error::Error, net::TcpListener as StdTcpListener, sync::Arc, time::Duration};
@@ -13,6 +13,7 @@ use tokio::{
     sync::oneshot,
     time::{sleep, timeout},
 };
+use serde_json::json;
 
 fn free_port() -> u16 {
     StdTcpListener::bind("127.0.0.1:0")
@@ -125,4 +126,47 @@ async fn health_endpoint_returns_service_unavailable_when_any_indicator_is_down(
         "down",
     )
     .await
+}
+
+#[tokio::test]
+async fn probe_based_health_indicators_cover_up_and_down_details() {
+    let database_up = DatabaseHealthIndicator::new(|| true).check().await;
+    assert_eq!(database_up.status, HealthStatus::Up);
+    assert_eq!(
+        database_up.details,
+        Some(json!({
+            "name": "database",
+            "status": "up",
+        }))
+    );
+
+    let database_down = DatabaseHealthIndicator::new(|| false).check().await;
+    assert_eq!(database_down.status, HealthStatus::Down);
+    assert_eq!(
+        database_down.details,
+        Some(json!({
+            "name": "database",
+            "status": "down",
+        }))
+    );
+
+    let http_up = HttpHealthIndicator::new(|| true).check().await;
+    assert_eq!(http_up.status, HealthStatus::Up);
+    assert_eq!(
+        http_up.details,
+        Some(json!({
+            "name": "http",
+            "status": "up",
+        }))
+    );
+
+    let http_down = HttpHealthIndicator::new(|| false).check().await;
+    assert_eq!(http_down.status, HealthStatus::Down);
+    assert_eq!(
+        http_down.details,
+        Some(json!({
+            "name": "http",
+            "status": "down",
+        }))
+    );
 }
