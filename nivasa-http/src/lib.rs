@@ -987,7 +987,10 @@ pub mod debug {
             STATECHART_PATH => Some(DebugEndpointResponse {
                 status: 200,
                 content_type: "application/json",
-                body: serde_json::to_string_pretty(snapshot).expect("snapshot must serialize"),
+                body: match serde_json::to_string_pretty(snapshot) {
+                    Ok(body) => body,
+                    Err(error) => panic!("snapshot must serialize: {error}"),
+                },
             }),
             STATECHART_SCXML_PATH => Some(DebugEndpointResponse {
                 status: 200,
@@ -997,8 +1000,10 @@ pub mod debug {
             STATECHART_TRANSITIONS_PATH => Some(DebugEndpointResponse {
                 status: 200,
                 content_type: "application/json",
-                body: serde_json::to_string_pretty(&snapshot.recent_transitions)
-                    .expect("transition log must serialize"),
+                body: match serde_json::to_string_pretty(&snapshot.recent_transitions) {
+                    Ok(body) => body,
+                    Err(error) => panic!("transition log must serialize: {error}"),
+                },
             }),
             _ => None,
         }
