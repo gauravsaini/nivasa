@@ -647,6 +647,29 @@ mod runtime_extraction {
     }
 
     #[test]
+    fn controller_body_runtime_maps_invalid_json_to_bad_request() {
+        let response = run_controller_action_with_body::<Json<CreateUser>, _, _>(
+            &NivasaRequest::new(
+                Method::POST,
+                "/body/create",
+                Body::text(r#"{"name":"Ada""#),
+            ),
+            |_| NivasaResponse::text("unreachable"),
+        );
+
+        assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
+
+        let body: serde_json::Value = serde_json::from_slice(&response.body().as_bytes())
+            .expect("error payload must be json");
+        assert_eq!(body["statusCode"], 400);
+        assert_eq!(body["error"], "Bad Request");
+        assert!(body["message"]
+            .as_str()
+            .expect("error message must be a string")
+            .starts_with("invalid request body:"));
+    }
+
+    #[test]
     fn controller_req_runtime_exposes_raw_request_only_after_route_matching() {
         let mut routes = RouteDispatchRegistry::new();
         let controller = RequestController;

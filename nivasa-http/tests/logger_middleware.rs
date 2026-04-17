@@ -174,6 +174,42 @@ fn logger_middleware_seeds_request_id_for_server_requests_without_one() {
 }
 
 #[test]
+fn logger_middleware_uses_response_module_name_when_request_is_missing_it() {
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    run_with_buffered_subscriber(Arc::clone(&buffer), || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+
+        runtime.block_on(async {
+            let middleware = LoggerMiddleware::new();
+            let next = NextMiddleware::new(|request: NivasaRequest| async move {
+                assert_eq!(request.path(), "/logger");
+                NivasaResponse::new(StatusCode::OK, Body::text("ok"))
+                    .with_header("x-module-name", "UsersModule")
+            });
+
+            let response = middleware
+                .use_(
+                    NivasaRequest::new(Method::GET, "/logger", Body::empty()),
+                    next,
+                )
+                .await;
+
+            let logs = String::from_utf8(buffer.lock().expect("buffer lock").clone())
+                .expect("logs must be utf-8");
+
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.body(), &Body::text("ok"));
+            assert!(logs.contains("module_name=UsersModule"));
+            assert!(logs.contains("request_id="));
+            assert!(logs.contains("user_id="));
+        });
+    });
+}
+
+#[test]
 fn logger_middleware_route_scoped_path_propagates_module_name_and_request_user_id() {
     let buffer = Arc::new(Mutex::new(Vec::new()));
     run_with_buffered_subscriber(Arc::clone(&buffer), || {
