@@ -54,10 +54,23 @@ fn schema_invalid_scxml_returns_a_schema_error() {
     fs::remove_file(&path).ok();
 
     match result {
-        Err(SchemaValidationError::Invalid { diagnostics, .. }) => {
+        Err(SchemaValidationError::Invalid { path: error_path, diagnostics }) => {
+            assert_eq!(error_path, path);
             assert!(
                 !diagnostics.0.is_empty(),
                 "expected at least one XSD diagnostic"
+            );
+            let rendered = format!("{}", SchemaValidationError::Invalid {
+                path: error_path,
+                diagnostics: diagnostics.clone(),
+            });
+            assert!(
+                rendered.contains(path.to_string_lossy().as_ref()),
+                "error display should mention file path: {rendered}"
+            );
+            assert!(
+                rendered.contains("W3C SCXML XSD schema"),
+                "error display should mention schema validation: {rendered}"
             );
         }
         other => panic!("expected XSD validation failure, got {other:?}"),
