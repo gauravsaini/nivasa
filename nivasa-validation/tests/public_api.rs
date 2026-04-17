@@ -1,6 +1,6 @@
 use nivasa_validation::{
-    is_not_empty, is_url, matches_regex, ValidationContext, ValidationError, ValidationErrors,
-    ValidationGroup,
+    is_not_empty, is_url, matches_regex, Validate, ValidationContext, ValidationError,
+    ValidationErrors, ValidationGroup,
 };
 
 #[test]
@@ -101,4 +101,96 @@ fn validation_helpers_cover_predicates_and_group_serialization() {
         serde_json::to_value(&group).unwrap(),
         serde_json::json!("create")
     );
+}
+
+#[test]
+fn validation_types_round_trip_through_serde() {
+    let context = ValidationContext::new()
+        .with_group("create")
+        .with_group("update");
+    let context_json = serde_json::to_string(&context).unwrap();
+    let context_round_trip: ValidationContext = serde_json::from_str(&context_json).unwrap();
+    assert!(context_round_trip.has_group("create"));
+    assert!(context_round_trip.has_group("update"));
+
+    let error = ValidationError::new("email")
+        .with_constraint("is_email", "must contain an @ symbol")
+        .with_constraint("min_length", "must be at least 3 characters");
+    assert_eq!(
+        serde_json::to_value(&error).unwrap(),
+        serde_json::json!({
+            "field": "email",
+            "constraints": {
+                "is_email": "must contain an @ symbol",
+                "min_length": "must be at least 3 characters"
+            }
+        })
+    );
+    assert_eq!(error.field, "email");
+    assert_eq!(
+        error.constraints.get("is_email"),
+        Some(&"must contain an @ symbol".to_string())
+    );
+    let overwritten = ValidationError::new("email")
+        .with_constraint("is_email", "must contain an @ symbol")
+        .with_constraint("is_email", "overwritten");
+    assert_eq!(
+        overwritten.constraints.get("is_email"),
+        Some(&"overwritten".to_string())
+    );
+
+    let mut errors = ValidationErrors::new();
+    errors.push(error.clone());
+    assert_eq!(
+        serde_json::to_value(&errors).unwrap(),
+        serde_json::json!({
+            "errors": [
+                {
+                    "field": "email",
+                    "constraints": {
+                        "is_email": "must contain an @ symbol",
+                        "min_length": "must be at least 3 characters"
+                    }
+                }
+            ]
+        })
+    );
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0], error);
+}
+
+#[test]
+fn validation_trait_default_validate_with_delegates_to_validate() {
+    #[derive(Debug)]
+    struct DefaultOnlyForm {
+        name: String,
+    }
+
+    impl Validate for DefaultOnlyForm {
+        fn validate(&self) -> Result<(), ValidationErrors> {
+            if self.name.trim().is_empty() {
+                Err(ValidationErrors::from_error(
+                    ValidationError::new("name").with_constraint("required", "must not be empty"),
+                ))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    let form = DefaultOnlyForm {
+        name: "alice".into(),
+    };
+
+    assert!(form.validate_with(&ValidationContext::new()).is_ok());
+
+    let invalid = DefaultOnlyForm {
+        name: String::new(),
+    };
+
+    let errors = invalid
+        .validate_with(&ValidationContext::new().with_group("create"))
+        .unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.errors()[0].field, "name");
 }
