@@ -1,9 +1,10 @@
 use std::time::Duration;
 
+use nivasa_core::module::ConfigurableModule;
 use nivasa_http::testing::TestClient;
 use nivasa_http::{
-    InMemoryThrottlerStorage, NivasaResponse, NivasaServer, ThrottlerModule, ThrottlerOptions,
-    RouteThrottleRegistration,
+    InMemoryThrottlerStorage, NivasaResponse, NivasaServer, RouteThrottleRegistration,
+    ThrottlerModule, ThrottlerOptions,
 };
 use nivasa_routing::RouteMethod;
 
@@ -57,4 +58,18 @@ fn throttler_module_exposes_storage_and_guard_surface() {
         .metadata
         .exports
         .contains(&std::any::TypeId::of::<nivasa_http::ThrottlerGuard>()));
+}
+
+#[test]
+fn throttler_module_for_feature_stays_local() {
+    let module = ThrottlerModule::for_feature(ThrottlerOptions::new(5, Duration::from_secs(30)));
+
+    assert!(!module.metadata.is_global);
+    assert!(module
+        .providers
+        .contains(&std::any::TypeId::of::<nivasa_http::ThrottlerGuard>()));
+    assert!(module
+        .metadata
+        .exports
+        .contains(&std::any::TypeId::of::<nivasa_http::InMemoryThrottlerStorage>()));
 }

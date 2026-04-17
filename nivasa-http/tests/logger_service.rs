@@ -98,8 +98,7 @@ fn logger_service_honors_json_module_levels_over_default_level() {
         )
         .expect("json subscriber should install");
 
-    let logs =
-        String::from_utf8(buffer.lock().expect("buffer lock").clone()).expect("utf-8 logs");
+    let logs = String::from_utf8(buffer.lock().expect("buffer lock").clone()).expect("utf-8 logs");
     assert!(logs.contains("\"message\":\"kept\""));
     assert!(logs.contains("\"module_name\":\"payments\""));
     assert!(!logs.contains("dropped"));
@@ -150,4 +149,19 @@ fn logger_service_rejects_invalid_directives() {
     assert!(error
         .to_string()
         .contains("payments=definitely-not-a-level"));
+}
+
+#[test]
+fn logger_service_exposes_options_and_builds_env_filter() {
+    let service = LoggerService::new(
+        LoggerOptions::new()
+            .with_json()
+            .with_global(true)
+            .with_default_level("debug"),
+    );
+    let options = service.options();
+
+    assert!(options.is_global);
+    assert!(matches!(options.format, nivasa_http::LoggerFormat::Json));
+    assert!(service.env_filter().is_ok());
 }

@@ -24,6 +24,16 @@ fn playground_surface_escapes_script_and_markup_contexts() {
     assert!(html.contains("&lt;Playground&gt;"));
     assert!(html.contains("&amp;"));
     assert!(html.contains("&quot;Safe&quot;"));
-    assert!(html.contains(r#"GraphQL playground for /graphql?topic=demo&amp;mode=&quot;play&quot;"#));
+    assert!(
+        html.contains(r#"GraphQL playground for /graphql?topic=demo&amp;mode=&quot;play&quot;"#)
+    );
     assert!(html.contains(r#"const endpoint = "/graphql?topic=demo&mode=\"play\"";"#));
+}
+
+#[test]
+fn playground_surface_escapes_apostrophes() {
+    let html = graphql_playground_html("GraphQL's Playground", "/graphql");
+
+    assert!(html.contains("GraphQL&#39;s Playground"));
+    assert!(html.contains(r#"GraphQL playground for /graphql"#));
 }

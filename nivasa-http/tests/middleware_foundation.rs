@@ -5,7 +5,9 @@ use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use nivasa_common::HttpException;
-use nivasa_filters::{ExceptionFilter, ExceptionFilterFuture, ExceptionFilterMetadata, HttpArgumentsHost};
+use nivasa_filters::{
+    ExceptionFilter, ExceptionFilterFuture, ExceptionFilterMetadata, HttpArgumentsHost,
+};
 use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 use nivasa_http::{
     Body, HelmetMiddleware, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse,
@@ -83,7 +85,9 @@ impl ExceptionFilter<HttpException, NivasaResponse> for RequestContextEchoFilter
         host: HttpArgumentsHost,
     ) -> ExceptionFilterFuture<'a, NivasaResponse> {
         Box::pin(async move {
-            let request_context = host.request_context().expect("request context should exist");
+            let request_context = host
+                .request_context()
+                .expect("request context should exist");
             let authorization = request_context
                 .custom_data("authorization")
                 .and_then(|value| value.as_str())
@@ -664,7 +668,9 @@ async fn server_seeds_request_id_before_short_circuiting_middleware(
 
     let server = NivasaServer::builder()
         .middleware(BlockingMiddleware)
-        .route(RouteMethod::Get, "/blocked", |_| NivasaResponse::text("handler"))?
+        .route(RouteMethod::Get, "/blocked", |_| {
+            NivasaResponse::text("handler")
+        })?
         .shutdown_signal(shutdown_rx)
         .build();
 
@@ -793,4 +799,83 @@ async fn server_supports_functional_middleware() -> Result<(), Box<dyn std::erro
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body.as_ref(), b"functional");
     Ok(())
+}
+
+#[derive(serde::Deserialize)]
+struct LimitQuery {
+    limit: usize,
+}
+
+#[test]
+fn controller_route_registry_round_trips_handlers_and_overwrites_existing_entries() {
+    let path = format!("/registry/{}", Uuid::new_v4());
+    let handler_name = format!("handler-{}", Uuid::new_v4());
+    let first = Arc::new(|_: &NivasaRequest| NivasaResponse::text("first"));
+    let second = Arc::new(|_: &NivasaRequest| NivasaResponse::text("second"));
+
+    nivasa_http::register_controller_route_handler(&path, &handler_name, first);
+
+    let request = NivasaRequest::new(Method::GET, &path, Body::empty());
+    let resolved = nivasa_http::resolve_controller_route_handler(&path, &handler_name)
+        .expect("controller handler should resolve");
+    assert_eq!(resolved.as_ref()(&request).body(), &Body::text("first"));
+
+    nivasa_http::register_controller_route_handler(&path, &handler_name, second);
+
+    let resolved = nivasa_http::resolve_controller_route_handler(&path, &handler_name)
+        .expect("controller handler should be replaced");
+    assert_eq!(resolved.as_ref()(&request).body(), &Body::text("second"));
+}
+
+#[test]
+fn controller_action_helpers_cover_request_query_body_and_path_extraction() {
+    let mut request = NivasaRequest::new(
+        Method::POST,
+        "/users/42?limit=10&limit=15",
+        Body::json(json!({
+            "name": "Ada"
+        })),
+    );
+    let captures = nivasa_routing::RoutePattern::parse("/users/:id")
+        .expect("route pattern should parse")
+        .captures("/users/42")
+        .expect("route captures should resolve");
+    request.set_path_params(captures);
+
+    let request_response = nivasa_http::run_controller_action_with_request(&request, |req| {
+        NivasaResponse::text(req.path().to_owned())
+    });
+    assert_eq!(request_response.body(), &Body::text("/users/42"));
+
+    let param_response =
+        nivasa_http::run_controller_action_with_param::<String, _, _>(&request, "id", |id| {
+            NivasaResponse::text(id)
+        });
+    assert_eq!(param_response.body(), &Body::text("42"));
+
+    let query_response =
+        nivasa_http::run_controller_action_with_query::<LimitQuery, _, _>(&request, |query| {
+            NivasaResponse::text(query.into_inner().limit.to_string())
+        });
+    assert_eq!(query_response.body(), &Body::text("15"));
+
+    let body_response =
+        nivasa_http::run_controller_action_with_body::<serde_json::Value, _, _>(&request, |body| {
+            NivasaResponse::text(body["name"].as_str().unwrap_or_default().to_owned())
+        });
+    assert_eq!(body_response.body(), &Body::text("Ada"));
+
+    let contract = nivasa_http::resolve_controller_guard_execution(
+        "list",
+        &["AuthGuard"],
+        &[("list", vec!["RoleGuard"])],
+    )
+    .expect("guard contract should resolve");
+    assert_eq!(contract.handler(), "list");
+    assert_eq!(contract.guards(), &["AuthGuard", "RoleGuard"]);
+
+    assert!(
+        nivasa_http::resolve_controller_guard_execution("missing", &[], &[]).is_none(),
+        "empty guard input should return no contract"
+    );
 }
