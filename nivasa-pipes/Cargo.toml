@@ -5,10 +5,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
-nivasa-common = { path = "../nivasa-common" }
-nivasa-validation = { path = "../nivasa-validation" }
+nivasa-common = { version = "0.1.0", path = "../nivasa-common" }
+nivasa-validation = { version = "0.1.0", path = "../nivasa-validation" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }

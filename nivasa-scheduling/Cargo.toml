@@ -5,12 +5,13 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
 chrono = { workspace = true }
 cron = { workspace = true }
-nivasa-core = { path = "../nivasa-core" }
+nivasa-core = { version = "0.1.0", path = "../nivasa-core" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 uuid = { workspace = true }

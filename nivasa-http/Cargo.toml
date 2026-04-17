@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [features]
 default = []
@@ -24,16 +25,16 @@ http = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true }
 multer = "3.1"
-nivasa-common = { path = "../nivasa-common" }
-nivasa-core = { path = "../nivasa-core" }
-nivasa-filters = { path = "../nivasa-filters" }
-nivasa-guards = { path = "../nivasa-guards" }
-nivasa-interceptors = { path = "../nivasa-interceptors" }
-nivasa-pipes = { path = "../nivasa-pipes" }
-nivasa-routing = { path = "../nivasa-routing" }
-nivasa-graphql = { path = "../nivasa-graphql" }
+nivasa-common = { version = "0.1.0", path = "../nivasa-common" }
+nivasa-core = { version = "0.1.0", path = "../nivasa-core" }
+nivasa-filters = { version = "0.1.0", path = "../nivasa-filters" }
+nivasa-guards = { version = "0.1.0", path = "../nivasa-guards" }
+nivasa-interceptors = { version = "0.1.0", path = "../nivasa-interceptors" }
+nivasa-pipes = { version = "0.1.0", path = "../nivasa-pipes" }
+nivasa-routing = { version = "0.1.0", path = "../nivasa-routing" }
+nivasa-graphql = { version = "0.1.0", path = "../nivasa-graphql" }
 async-graphql = { workspace = true }
-nivasa-statechart = { path = "../nivasa-statechart" }
+nivasa-statechart = { version = "0.1.0", path = "../nivasa-statechart" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -47,7 +48,7 @@ rustls = { version = "0.23", optional = true, default-features = false, features
 tokio-rustls = { version = "0.26", optional = true }
 
 [dev-dependencies]
-nivasa-macros = { path = "../nivasa-macros" }
-nivasa-validation = { path = "../nivasa-validation" }
+nivasa-macros = { version = "0.1.0", path = "../nivasa-macros" }
+nivasa-validation = { version = "0.1.0", path = "../nivasa-validation" }
 tower-http = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
