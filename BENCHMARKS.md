@@ -4,6 +4,7 @@ The benchmark harness currently covers four internal workloads plus two comparis
 
 - `di_resolution/resolve_cached_singleton` measures cached `DependencyContainer::resolve::<BenchTarget>()` across 1, 10, and 100 registered providers.
 - `routing_dispatch/dispatch_static_route` measures `RouteDispatchRegistry::dispatch()` across 10, 100, and 1000 registered routes.
+- `pipeline_overhead/route_only_roundtrip` measures the baseline route path with no global middleware, module middleware, route middleware, guard, or interceptor.
 - `pipeline_overhead/full_stack_roundtrip` measures the normal SCXML-backed request path with global middleware, module middleware, route middleware, a guard, and an interceptor.
 - `startup_modules/bootstrap` measures module bootstrap across 1, 10, and 25 modules.
 
@@ -27,15 +28,15 @@ Current baseline:
 - Server path: `nivasa_http::NivasaServer` with middleware, guard, and interceptor on the normal request flow
 - Orchestrator: `nivasa_core::module::ModuleOrchestrator` bootstrapping module stacks with imports and exports
 
-More benchmark rows are still open for middleware pipeline overhead.
+Pipeline overhead row is now complete. Full stack path still wraps handler response in `{"data": ...}` when interceptor is active.
 
 Routing benchmark baseline:
 
 - `routing_dispatch/dispatch_static_route/10`: to be collected
 - `routing_dispatch/dispatch_static_route/100`: to be collected
 - `routing_dispatch/dispatch_static_route/1000`: to be collected
-- `pipeline_overhead/full_stack_roundtrip/baseline`: blocked in this environment by ephemeral-port bind permission failure
-- `pipeline_overhead/full_stack_roundtrip/middleware_guard_interceptor`: blocked in this environment by ephemeral-port bind permission failure
+- `pipeline_overhead/route_only_roundtrip/baseline`: `78.572 µs` to `266.30 µs`
+- `pipeline_overhead/full_stack_roundtrip/middleware_guard_interceptor`: `209.95 µs` to `329.65 µs`
 - `startup_modules/bootstrap/1`: `4.2147 µs` to `5.7422 µs`
 - `startup_modules/bootstrap/10`: `76.755 µs` to `90.848 µs`
 - `startup_modules/bootstrap/25`: `235.25 µs` to `236.73 µs`
@@ -48,4 +49,4 @@ CI now runs a coarse budget gate for the DI resolution benchmark in addition to 
 
 The startup benchmark implementation is wired in `benches/startup_modules.rs` and now runs under `cargo bench`.
 
-Pipeline overhead is wired too, but this environment currently rejects the ephemeral-port bind that the benchmark uses to start the local server.
+Pipeline overhead is wired and measured. Latest quick run showed `route_only_roundtrip/baseline` at `78.572 µs` to `266.30 µs`, and `full_stack_roundtrip/middleware_guard_interceptor` at `209.95 µs` to `329.65 µs` with Criterion reporting a regression versus the previous sample.
