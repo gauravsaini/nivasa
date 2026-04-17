@@ -21,6 +21,7 @@ use nivasa_routing::RouteMethod;
 use serde::Deserialize;
 use std::{
     error::Error,
+    io,
     net::TcpListener as StdTcpListener,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -120,6 +121,19 @@ async fn wait_for_server(port: u16) {
     }
 
     panic!("server did not become ready");
+}
+
+#[tokio::test]
+async fn server_rejects_invalid_listen_address() {
+    let server = NivasaServer::builder().build();
+
+    let error = server
+        .listen("not-a-valid-listen-host", 3000)
+        .await
+        .expect_err("invalid listen host must fail before binding");
+
+    assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    assert!(error.to_string().contains("invalid listen address"));
 }
 
 #[tokio::test]
