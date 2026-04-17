@@ -139,6 +139,16 @@ fn dynamic_module_pre_bootstrap_callback_runs_only_when_invoked() {
 }
 
 #[test]
+fn dynamic_module_pre_bootstrap_errors_bubble_through_orchestrator_helper() {
+    let module = DynamicModule::new(ModuleMetadata::new()).with_pre_bootstrap(|| {
+        Err("pre-bootstrap refused to run".to_string())
+    });
+
+    let err = ModuleOrchestrator::run_dynamic_pre_bootstrap(&module).unwrap_err();
+    assert_eq!(err, "pre-bootstrap refused to run");
+}
+
+#[test]
 fn register_dynamic_module_exposes_root_exports_to_other_consumers_when_global() {
     let mut registry = ModuleRegistry::new();
     registry.register_dynamic::<RootDynamicModuleMarker>(ExampleDynamicModule::for_root(

@@ -84,6 +84,19 @@ async fn test_missing_provider_returns_clear_error() {
 }
 
 #[tokio::test]
+async fn test_resolve_optional_returns_none_for_missing_and_some_for_registered_values() {
+    let container = DependencyContainer::new();
+
+    assert!(container.resolve_optional::<ServiceA>().await.unwrap().is_none());
+
+    container.register_value(String::from("config")).await;
+    container.initialize().await.unwrap();
+
+    let value = container.resolve_optional::<String>().await.unwrap();
+    assert_eq!(value.as_deref().map(String::as_str), Some("config"));
+}
+
+#[tokio::test]
 async fn test_optional_dependency_handles_none_and_some() {
     let empty_container = DependencyContainer::new();
     empty_container
