@@ -15,9 +15,7 @@ use nivasa_core::{
 };
 use nivasa_filters::{ExceptionFilter, ExceptionFilterMetadata};
 use nivasa_guards::Guard;
-use nivasa_http::{
-    NivasaMiddleware, NivasaResponse, NivasaServer, NivasaServerBuilder,
-};
+use nivasa_http::{NivasaMiddleware, NivasaResponse, NivasaServer, NivasaServerBuilder};
 use nivasa_interceptors::Interceptor;
 use nivasa_pipes::Pipe;
 use nivasa_routing::{RouteDispatchError, RouteMethod};
