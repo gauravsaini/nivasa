@@ -104,6 +104,35 @@ fn route_dispatch_registry_rejects_duplicate_versioned_routes_and_merges_prefixe
 }
 
 #[test]
+fn route_dispatch_registry_maps_helper_errors_and_blank_version_tokens() {
+    let mut registry = RouteDispatchRegistry::new();
+
+    let err = registry
+        .register_static("GET", "/users/:id", "bad-static")
+        .unwrap_err();
+    assert_eq!(
+        err,
+        RouteDispatchError::UnsupportedPatternSegment {
+            path: "/users/:id".to_string(),
+            segment: ":id".to_string()
+        }
+    );
+
+    registry.register_static("GET", "/users", "default").unwrap();
+
+    let err = registry
+        .register_header_versioned_route("GET", "   ", "/users", "versioned")
+        .unwrap_err();
+    assert_eq!(
+        err,
+        RouteDispatchError::DuplicateRoute {
+            method: "GET".to_string(),
+            path: "/users".to_string()
+        }
+    );
+}
+
+#[test]
 fn route_pattern_strict_constructor_rejects_optional_segments() {
     let err = RoutePattern::static_path("/users/:id?").unwrap_err();
 
