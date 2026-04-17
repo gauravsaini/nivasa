@@ -96,3 +96,39 @@ async fn error_handling_pipeline_routes_exception_through_filter_into_response()
         })
     );
 }
+
+#[tokio::test]
+async fn error_handling_pipeline_falls_back_when_request_context_and_status_are_missing() {
+    let request = NivasaRequest::new(Method::POST, "/errors", Body::empty());
+    let mut pipeline = RequestPipeline::new(request);
+    pipeline.fail_parse().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "ErrorHandling");
+
+    let host = ErrorEnvelopeHost::new();
+    let filter = ErrorEnvelopeFilter;
+
+    let response = filter
+        .catch(HttpException::bad_request("Missing request context"), &host)
+        .await;
+
+    pipeline.handle_filter().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "SendingResponse");
+    pipeline.complete_response().unwrap();
+    assert_eq!(pipeline.snapshot().current_state, "Done");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response.headers().get(http::header::CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&response.body().as_bytes()).unwrap(),
+        json!({
+            "statusCode": 400,
+            "message": "Missing request context",
+            "error": "Bad Request",
+            "details": null,
+            "requestId": "unknown"
+        })
+    );
+}
