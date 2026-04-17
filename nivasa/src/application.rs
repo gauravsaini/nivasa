@@ -24,9 +24,7 @@ use std::any::type_name;
 use std::collections::HashSet;
 use std::future::Future;
 use std::io;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 const DEFAULT_OPENAPI_SPEC_PATH: &str = "/api/docs/openapi.json";
 const DEFAULT_SWAGGER_UI_PATH: &str = "/api/docs";
@@ -1285,46 +1283,33 @@ fn controller_lookup_path(global_prefix: Option<&str>, path: &str) -> String {
 
 fn block_on<F>(future: F) -> F::Output
 where
-    F: Future,
+    F: Future + Send,
+    F::Output: Send,
 {
-    let waker = noop_waker();
-    let mut context = Context::from_waker(&waker);
-    let mut future = Pin::from(Box::new(future));
-
-    loop {
-        match future.as_mut().poll(&mut context) {
-            Poll::Ready(value) => return value,
-            Poll::Pending => std::thread::yield_now(),
-        }
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => match handle.runtime_flavor() {
+            tokio::runtime::RuntimeFlavor::MultiThread => {
+                tokio::task::block_in_place(|| handle.block_on(future))
+            }
+            tokio::runtime::RuntimeFlavor::CurrentThread => std::thread::scope(|scope| {
+                scope
+                    .spawn(|| handle.block_on(future))
+                    .join()
+                    .expect("application runtime thread panicked")
+            }),
+            _ => tokio::task::block_in_place(|| handle.block_on(future)),
+        },
+        Err(_) => tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("application runtime must build")
+            .block_on(future),
     }
-}
-
-fn noop_waker() -> Waker {
-    // Build is intentionally synchronous, so a noop waker is sufficient for
-    // the immediate-future DI work exercised by the current app shell.
-    unsafe { Waker::from_raw(noop_raw_waker()) }
 }
 
 type AppPreflightHook<T> =
     Box<dyn Fn(&T, &AppBootstrapConfig) -> Result<(), AppBuildError> + Send + Sync + 'static>;
 pub type AppRouteHandler = nivasa_http::AppRouteHandler;
-
-fn noop_raw_waker() -> RawWaker {
-    RawWaker::new(std::ptr::null(), &NOOP_WAKER_VTABLE)
-}
-
-unsafe fn noop_clone(_: *const ()) -> RawWaker {
-    noop_raw_waker()
-}
-
-unsafe fn noop_wake(_: *const ()) {}
-
-unsafe fn noop_wake_by_ref(_: *const ()) {}
-
-unsafe fn noop_drop(_: *const ()) {}
-
-static NOOP_WAKER_VTABLE: RawWakerVTable =
-    RawWakerVTable::new(noop_clone, noop_wake, noop_wake_by_ref, noop_drop);
 
 #[cfg(test)]
 mod docs_tests {

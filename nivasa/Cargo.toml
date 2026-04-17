@@ -18,13 +18,13 @@ nivasa-http = { path = "../nivasa-http" }
 nivasa-interceptors = { path = "../nivasa-interceptors" }
 nivasa-routing = { path = "../nivasa-routing" }
 serde_json = { workspace = true }
+tokio = { workspace = true }
 nivasa-config = { path = "../nivasa-config", optional = true }
 nivasa-validation = { path = "../nivasa-validation", optional = true }
 nivasa-websocket = { path = "../nivasa-websocket", optional = true }
 
 [dev-dependencies]
 openapiv3 = "2.2"
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "time"] }
 bytes = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util = { workspace = true }

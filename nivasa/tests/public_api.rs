@@ -274,6 +274,23 @@ fn nest_application_close_invokes_module_shutdown_hook() {
     assert_eq!(shutdown_calls.load(Ordering::SeqCst), 1);
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn nest_application_sync_build_and_close_work_inside_current_thread_runtime() {
+    let shutdown_calls = Arc::new(AtomicUsize::new(0));
+    let module = ShutdownModule {
+        shutdown_calls: Arc::clone(&shutdown_calls),
+    };
+
+    let app = nivasa::NestApplication::create(module)
+        .build()
+        .expect("build should complete inside a current-thread runtime");
+
+    app.close()
+        .expect("close should complete inside a current-thread runtime");
+
+    assert_eq!(shutdown_calls.load(Ordering::SeqCst), 1);
+}
+
 #[cfg(feature = "config")]
 #[test]
 fn nest_application_preflight_can_validate_required_config_keys() {
@@ -428,6 +445,25 @@ fn crate_root_reexports_pipe_surface_as_placeholder_crate() {
 #[allow(unused_imports)]
 fn crate_root_reexports_filter_surface_as_placeholder_crate() {
     use nivasa::filters as filters_crate;
+}
+
+#[test]
+#[allow(unused_imports)]
+fn crate_root_reexports_dependency_crates_under_short_aliases() {
+    use nivasa::{
+        common as common_crate, core as core_crate, guards as guards_crate,
+        interceptors as interceptors_crate, statechart as statechart_crate,
+    };
+
+    fn _assert_common_request_context_is_in_scope(_: Option<common_crate::RequestContext>) {}
+    fn _assert_common_http_status_is_in_scope(_: Option<common_crate::HttpStatus>) {}
+    fn _assert_core_module_registry_is_in_scope(_: Option<core_crate::ModuleRegistry>) {}
+    fn _assert_guards_guard_is_in_scope<T: guards_crate::Guard>() {}
+    fn _assert_interceptors_interceptor_is_in_scope<T: interceptors_crate::Interceptor>() {}
+    fn _assert_statechart_engine_is_in_scope<S: statechart_crate::StatechartSpec>(
+        _: Option<statechart_crate::StatechartEngine<S>>,
+    ) {
+    }
 }
 
 #[test]
