@@ -554,6 +554,8 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
         T: filters_crate::ExceptionFilter<(), HttpException>,
     >() {
     }
+    fn _assert_root_upload_namespace_is_in_scope(_: Option<nivasa::upload::MultipartLimits>) {}
+    fn _assert_prelude_upload_namespace_is_in_scope(_: Option<upload::MultipartLimits>) {}
 }
 
 struct DemoController;
