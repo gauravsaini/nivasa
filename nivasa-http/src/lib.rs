@@ -1030,7 +1030,10 @@ pub mod debug {
 
         #[test]
         fn snapshot_endpoint_returns_json() {
-            let response = handle_statechart_debug_request(STATECHART_PATH, &snapshot()).unwrap();
+            let response = match handle_statechart_debug_request(STATECHART_PATH, &snapshot()) {
+                Some(response) => response,
+                None => panic!("snapshot endpoint must exist"),
+            };
             assert_eq!(response.status, 200);
             assert_eq!(response.content_type, "application/json");
             assert!(response.body.contains("\"current_state\": \"Running\""));
@@ -1038,8 +1041,11 @@ pub mod debug {
 
         #[test]
         fn scxml_endpoint_returns_raw_document() {
-            let response =
-                handle_statechart_debug_request(STATECHART_SCXML_PATH, &snapshot()).unwrap();
+            let response = match handle_statechart_debug_request(STATECHART_SCXML_PATH, &snapshot())
+            {
+                Some(response) => response,
+                None => panic!("scxml endpoint must exist"),
+            };
             assert_eq!(response.content_type, "application/xml");
             assert_eq!(response.body, "<scxml/>");
         }
@@ -1047,7 +1053,10 @@ pub mod debug {
         #[test]
         fn transitions_endpoint_returns_json() {
             let response =
-                handle_statechart_debug_request(STATECHART_TRANSITIONS_PATH, &snapshot()).unwrap();
+                match handle_statechart_debug_request(STATECHART_TRANSITIONS_PATH, &snapshot()) {
+                    Some(response) => response,
+                    None => panic!("transitions endpoint must exist"),
+                };
             assert_eq!(response.content_type, "application/json");
             assert!(response.body.contains("\"event\": \"Start\""));
         }
