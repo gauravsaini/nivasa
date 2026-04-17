@@ -74,13 +74,6 @@ impl OnApplicationShutdown for ShutdownMirror {
 }
 
 #[async_trait]
-impl app_lifecycle::OnApplicationShutdown for ShutdownMirror {
-    async fn on_application_shutdown(&self) {
-        self.events.lock().unwrap().push("lifecycle.shutdown");
-    }
-}
-
-#[async_trait]
 impl Module for BrokenModule {
     fn metadata(&self) -> ModuleMetadata {
         ModuleMetadata::new()
@@ -179,8 +172,5 @@ async fn application_shutdown_hook_shape_stays_consistent_across_public_paths() 
     <ShutdownMirror as OnApplicationShutdown>::on_application_shutdown(&hooks).await;
     <ShutdownMirror as app_lifecycle::OnApplicationShutdown>::on_application_shutdown(&hooks).await;
 
-    assert_eq!(
-        &*events.lock().unwrap(),
-        &["module.shutdown", "lifecycle.shutdown"]
-    );
+    assert_eq!(&*events.lock().unwrap(), &["module.shutdown", "module.shutdown"]);
 }

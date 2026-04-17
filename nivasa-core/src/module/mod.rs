@@ -9,6 +9,9 @@ use crate::di::DependencyContainer;
 use async_trait::async_trait;
 use std::any::TypeId;
 
+pub use crate::lifecycle::{
+    OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy, OnModuleInit,
+};
 pub use dynamic::{ConfigurableModule, DynamicModule};
 pub use event_emitter::{EventEmitter, EventEmitterModule};
 pub use orchestrator::{ModuleHookSet, ModuleOrchestrator, ModuleOrchestratorError};
@@ -238,80 +241,4 @@ pub trait Module: Send + Sync + 'static {
     fn controller_registrations(&self) -> Vec<ModuleControllerRegistration> {
         Vec::new()
     }
-}
-
-/// Called when a module is initialized.
-///
-/// ```rust,no_run
-/// use async_trait::async_trait;
-/// use nivasa_core::module::OnModuleInit;
-///
-/// struct AppModule;
-///
-/// #[async_trait]
-/// impl OnModuleInit for AppModule {
-///     async fn on_module_init(&self) {}
-/// }
-/// ```
-#[async_trait]
-pub trait OnModuleInit: Send + Sync {
-    /// Run module initialization logic.
-    async fn on_module_init(&self);
-}
-
-/// Called when a module is destroyed.
-///
-/// ```rust,no_run
-/// use async_trait::async_trait;
-/// use nivasa_core::module::OnModuleDestroy;
-///
-/// struct AppModule;
-///
-/// #[async_trait]
-/// impl OnModuleDestroy for AppModule {
-///     async fn on_module_destroy(&self) {}
-/// }
-/// ```
-#[async_trait]
-pub trait OnModuleDestroy: Send + Sync {
-    /// Run module teardown logic.
-    async fn on_module_destroy(&self);
-}
-
-/// Called when the application finishes bootstrapping.
-///
-/// ```rust,no_run
-/// use async_trait::async_trait;
-/// use nivasa_core::module::OnApplicationBootstrap;
-///
-/// struct AppModule;
-///
-/// #[async_trait]
-/// impl OnApplicationBootstrap for AppModule {
-///     async fn on_application_bootstrap(&self) {}
-/// }
-/// ```
-#[async_trait]
-pub trait OnApplicationBootstrap: Send + Sync {
-    /// Run application bootstrap logic.
-    async fn on_application_bootstrap(&self);
-}
-
-/// Called when the application is shutting down.
-///
-/// ```rust,no_run
-/// use async_trait::async_trait;
-/// use nivasa_core::module::OnApplicationShutdown;
-///
-/// struct AppModule;
-///
-/// #[async_trait]
-/// impl OnApplicationShutdown for AppModule {
-///     async fn on_application_shutdown(&self) {}
-/// }
-/// ```
-#[async_trait]
-pub trait OnApplicationShutdown: Send + Sync {
-    /// Run application shutdown logic.
-    async fn on_application_shutdown(&self);
 }
