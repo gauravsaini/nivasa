@@ -1,0 +1,5 @@
+error: expected attribute arguments in parentheses: #[nivasa_macros::api_body(...)]
+ --> tests/trybuild/controller_api_body_invalid.rs:9:7
+  |
+9 |     #[nivasa_macros::api_body]
+  |       ^^^^^^^^^^^^^^^^^^^^^^^
