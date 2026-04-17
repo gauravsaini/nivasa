@@ -72,6 +72,19 @@ fn websocket_room_registry_disconnects_client_and_cleans_empty_room_state() {
 }
 
 #[test]
+fn websocket_event_handles_return_zero_when_no_recipient_matches() {
+    let mut server = ServerEventRegistry::<&'static str>::new();
+    assert_eq!(server.server().emit("notice", "hello"), 0);
+
+    let mut rooms = RoomEventRegistry::with_namespace("/chat");
+    rooms.connect("client-1");
+    rooms.join("general", "client-1");
+
+    assert_eq!(rooms.to("missing").emit("notice", "hello"), 0);
+    assert_eq!(rooms.events_for(&"client-1"), Vec::<(String, String)>::new());
+}
+
+#[test]
 fn websocket_room_registry_default_namespace_and_room_registry_defaults_are_stable() {
     let mut rooms = RoomRegistry::<&'static str>::default();
 
