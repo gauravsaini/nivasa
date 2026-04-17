@@ -116,7 +116,7 @@ impl SchedulePattern {
 enum ScheduledJobSchedule {
     Cron {
         expression: String,
-        schedule: CronSchedule,
+        schedule: Box<CronSchedule>,
     },
     Interval {
         every: std::time::Duration,
@@ -154,7 +154,7 @@ impl ScheduledJobSchedule {
     fn from_pattern(pattern: SchedulePattern) -> Result<Self, ScheduleError> {
         match pattern {
             SchedulePattern::Cron { expression } => Ok(Self::Cron {
-                schedule: CronSchedule::parse(expression.clone())?,
+                schedule: Box::new(CronSchedule::parse(expression.clone())?),
                 expression,
             }),
             SchedulePattern::Interval { every } => Ok(Self::Interval { every }),

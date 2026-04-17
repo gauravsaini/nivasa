@@ -1,6 +1,5 @@
 use nivasa_routing::{
-    parse_api_version_accept, parse_api_version_header, RouteDispatchOutcome,
-    RouteDispatchRegistry,
+    parse_api_version_accept, parse_api_version_header, RouteDispatchOutcome, RouteDispatchRegistry,
 };
 
 #[test]
@@ -51,8 +50,8 @@ fn versioned_selection_prefers_exact_routes_and_falls_back_cleanly() {
             path: "/users".to_string(),
             allowed_methods: vec!["POST".to_string()],
         }
-        );
-    }
+    );
+}
 
 #[test]
 fn versioned_selection_still_considers_fallback_bucket_routes() {
@@ -90,18 +89,16 @@ fn versioned_dispatch_uses_header_and_accept_parsing() {
     registry
         .register_media_type_versioned_route("GET", "2", "/users", "media-v2")
         .unwrap();
-    registry.register_static("GET", "/users", "default").unwrap();
+    registry
+        .register_static("GET", "/users", "default")
+        .unwrap();
 
     assert_eq!(
         registry.resolve_header_versioned("GET", "/users", Some("1")),
         Some(&"header-v1")
     );
     assert_eq!(
-        registry.resolve_media_type_versioned(
-            "GET",
-            "/users",
-            Some("application/vnd.app.v2+json")
-        ),
+        registry.resolve_media_type_versioned("GET", "/users", Some("application/vnd.app.v2+json")),
         Some(&"media-v2")
     );
     assert_eq!(

@@ -17,7 +17,10 @@ fn validation_context_deduplicates_groups_and_serializes_cleanly() {
     assert!(context.insert_group("archive"));
     assert!(!context.insert_group("archive"));
 
-    let active_groups: Vec<_> = context.active_groups().map(ValidationGroup::as_str).collect();
+    let active_groups: Vec<_> = context
+        .active_groups()
+        .map(ValidationGroup::as_str)
+        .collect();
     assert_eq!(active_groups, vec!["archive", "create", "delete", "update"]);
 
     let json = serde_json::to_value(&context).unwrap();
@@ -80,7 +83,10 @@ fn validation_helpers_cover_predicates_and_group_serialization() {
     assert!(!is_url("relative/path"));
     assert!(!is_url("https://"));
 
-    assert!(matches_regex("alice@example.com", r"^[^@\s]+@[^@\s]+\.[^@\s]+$"));
+    assert!(matches_regex(
+        "alice@example.com",
+        r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+    ));
     assert!(!matches_regex("alice@example.com", r"^[0-9]+$"));
     assert!(!matches_regex("alice@example.com", r"(["));
 
@@ -91,5 +97,8 @@ fn validation_helpers_cover_predicates_and_group_serialization() {
 
     let group = ValidationGroup::from("create");
     assert_eq!(group.as_str(), "create");
-    assert_eq!(serde_json::to_value(&group).unwrap(), serde_json::json!("create"));
+    assert_eq!(
+        serde_json::to_value(&group).unwrap(),
+        serde_json::json!("create")
+    );
 }

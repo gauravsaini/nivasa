@@ -79,21 +79,21 @@ use flate2::write::GzEncoder;
     feature = "compression-brotli"
 ))]
 use flate2::Compression;
-use http::header::CONTENT_TYPE;
-use nivasa_common::HttpException;
-use serde::de::DeserializeOwned;
-#[cfg(any(
-    feature = "compression-gzip",
-    feature = "compression-deflate",
-    feature = "compression-brotli"
-))]
-use http::Response;
 #[cfg(any(
     feature = "compression-gzip",
     feature = "compression-deflate",
     feature = "compression-brotli"
 ))]
 use http::header::HeaderValue;
+use http::header::CONTENT_TYPE;
+#[cfg(any(
+    feature = "compression-gzip",
+    feature = "compression-deflate",
+    feature = "compression-brotli"
+))]
+use http::Response;
+use nivasa_common::HttpException;
+use serde::de::DeserializeOwned;
 #[cfg(any(
     feature = "compression-gzip",
     feature = "compression-deflate",
@@ -803,9 +803,7 @@ fn compress_response(response: NivasaResponse, format: CompressionFormat) -> Niv
         parts.headers.insert(http::header::CONTENT_LENGTH, value);
     }
 
-    NivasaResponse {
-        inner: Response::from_parts(parts, Body::bytes(compressed)),
-    }
+    NivasaResponse::from(Response::from_parts(parts, Body::bytes(compressed)))
 }
 
 #[cfg(any(

@@ -492,9 +492,12 @@ impl<T> RouteRegistry<T> {
         self.candidate_route_indices(&normalized_path)
             .into_iter()
             .find_map(|index| {
-                self.routes
-                    .get(index)
-                    .and_then(|entry| entry.pattern.matches(&normalized_path).then_some(&entry.value))
+                self.routes.get(index).and_then(|entry| {
+                    entry
+                        .pattern
+                        .matches(&normalized_path)
+                        .then_some(&entry.value)
+                })
             })
     }
 
@@ -503,9 +506,9 @@ impl<T> RouteRegistry<T> {
         self.candidate_route_indices(&normalized_path)
             .into_iter()
             .find_map(|index| {
-                self.routes.get(index).and_then(|entry| {
-                    entry.pattern.matches(&normalized_path).then_some(entry)
-                })
+                self.routes
+                    .get(index)
+                    .and_then(|entry| entry.pattern.matches(&normalized_path).then_some(entry))
             })
     }
 

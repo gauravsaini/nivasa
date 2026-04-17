@@ -56,9 +56,9 @@
 mod config_schema;
 mod controller;
 mod filter;
+mod graphql;
 mod injectable;
 mod middleware;
-mod graphql;
 mod module_macro;
 mod on_event;
 mod schedule;

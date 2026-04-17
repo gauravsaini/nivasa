@@ -101,12 +101,14 @@ impl ConfigSchema for BootstrapSchema {
         loaded
             .get("NIVASA_PHASE6_TEST_PORT")
             .and_then(|port| {
-                port.parse::<u16>().err().map(|_| ConfigValidationIssue::InvalidValue {
-                    key: "NIVASA_PHASE6_TEST_PORT".to_string(),
-                    value: port.to_string(),
-                    expected: "unsigned 16-bit integer".to_string(),
-                })
-        })
+                port.parse::<u16>()
+                    .err()
+                    .map(|_| ConfigValidationIssue::InvalidValue {
+                        key: "NIVASA_PHASE6_TEST_PORT".to_string(),
+                        value: port.to_string(),
+                        expected: "unsigned 16-bit integer".to_string(),
+                    })
+            })
             .into_iter()
             .collect()
     }
@@ -127,11 +129,13 @@ impl ConfigSchema for DefaultedSchema {
         loaded
             .get("PORT")
             .and_then(|port| {
-                port.parse::<u16>().err().map(|_| ConfigValidationIssue::InvalidValue {
-                    key: "PORT".to_string(),
-                    value: port.to_string(),
-                    expected: "unsigned 16-bit integer".to_string(),
-                })
+                port.parse::<u16>()
+                    .err()
+                    .map(|_| ConfigValidationIssue::InvalidValue {
+                        key: "PORT".to_string(),
+                        value: port.to_string(),
+                        expected: "unsigned 16-bit integer".to_string(),
+                    })
             })
             .into_iter()
             .collect()
@@ -253,7 +257,9 @@ not-an-assignment\n",
     let loaded = ConfigModule::load_env(&options).expect("env file should load");
 
     assert_eq!(
-        loaded.get("NIVASA_CONFIG_TEST_EXPORTED").map(String::as_str),
+        loaded
+            .get("NIVASA_CONFIG_TEST_EXPORTED")
+            .map(String::as_str),
         Some("from export")
     );
     assert_eq!(
@@ -337,9 +343,7 @@ NIVASA_PHASE6_TEST_PORT=abc\n",
     match error {
         ConfigBootstrapError::Validation { message } => {
             assert!(message.contains("missing required config key: NIVASA_PHASE6_TEST_API_KEY"));
-            assert!(message.contains(
-                "invalid config value for NIVASA_PHASE6_TEST_PORT: abc"
-            ));
+            assert!(message.contains("invalid config value for NIVASA_PHASE6_TEST_PORT: abc"));
             assert!(message.contains("unsigned 16-bit integer"));
         }
         other => panic!("unexpected error: {other}"),

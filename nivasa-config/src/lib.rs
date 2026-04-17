@@ -828,7 +828,10 @@ mod tests {
         ]));
 
         assert_eq!(service.get::<i32>("PORT"), Some(3000));
-        assert_eq!(service.get::<bool>("FEATURE_ENABLED"), Some(true));
+        assert!(matches!(
+            service.get::<bool>("FEATURE_ENABLED"),
+            Some(true)
+        ));
         assert_eq!(service.get::<i32>("MISSING"), None);
         assert_eq!(service.get::<i32>("BROKEN_PORT"), None);
     }
@@ -844,7 +847,7 @@ mod tests {
         assert_eq!(service.get_or_default("PORT", 80), 3000);
         assert_eq!(service.get_or_default("MISSING", 80), 80);
         assert_eq!(service.get_or_default("BROKEN_PORT", 80), 80);
-        assert_eq!(service.get_or_default("FEATURE_ENABLED", false), true);
+        assert!(service.get_or_default("FEATURE_ENABLED", false));
     }
 
     #[test]

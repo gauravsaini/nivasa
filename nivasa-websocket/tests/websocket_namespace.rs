@@ -18,7 +18,10 @@ fn websocket_room_registry_uses_its_configured_namespace() {
 
     let mut chat_members = chat.room_members("general");
     chat_members.sort_unstable();
-    assert_eq!(chat_members, vec!["client-1".to_string(), "client-2".to_string()]);
+    assert_eq!(
+        chat_members,
+        vec!["client-1".to_string(), "client-2".to_string()]
+    );
     assert_eq!(admin.room_members("general"), vec!["client-9".to_string()]);
 
     let delivered = {

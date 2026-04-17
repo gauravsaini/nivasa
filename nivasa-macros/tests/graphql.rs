@@ -62,10 +62,7 @@ fn graphql_macros_emit_handler_metadata() {
         vec!["alice".to_string(), "bob".to_string()]
     );
     assert_eq!(gateway.create_user("delta".to_string()), "created:delta");
-    assert_eq!(
-        gateway.user_created("42".to_string()),
-        "subscribed:42"
-    );
+    assert_eq!(gateway.user_created("42".to_string()), "subscribed:42");
 }
 
 #[test]

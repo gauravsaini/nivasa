@@ -300,10 +300,7 @@ async fn server_returns_method_not_allowed_for_wrong_method() -> Result<(), Box<
     let response = client.request(request).await?;
 
     assert_eq!(response.status(), http::StatusCode::METHOD_NOT_ALLOWED);
-    assert_eq!(
-        response.headers().get(http::header::ALLOW).unwrap(),
-        "GET"
-    );
+    assert_eq!(response.headers().get(http::header::ALLOW).unwrap(), "GET");
     let body = response.into_body().collect().await?.to_bytes();
     assert_eq!(body, Bytes::from_static(b"method not allowed"));
     assert!(!handler_called.load(Ordering::SeqCst));

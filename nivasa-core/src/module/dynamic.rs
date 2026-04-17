@@ -20,6 +20,7 @@ use std::sync::Arc;
 /// ```
 pub type DynamicModulePreBootstrap = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 
+#[derive(Default)]
 pub struct DynamicModule {
     pub metadata: ModuleMetadata,
     pub providers: Vec<TypeId>,
@@ -55,16 +56,6 @@ impl PartialEq for DynamicModule {
 }
 
 impl Eq for DynamicModule {}
-
-impl Default for DynamicModule {
-    fn default() -> Self {
-        Self {
-            metadata: ModuleMetadata::default(),
-            providers: Vec::new(),
-            pre_bootstrap: None,
-        }
-    }
-}
 
 impl DynamicModule {
     /// Creates a dynamic module from base metadata.

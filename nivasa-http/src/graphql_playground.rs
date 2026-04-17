@@ -5,7 +5,8 @@
 pub fn graphql_playground_html(title: &str, endpoint_path: &str) -> String {
     let title = html_escape(title);
     let endpoint_display = html_escape(endpoint_path);
-    let endpoint = serde_json::to_string(endpoint_path).expect("playground endpoint must serialize");
+    let endpoint =
+        serde_json::to_string(endpoint_path).expect("playground endpoint must serialize");
 
     format!(
         r#"<!doctype html>
@@ -167,7 +168,8 @@ mod tests {
         assert!(html.contains("&lt;Playground&gt;"));
         assert!(html.contains("&amp;"));
         assert!(html.contains("&quot;Safe&quot;"));
-        assert!(html.contains(r#"GraphQL playground for /graphql?topic=demo&amp;mode=&quot;play&quot;"#));
+        assert!(html
+            .contains(r#"GraphQL playground for /graphql?topic=demo&amp;mode=&quot;play&quot;"#));
         assert!(html.contains(r#"const endpoint = "/graphql?topic=demo&mode=\"play\"";"#));
     }
 }

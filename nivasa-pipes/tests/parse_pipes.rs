@@ -1,7 +1,7 @@
 use nivasa_common::HttpException;
 use nivasa_pipes::{
-    ArgumentMetadata, ParseBoolPipe, ParseEnumPipe, ParseEnumTarget, ParseFloatPipe,
-    ParseIntPipe, ParseUuidPipe, Pipe, PipeChain,
+    ArgumentMetadata, ParseBoolPipe, ParseEnumPipe, ParseEnumTarget, ParseFloatPipe, ParseIntPipe,
+    ParseUuidPipe, Pipe, PipeChain,
 };
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};

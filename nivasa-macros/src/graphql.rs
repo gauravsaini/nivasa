@@ -39,9 +39,7 @@ fn expand_graphql(attr: TokenStream, item: TokenStream, kind: &str) -> TokenStre
         Err(_) => {
             return Error::new(
                 proc_macro2::Span::call_site(),
-                format!(
-                    "`#[{kind}]` expects a field name like `#[{kind}(\"field_name\")]`"
-                ),
+                format!("`#[{kind}]` expects a field name like `#[{kind}(\"field_name\")]`"),
             )
             .to_compile_error()
             .into();
@@ -81,11 +79,15 @@ fn expand_graphql_method(
 ) -> syn::Result<proc_macro2::TokenStream> {
     let method_name = &method.sig.ident;
     let helper_name = format_ident!("__nivasa_graphql_{}_metadata_for_{}", kind, method_name);
-    let guard_helper_name =
-        format_ident!("__nivasa_graphql_{}_guard_metadata_for_{}", kind, method_name);
+    let guard_helper_name = format_ident!(
+        "__nivasa_graphql_{}_guard_metadata_for_{}",
+        kind,
+        method_name
+    );
     let interceptor_helper_name = format_ident!(
         "__nivasa_graphql_{}_interceptor_metadata_for_{}",
-        kind, method_name
+        kind,
+        method_name
     );
     let guard_names = collect_guard_names(&method)?;
     let interceptor_names = collect_interceptor_names(&method)?;

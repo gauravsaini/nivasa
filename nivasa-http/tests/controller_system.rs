@@ -639,8 +639,8 @@ mod runtime_extraction {
 
         assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
 
-        let body: serde_json::Value =
-            serde_json::from_slice(&response.body().as_bytes()).expect("error payload must be json");
+        let body: serde_json::Value = serde_json::from_slice(&response.body().as_bytes())
+            .expect("error payload must be json");
         assert_eq!(body["statusCode"], 400);
         assert_eq!(body["error"], "Bad Request");
         assert_eq!(body["message"], "request body is empty");
@@ -893,9 +893,12 @@ mod guards {
         assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
         assert_eq!(pipeline.snapshot().current_state, "GuardChain");
 
-        let contract =
-            resolve_controller_guard_execution(route.2, &controller_guards, &handler_guard_metadata)
-                .expect("throttler guard contract must exist");
+        let contract = resolve_controller_guard_execution(
+            route.2,
+            &controller_guards,
+            &handler_guard_metadata,
+        )
+        .expect("throttler guard contract must exist");
         assert_eq!(contract.handler(), route.2);
         assert_eq!(contract.guards(), &["ThrottlerGuard"]);
 
@@ -1054,7 +1057,8 @@ mod guards {
     async fn controller_guard_resolves_from_dependency_container() {
         let controller = InjectableGuardController;
         let controller_guards = InjectableGuardController::__nivasa_controller_guards();
-        let handler_guard_metadata = InjectableGuardController::__nivasa_controller_guard_metadata();
+        let handler_guard_metadata =
+            InjectableGuardController::__nivasa_controller_guard_metadata();
         let route = InjectableGuardController::__nivasa_controller_routes()
             .into_iter()
             .next()
@@ -1094,9 +1098,12 @@ mod guards {
         assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
         assert_eq!(pipeline.snapshot().current_state, "GuardChain");
 
-        let contract =
-            resolve_controller_guard_execution(route.2, &controller_guards, &handler_guard_metadata)
-                .expect("injectable guard contract must exist");
+        let contract = resolve_controller_guard_execution(
+            route.2,
+            &controller_guards,
+            &handler_guard_metadata,
+        )
+        .expect("injectable guard contract must exist");
         assert_eq!(contract.guards(), &["InjectableGuard"]);
 
         let guard_outcome = pipeline
@@ -1284,8 +1291,8 @@ mod params_and_queries {
 
         assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
 
-        let body: serde_json::Value =
-            serde_json::from_slice(&response.body().as_bytes()).expect("error payload must be json");
+        let body: serde_json::Value = serde_json::from_slice(&response.body().as_bytes())
+            .expect("error payload must be json");
         assert_eq!(body["statusCode"], 400);
         assert_eq!(body["error"], "Bad Request");
         assert_eq!(body["message"], "request is missing path parameter `id`");
@@ -1357,8 +1364,8 @@ mod params_and_queries {
 
         assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
 
-        let body: serde_json::Value =
-            serde_json::from_slice(&response.body().as_bytes()).expect("error payload must be json");
+        let body: serde_json::Value = serde_json::from_slice(&response.body().as_bytes())
+            .expect("error payload must be json");
         assert_eq!(body["statusCode"], 400);
         assert_eq!(body["error"], "Bad Request");
         assert!(body["message"]
@@ -1501,8 +1508,8 @@ mod uploads {
 
         assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
 
-        let body: serde_json::Value =
-            serde_json::from_slice(&response.body().as_bytes()).expect("error payload must be json");
+        let body: serde_json::Value = serde_json::from_slice(&response.body().as_bytes())
+            .expect("error payload must be json");
         assert_eq!(body["statusCode"], 400);
         assert_eq!(body["error"], "Bad Request");
         assert_eq!(body["message"], "request is missing header `content-type`");

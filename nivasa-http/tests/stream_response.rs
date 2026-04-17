@@ -29,8 +29,8 @@ fn stream_body_allows_explicit_content_type_overrides_for_non_sse_payloads() {
 
 #[test]
 fn stream_body_falls_back_to_octet_stream_for_mixed_chunk_types() {
-    let response = StreamBody::new([Body::text("plain"), Body::html("<p>html</p>")])
-        .into_response();
+    let response =
+        StreamBody::new([Body::text("plain"), Body::html("<p>html</p>")]).into_response();
 
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(

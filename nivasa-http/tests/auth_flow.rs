@@ -1,7 +1,7 @@
 use bytes::Bytes;
-use http::{Request, StatusCode, header::AUTHORIZATION};
+use http::{header::AUTHORIZATION, Request, StatusCode};
 use http_body_util::{BodyExt, Full};
-use hyper_util::client::legacy::{Client, connect::HttpConnector};
+use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use hyper_util::rt::TokioExecutor;
 use nivasa_guards::{AuthGuard, ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 use nivasa_http::{Body, NivasaRequest, NivasaResponse, NivasaServer};

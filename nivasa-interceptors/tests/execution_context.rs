@@ -94,14 +94,25 @@ fn execution_context_propagates_request_context_metadata() {
         Some(&AuditRequest { id: "req-42" })
     );
 
-    let shared = context.request_context().expect("request context must exist");
-    assert_eq!(shared.handler_metadata("role").and_then(|value| value.as_str()), Some("admin"));
+    let shared = context
+        .request_context()
+        .expect("request context must exist");
     assert_eq!(
-        shared.class_metadata("version").and_then(|value| value.as_str()),
+        shared
+            .handler_metadata("role")
+            .and_then(|value| value.as_str()),
+        Some("admin")
+    );
+    assert_eq!(
+        shared
+            .class_metadata("version")
+            .and_then(|value| value.as_str()),
         Some("v1")
     );
     assert_eq!(
-        shared.custom_data("request_id").and_then(|value| value.as_str()),
+        shared
+            .custom_data("request_id")
+            .and_then(|value| value.as_str()),
         Some("trace-123")
     );
 }
