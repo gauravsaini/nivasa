@@ -20,47 +20,50 @@ async fn e2e_module_seeded_test_client_flow() {
     .await
     .expect("testing module compiles");
 
-    let greeting = testing.get::<String>().await.expect("string provider resolves");
+    let greeting = testing
+        .get::<String>()
+        .await
+        .expect("string provider resolves");
 
     let build_server = |greeting: std::sync::Arc<String>| {
         NivasaServer::builder()
-        .route(RouteMethod::Get, "/hello", {
-            let greeting = greeting.clone();
-            move |request| {
-                let mode = request
-                    .header("x-mode")
-                    .and_then(|value| value.to_str().ok())
-                    .unwrap_or("plain");
+            .route(RouteMethod::Get, "/hello", {
+                let greeting = greeting.clone();
+                move |request| {
+                    let mode = request
+                        .header("x-mode")
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or("plain");
 
-                NivasaResponse::text(format!("{}:{mode}", greeting.as_str()))
+                    NivasaResponse::text(format!("{}:{mode}", greeting.as_str()))
+                        .with_header("x-module-status", greeting.as_str())
+                }
+            })
+            .expect("GET route registers")
+            .route(RouteMethod::Post, "/widgets", {
+                let greeting = greeting.clone();
+                move |request| {
+                    let payload = request
+                        .extract::<nivasa_http::Json<CreateWidget>>()
+                        .expect("request body must deserialize");
+                    let mode = request
+                        .header("x-mode")
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or("missing");
+
+                    NivasaResponse::new(
+                        StatusCode::CREATED,
+                        Body::json(serde_json::json!({
+                            "name": payload.into_inner().name,
+                            "mode": mode,
+                            "module": greeting.as_str(),
+                        })),
+                    )
                     .with_header("x-module-status", greeting.as_str())
-            }
-        })
-        .expect("GET route registers")
-        .route(RouteMethod::Post, "/widgets", {
-            let greeting = greeting.clone();
-            move |request| {
-                let payload = request
-                    .extract::<nivasa_http::Json<CreateWidget>>()
-                    .expect("request body must deserialize");
-                let mode = request
-                    .header("x-mode")
-                    .and_then(|value| value.to_str().ok())
-                    .unwrap_or("missing");
-
-                NivasaResponse::new(
-                    StatusCode::CREATED,
-                    Body::json(serde_json::json!({
-                        "name": payload.into_inner().name,
-                        "mode": mode,
-                        "module": greeting.as_str(),
-                    })),
-                )
-                .with_header("x-module-status", greeting.as_str())
-            }
-        })
-        .expect("POST route registers")
-        .build()
+                }
+            })
+            .expect("POST route registers")
+            .build()
     };
 
     let get = TestClient::new(build_server(greeting.clone()))

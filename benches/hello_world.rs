@@ -49,10 +49,7 @@ fn hello_world_uri(port: u16) -> Uri {
         .expect("benchmark URI must parse")
 }
 
-async fn assert_hello_world_response(
-    client: &Client<HttpConnector, Empty<Bytes>>,
-    uri: &Uri,
-) {
+async fn assert_hello_world_response(client: &Client<HttpConnector, Empty<Bytes>>, uri: &Uri) {
     let response = client
         .get(uri.clone())
         .await
@@ -84,9 +81,7 @@ fn bench_nivasa_hello_world_get_json_response(c: &mut Criterion) {
     let runtime = Runtime::new().expect("benchmark runtime must build");
     let port = free_port();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let server = build_nivasa_server()
-        .shutdown_signal(shutdown_rx)
-        .build();
+    let server = build_nivasa_server().shutdown_signal(shutdown_rx).build();
     let server_task = runtime.spawn(async move {
         server
             .listen("127.0.0.1", port)
@@ -110,7 +105,7 @@ fn bench_nivasa_hello_world_get_json_response(c: &mut Criterion) {
     drop(client);
     let _ = shutdown_tx.send(());
     runtime.block_on(async {
-        let _ = timeout(Duration::from_secs(2), server_task)
+        timeout(Duration::from_secs(2), server_task)
             .await
             .expect("server task must finish in time")
             .expect("server task must not error");
@@ -202,7 +197,7 @@ fn bench_axum_hello_world_get_json_response(c: &mut Criterion) {
     drop(client);
     let _ = shutdown_tx.send(());
     runtime.block_on(async {
-        let _ = timeout(Duration::from_secs(2), server_task)
+        timeout(Duration::from_secs(2), server_task)
             .await
             .expect("server task must finish in time")
             .expect("server task must not error");

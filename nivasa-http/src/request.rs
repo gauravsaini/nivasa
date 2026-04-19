@@ -1,3 +1,4 @@
+use crate::Body;
 use http::{
     header::{HeaderName, HeaderValue},
     HeaderMap, Method, Request, Uri,
@@ -108,7 +109,7 @@ fn query_values(uri: &Uri) -> serde_json::Map<String, serde_json::Value> {
 
     for (key, raw_value) in query_pairs(uri) {
         let value = serde_json::from_str::<serde_json::Value>(&raw_value)
-            .unwrap_or_else(|_| serde_json::Value::String(raw_value));
+            .unwrap_or(serde_json::Value::String(raw_value));
         values.insert(key, value);
     }
 
@@ -422,4 +423,3 @@ where
             })
     }
 }
-use crate::body::Body;

@@ -5,11 +5,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 async-graphql = { workspace = true }
 async-trait = { workspace = true }
-nivasa-core = { path = "../nivasa-core" }
+nivasa-core = { version = "0.1.0", path = "../nivasa-core" }
 
 [dev-dependencies]
 tokio = { workspace = true }

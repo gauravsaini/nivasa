@@ -7,9 +7,8 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input, parse_quote,
     spanned::Spanned,
-    Attribute, Error, Expr, ExprLit, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl,
-    ItemStruct, Lit, LitInt, LitStr, Meta, MetaNameValue, PatType, Path, Result,
-    Token, Type,
+    Attribute, Error, Expr, ExprLit, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, ItemStruct, Lit,
+    LitInt, LitStr, Meta, MetaNameValue, PatType, Path, Result, Token, Type,
 };
 
 const ROUTE_MARKER_PREFIX: &str = "nivasa-route:";
@@ -2629,13 +2628,12 @@ pub fn pipe(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 pub fn throttle(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let parsed =
-        match syn::punctuated::Punctuated::<MetaNameValue, Token![,]>::parse_terminated
-            .parse2(proc_macro2::TokenStream::from(attr))
-        {
-            Ok(parsed) => parsed,
-            Err(error) => return error.to_compile_error().into(),
-        };
+    let parsed = match syn::punctuated::Punctuated::<MetaNameValue, Token![,]>::parse_terminated
+        .parse2(proc_macro2::TokenStream::from(attr))
+    {
+        Ok(parsed) => parsed,
+        Err(error) => return error.to_compile_error().into(),
+    };
 
     let mut limit: Option<u32> = None;
     let mut ttl_secs: Option<u64> = None;

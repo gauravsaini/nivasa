@@ -1,4 +1,6 @@
-use nivasa_websocket::{OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit, RoomEventRegistry};
+use nivasa_websocket::{
+    OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit, RoomEventRegistry,
+};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,

@@ -62,10 +62,40 @@ fn graphql_macros_emit_handler_metadata() {
         vec!["alice".to_string(), "bob".to_string()]
     );
     assert_eq!(gateway.create_user("delta".to_string()), "created:delta");
+    assert_eq!(gateway.user_created("42".to_string()), "subscribed:42");
+}
+
+#[allow(dead_code)]
+struct DocMarkerGuard;
+#[allow(dead_code)]
+struct DocMarkerInterceptorA;
+#[allow(dead_code)]
+struct DocMarkerInterceptorB;
+
+struct DocMarkerGateway;
+
+impl DocMarkerGateway {
+    /// nivasa-guard: DocMarkerGuard
+    /// nivasa-interceptor: DocMarkerInterceptorA, DocMarkerInterceptorB
+    #[resolver("docUsers")]
+    fn users(&self) -> Vec<String> {
+        vec!["carol".to_string()]
+    }
+}
+
+#[test]
+fn graphql_macros_parse_doc_markers() {
     assert_eq!(
-        gateway.user_created("42".to_string()),
-        "subscribed:42"
+        DocMarkerGateway::__nivasa_graphql_resolver_guard_metadata_for_users(),
+        vec!["DocMarkerGuard"],
     );
+    assert_eq!(
+        DocMarkerGateway::__nivasa_graphql_resolver_interceptor_metadata_for_users(),
+        vec!["DocMarkerInterceptorA", "DocMarkerInterceptorB"],
+    );
+
+    let gateway = DocMarkerGateway;
+    assert_eq!(gateway.users(), vec!["carol".to_string()]);
 }
 
 #[test]

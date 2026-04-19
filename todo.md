@@ -1064,8 +1064,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Benchmark hello-world GET (JSON response) vs Axum
 - [x] Benchmark DI container resolution overhead (1, 10, 100 providers)
 - [x] Benchmark routing performance (10, 100, 1000 routes)
-- [ ] Benchmark full middleware + guard + interceptor pipeline overhead
-- [ ] Benchmark startup time with many modules
+- [x] Benchmark full middleware + guard + interceptor pipeline overhead
+- [x] Benchmark startup time with many modules
 - [x] Document benchmark results in `BENCHMARKS.md`
 - [x] Set up CI benchmark regression detection
 

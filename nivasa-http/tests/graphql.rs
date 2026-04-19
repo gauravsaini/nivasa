@@ -45,8 +45,8 @@ fn graphql_post_executes_a_real_schema() {
 
 #[test]
 fn graphql_from_schema_forwards_variables_and_operation_name() {
-    let schema = GraphQLSchema::build(EchoQuery::default(), EmptyMutation, EmptySubscription)
-        .finish();
+    let schema =
+        GraphQLSchema::build(EchoQuery::default(), EmptyMutation, EmptySubscription).finish();
     let server = build_server(
         GraphQLModule::from_schema(schema)
             .endpoint_path("/api/graphql")
@@ -120,4 +120,41 @@ fn graphql_invalid_body_returns_a_bad_request_response() {
         .as_str()
         .expect("error message")
         .contains("missing field"));
+}
+
+#[test]
+fn graphql_request_extensions_reach_executor_and_error_responses_serialize_cleanly() {
+    let server = build_server(GraphQLModule::new(
+        |request: nivasa_http::GraphQLRequest| {
+            assert_eq!(
+                request.extensions,
+                Some(json!({
+                    "trace": true,
+                    "depth": 2
+                }))
+            );
+            GraphQLResponse::error("boom")
+        },
+    ));
+
+    let response = TestClient::new(server)
+        .post("/graphql")
+        .body(Body::json(json!({
+            "query": "{ __typename }",
+            "extensions": {
+                "trace": true,
+                "depth": 2
+            }
+        })))
+        .send_blocking();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.header("content-type"),
+        Some(String::from("application/json"))
+    );
+
+    let value: serde_json::Value = response.json();
+    assert!(value.get("data").is_none());
+    assert_eq!(value["errors"][0]["message"], "boom");
 }

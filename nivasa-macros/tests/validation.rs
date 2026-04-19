@@ -38,6 +38,12 @@ struct ContactListForm {
 }
 
 #[derive(Dto)]
+struct OptionalContactListForm {
+    #[validate_nested]
+    contacts: Option<Vec<ContactDetails>>,
+}
+
+#[derive(Dto)]
 #[allow(dead_code)]
 struct FeatureFlags {
     #[is_boolean]
@@ -365,6 +371,35 @@ fn dto_validation_accepts_vec_nested_valid_input() {
     };
 
     assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_skips_absent_optional_vec_nested_input() {
+    let form = OptionalContactListForm { contacts: None };
+
+    assert!(form.validate().is_ok());
+}
+
+#[test]
+fn dto_validation_collects_optional_vec_nested_field_errors_with_indices() {
+    let form = OptionalContactListForm {
+        contacts: Some(vec![
+            ContactDetails {
+                email: "not-an-email".into(),
+                password: "123".into(),
+            },
+            ContactDetails {
+                email: "bob@example.com".into(),
+                password: "456".into(),
+            },
+        ]),
+    };
+
+    let errors = form.validate().unwrap_err();
+    assert_eq!(errors.len(), 3);
+    assert_eq!(errors.errors()[0].field, "contacts[0].email");
+    assert_eq!(errors.errors()[1].field, "contacts[0].password");
+    assert_eq!(errors.errors()[2].field, "contacts[1].password");
 }
 
 #[test]

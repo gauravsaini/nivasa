@@ -1,3 +1,7 @@
+use bytes::Bytes;
+use http_body_util::{BodyExt, Empty};
+use hyper_util::client::legacy::{connect::HttpConnector, Client};
+use hyper_util::rt::TokioExecutor;
 #[allow(unused_imports)]
 use nivasa::filters as filters_crate;
 #[allow(unused_imports)]
@@ -9,19 +13,15 @@ use nivasa::prelude::{
     http_code, impl_controller, injectable, ip, module, options, param, patch, post, put, query,
     req, res, scxml_handler, session, App, AppBuildError, AppRoute, ArgumentMetadata,
     ArgumentsHost, EmptyMutation, EmptySubscription, ExceptionFilter, ExceptionFilterFuture,
-    GraphQLError, GraphQLCoreModule, GraphQLModule, GraphQLRequest, GraphQLResponse,
-    GraphQLSchema, HttpArgumentsHost, InvalidHttpStatus, Middleware, NivasaMiddlewareLayer, Pipe,
-    Reflector, RequestContext, TestClient, TestResponse, WsArgumentsHost,
+    GraphQLCoreModule, GraphQLError, GraphQLModule, GraphQLRequest, GraphQLResponse, GraphQLSchema,
+    HttpArgumentsHost, InvalidHttpStatus, Middleware, NivasaMiddlewareLayer, Pipe, Reflector,
+    RequestContext, TestClient, TestResponse, WsArgumentsHost,
 };
-use bytes::Bytes;
-use http_body_util::{BodyExt, Empty};
-use hyper_util::client::legacy::{connect::HttpConnector, Client};
-use hyper_util::rt::TokioExecutor;
 use std::any::TypeId;
 use std::error::Error;
 use std::future::Future;
-use std::pin::Pin;
 use std::net::TcpListener as StdTcpListener;
+use std::pin::Pin;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -93,7 +93,10 @@ fn prelude_reexports_common_request_and_status_types() {
     let root_context = nivasa::RequestContext::new();
     let root_invalid_status = nivasa::InvalidHttpStatus(599);
 
-    assert_eq!(context.request_data::<String>().map(String::as_str), Some("req-123"));
+    assert_eq!(
+        context.request_data::<String>().map(String::as_str),
+        Some("req-123")
+    );
     assert_eq!(invalid_status.0, 599);
     assert!(root_context.request_data::<String>().is_none());
     assert_eq!(root_invalid_status.0, 599);
@@ -265,7 +268,25 @@ fn nest_application_close_invokes_module_shutdown_hook() {
 
     assert_eq!(shutdown_calls.load(Ordering::SeqCst), 0);
 
-    app.close().expect("close should run the module shutdown hook");
+    app.close()
+        .expect("close should run the module shutdown hook");
+
+    assert_eq!(shutdown_calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nest_application_sync_build_and_close_work_inside_current_thread_runtime() {
+    let shutdown_calls = Arc::new(AtomicUsize::new(0));
+    let module = ShutdownModule {
+        shutdown_calls: Arc::clone(&shutdown_calls),
+    };
+
+    let app = nivasa::NestApplication::create(module)
+        .build()
+        .expect("build should complete inside a current-thread runtime");
+
+    app.close()
+        .expect("close should complete inside a current-thread runtime");
 
     assert_eq!(shutdown_calls.load(Ordering::SeqCst), 1);
 }
@@ -427,6 +448,25 @@ fn crate_root_reexports_filter_surface_as_placeholder_crate() {
 }
 
 #[test]
+#[allow(unused_imports)]
+fn crate_root_reexports_dependency_crates_under_short_aliases() {
+    use nivasa::{
+        common as common_crate, core as core_crate, guards as guards_crate,
+        interceptors as interceptors_crate, statechart as statechart_crate,
+    };
+
+    fn _assert_common_request_context_is_in_scope(_: Option<common_crate::RequestContext>) {}
+    fn _assert_common_http_status_is_in_scope(_: Option<common_crate::HttpStatus>) {}
+    fn _assert_core_module_registry_is_in_scope(_: Option<core_crate::ModuleRegistry>) {}
+    fn _assert_guards_guard_is_in_scope<T: guards_crate::Guard>() {}
+    fn _assert_interceptors_interceptor_is_in_scope<T: interceptors_crate::Interceptor>() {}
+    fn _assert_statechart_engine_is_in_scope<S: statechart_crate::StatechartSpec>(
+        _: Option<statechart_crate::StatechartEngine<S>>,
+    ) {
+    }
+}
+
+#[test]
 fn crate_root_reexports_graphql_http_surface() {
     fn _assert_graphql_schema_is_in_scope(
         _: Option<GraphQLSchema<EmptyMutation, EmptyMutation, EmptySubscription>>,
@@ -442,8 +482,7 @@ fn crate_root_reexports_graphql_http_surface() {
     fn _assert_graphql_module_is_in_scope(_: Option<GraphQLModule>) {}
 
     let schema = GraphQLSchema::build(EmptyMutation, EmptyMutation, EmptySubscription).finish();
-    let module = GraphQLModule::from_schema(schema)
-        .title("GraphQL");
+    let module = GraphQLModule::from_schema(schema).title("GraphQL");
 
     let _ = module.endpoint_path("/graphql").playground_path("/graphql");
 }
@@ -515,6 +554,8 @@ fn crate_root_reexports_controller_macro_and_http_surface() {
         T: filters_crate::ExceptionFilter<(), HttpException>,
     >() {
     }
+    fn _assert_root_upload_namespace_is_in_scope(_: Option<nivasa::upload::MultipartLimits>) {}
+    fn _assert_prelude_upload_namespace_is_in_scope(_: Option<upload::MultipartLimits>) {}
 }
 
 struct DemoController;
@@ -760,7 +801,10 @@ async fn nest_application_listen_starts_http_server_from_registered_controller_h
 ) -> Result<(), Box<dyn Error>> {
     let port = free_port();
     let app = nivasa::NestApplication::create(ListenModule);
-    let server_options = ServerOptions::builder().host("127.0.0.1").port(port).build();
+    let server_options = ServerOptions::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .build();
 
     let server_task = tokio::spawn(async move { app.listen(server_options).await });
     wait_for_server(port).await;

@@ -538,8 +538,7 @@ where
 
     /// Add connected client to room.
     pub fn join(&mut self, room: impl Into<String>, client: ClientId) -> bool {
-        self.rooms
-            .join(self.namespace.clone(), room, client)
+        self.rooms.join(self.namespace.clone(), room, client)
     }
 
     /// Return room-scoped broadcast handle.
@@ -855,7 +854,10 @@ mod tests {
             chat.events_for(&"client-2"),
             vec![("notice".to_string(), "hello chat".to_string())]
         );
-        assert_eq!(admin.events_for(&"client-9"), Vec::<(String, String)>::new());
+        assert_eq!(
+            admin.events_for(&"client-9"),
+            Vec::<(String, String)>::new()
+        );
     }
 
     impl OnGatewayInit for DemoLifecycleGateway {

@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use nivasa_config::{
-    ConfigBootstrapError, ConfigException, ConfigModule, ConfigOptions, ConfigSchema,
-    ConfigService, ConfigValidationError, ConfigValidationIssue,
+    ConfigBootstrapError, ConfigException, ConfigLoadError, ConfigModule, ConfigOptions,
+    ConfigSchema, ConfigService, ConfigValidationError, ConfigValidationIssue,
 };
 
 #[test]
@@ -101,12 +102,14 @@ impl ConfigSchema for BootstrapSchema {
         loaded
             .get("NIVASA_PHASE6_TEST_PORT")
             .and_then(|port| {
-                port.parse::<u16>().err().map(|_| ConfigValidationIssue::InvalidValue {
-                    key: "NIVASA_PHASE6_TEST_PORT".to_string(),
-                    value: port.to_string(),
-                    expected: "unsigned 16-bit integer".to_string(),
-                })
-        })
+                port.parse::<u16>()
+                    .err()
+                    .map(|_| ConfigValidationIssue::InvalidValue {
+                        key: "NIVASA_PHASE6_TEST_PORT".to_string(),
+                        value: port.to_string(),
+                        expected: "unsigned 16-bit integer".to_string(),
+                    })
+            })
             .into_iter()
             .collect()
     }
@@ -127,11 +130,13 @@ impl ConfigSchema for DefaultedSchema {
         loaded
             .get("PORT")
             .and_then(|port| {
-                port.parse::<u16>().err().map(|_| ConfigValidationIssue::InvalidValue {
-                    key: "PORT".to_string(),
-                    value: port.to_string(),
-                    expected: "unsigned 16-bit integer".to_string(),
-                })
+                port.parse::<u16>()
+                    .err()
+                    .map(|_| ConfigValidationIssue::InvalidValue {
+                        key: "PORT".to_string(),
+                        value: port.to_string(),
+                        expected: "unsigned 16-bit integer".to_string(),
+                    })
             })
             .into_iter()
             .collect()
@@ -253,7 +258,9 @@ not-an-assignment\n",
     let loaded = ConfigModule::load_env(&options).expect("env file should load");
 
     assert_eq!(
-        loaded.get("NIVASA_CONFIG_TEST_EXPORTED").map(String::as_str),
+        loaded
+            .get("NIVASA_CONFIG_TEST_EXPORTED")
+            .map(String::as_str),
         Some("from export")
     );
     assert_eq!(
@@ -266,6 +273,17 @@ not-an-assignment\n",
     );
     assert!(!loaded.contains_key("ignored"));
     assert!(!loaded.contains_key("not-an-assignment"));
+}
+
+#[test]
+fn load_env_ignores_missing_env_files_when_flagged_to_skip_files() {
+    let options = ConfigOptions::new()
+        .with_env_file_path("/definitely/missing/nivasa-config-test.env")
+        .with_ignore_env_file(true);
+
+    let loaded = ConfigModule::load_env(&options).expect("ignored env files should no-op");
+
+    assert!(loaded.is_empty());
 }
 
 #[test]
@@ -292,6 +310,53 @@ fn validate_schema_aggregates_custom_validation_issues_with_required_keys() {
                 expected: "unsigned 16-bit integer".to_string(),
             },
         ]
+    );
+}
+
+#[test]
+fn config_load_error_display_delegates_to_io_errors() {
+    let error = ConfigLoadError::from(io::Error::other("broken env file"));
+
+    assert_eq!(error.to_string(), "broken env file");
+}
+
+#[test]
+fn config_root_with_schema_wraps_missing_env_file_load_failures() {
+    let error = ConfigModule::for_root_with_schema::<BootstrapSchema>(
+        ConfigOptions::new().with_env_file_path("/definitely/missing/nivasa-config-bootstrap.env"),
+    )
+    .expect_err("missing env file should fail before bootstrap validation");
+
+    match error {
+        ConfigBootstrapError::Load { message } => {
+            assert!(!message.is_empty());
+            assert_eq!(
+                ConfigBootstrapError::Load {
+                    message: message.clone(),
+                }
+                .to_string(),
+                format!("config load failed: {message}")
+            );
+        }
+        other => panic!("unexpected error: {other}"),
+    }
+}
+
+#[test]
+fn config_bootstrap_error_display_covers_load_and_validation_variants() {
+    assert_eq!(
+        ConfigBootstrapError::Load {
+            message: "boom".to_string(),
+        }
+        .to_string(),
+        "config load failed: boom"
+    );
+    assert_eq!(
+        ConfigBootstrapError::Validation {
+            message: "bad config".to_string(),
+        }
+        .to_string(),
+        "config validation failed: bad config"
     );
 }
 
@@ -337,9 +402,7 @@ NIVASA_PHASE6_TEST_PORT=abc\n",
     match error {
         ConfigBootstrapError::Validation { message } => {
             assert!(message.contains("missing required config key: NIVASA_PHASE6_TEST_API_KEY"));
-            assert!(message.contains(
-                "invalid config value for NIVASA_PHASE6_TEST_PORT: abc"
-            ));
+            assert!(message.contains("invalid config value for NIVASA_PHASE6_TEST_PORT: abc"));
             assert!(message.contains("unsigned 16-bit integer"));
         }
         other => panic!("unexpected error: {other}"),

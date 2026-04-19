@@ -31,6 +31,15 @@ struct MockState<Args, Output> {
     responses: VecDeque<Output>,
 }
 
+impl<Args, Output> Default for MockProvider<Args, Output>
+where
+    Args: Clone + PartialEq + Debug,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<Args, Output> MockProvider<Args, Output>
 where
     Args: Clone + PartialEq + Debug,

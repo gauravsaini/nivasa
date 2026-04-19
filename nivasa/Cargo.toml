@@ -5,26 +5,27 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
-nivasa-core = { path = "../nivasa-core" }
-nivasa-common = { path = "../nivasa-common" }
-nivasa-guards = { path = "../nivasa-guards" }
-nivasa-filters = { path = "../nivasa-filters" }
-nivasa-pipes = { path = "../nivasa-pipes" }
-nivasa-statechart = { path = "../nivasa-statechart" }
-nivasa-macros = { path = "../nivasa-macros" }
-nivasa-http = { path = "../nivasa-http" }
-nivasa-interceptors = { path = "../nivasa-interceptors" }
-nivasa-routing = { path = "../nivasa-routing" }
+nivasa-core = { version = "0.1.0", path = "../nivasa-core" }
+nivasa-common = { version = "0.1.0", path = "../nivasa-common" }
+nivasa-guards = { version = "0.1.0", path = "../nivasa-guards" }
+nivasa-filters = { version = "0.1.0", path = "../nivasa-filters" }
+nivasa-pipes = { version = "0.1.0", path = "../nivasa-pipes" }
+nivasa-statechart = { version = "0.1.0", path = "../nivasa-statechart" }
+nivasa-macros = { version = "0.1.0", path = "../nivasa-macros" }
+nivasa-http = { version = "0.1.0", path = "../nivasa-http" }
+nivasa-interceptors = { version = "0.1.0", path = "../nivasa-interceptors" }
+nivasa-routing = { version = "0.1.0", path = "../nivasa-routing" }
 serde_json = { workspace = true }
-nivasa-config = { path = "../nivasa-config", optional = true }
-nivasa-validation = { path = "../nivasa-validation", optional = true }
-nivasa-websocket = { path = "../nivasa-websocket", optional = true }
+tokio = { workspace = true }
+nivasa-config = { version = "0.1.0", path = "../nivasa-config", optional = true }
+nivasa-validation = { version = "0.1.0", path = "../nivasa-validation", optional = true }
+nivasa-websocket = { version = "0.1.0", path = "../nivasa-websocket", optional = true }
 
 [dev-dependencies]
 openapiv3 = "2.2"
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "time"] }
 bytes = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util = { workspace = true }

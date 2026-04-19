@@ -32,9 +32,10 @@ fn file_interceptor_extracts_public_uploaded_file_contract() {
     let (content_type, body) =
         multipart_body(&[("avatar", "avatar.png", Some("image/png"), &payload)]);
 
-    let file = FileInterceptor::new("avatar")
-        .extract_from_bytes(&content_type, &body)
-        .expect("single file should parse");
+    let file = match FileInterceptor::new("avatar").extract_from_bytes(&content_type, &body) {
+        Ok(file) => file,
+        Err(err) => panic!("single file should parse: {err}"),
+    };
 
     assert_eq!(file.filename(), "avatar.png");
     assert_eq!(file.content_type(), Some("image/png"));
@@ -48,9 +49,11 @@ fn files_interceptor_extracts_multiple_files_for_the_same_field() {
         ("attachments", "two.txt", Some("text/plain"), b"second"),
     ]);
 
-    let files = FilesInterceptor::new("attachments")
-        .extract_from_bytes(&content_type, &body)
-        .expect("multiple files should parse");
+    let files = match FilesInterceptor::new("attachments").extract_from_bytes(&content_type, &body)
+    {
+        Ok(files) => files,
+        Err(err) => panic!("multiple files should parse: {err}"),
+    };
 
     assert_eq!(files.len(), 2);
     assert_eq!(files[0].filename(), "one.txt");
@@ -115,12 +118,8 @@ fn file_interceptor_rejects_missing_mime_type_when_restricted() {
 
 #[test]
 fn file_interceptor_rejects_field_too_large_when_per_field_limit_is_exceeded() {
-    let (content_type, body) = multipart_body(&[(
-        "avatar",
-        "avatar.png",
-        Some("image/png"),
-        b"too-large",
-    )]);
+    let (content_type, body) =
+        multipart_body(&[("avatar", "avatar.png", Some("image/png"), b"too-large")]);
 
     let error = FileInterceptor::new("avatar")
         .with_limits(MultipartLimits::new().field_limit("avatar", 4))
@@ -159,7 +158,8 @@ fn file_interceptor_reports_too_many_files_for_a_single_field() {
 
 #[test]
 fn files_interceptor_reports_missing_file_when_no_matching_field_exists() {
-    let (content_type, body) = multipart_body(&[("resume", "resume.pdf", Some("application/pdf"), b"pdf")]);
+    let (content_type, body) =
+        multipart_body(&[("resume", "resume.pdf", Some("application/pdf"), b"pdf")]);
 
     let error = FilesInterceptor::new("avatar")
         .extract_from_bytes(&content_type, &body)

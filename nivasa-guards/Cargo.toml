@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
-nivasa-common = { path = "../nivasa-common" }
+nivasa-common = { version = "0.1.0", path = "../nivasa-common" }

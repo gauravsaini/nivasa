@@ -14,17 +14,23 @@ use nivasa_routing::RouteMethod;
 use serde_json::json;
 use std::{hint::black_box, net::TcpListener as StdTcpListener, time::Duration};
 use tokio::{
+    task::JoinHandle,
     runtime::Runtime,
     sync::oneshot,
     time::{sleep, timeout},
 };
 
-fn free_port() -> u16 {
-    StdTcpListener::bind("127.0.0.1:0")
-        .expect("must bind an ephemeral port")
-        .local_addr()
-        .expect("must inspect ephemeral addr")
-        .port()
+const BASELINE_PORTS: &[u16] = &[32123, 32124, 32125];
+const FULL_PORTS: &[u16] = &[32133, 32134, 32135];
+
+fn pick_port(candidates: &[u16]) -> u16 {
+    for port in candidates {
+        if StdTcpListener::bind(("127.0.0.1", *port)).is_ok() {
+            return *port;
+        }
+    }
+
+    panic!("benchmark could not reserve a fixed loopback port");
 }
 
 async fn wait_for_server(port: u16) {
@@ -79,12 +85,29 @@ async fn assert_pipeline_response(
         .to_bytes();
     let payload: serde_json::Value =
         serde_json::from_slice(&body).expect("benchmark body must be JSON");
-    assert_eq!(
-        payload,
+    let expected = if expect_interceptor_header {
+        json!({
+            "data": {
+                "message": "pipeline ok",
+            }
+        })
+    } else {
         json!({
             "message": "pipeline ok",
         })
-    );
+    };
+    assert_eq!(payload, expected);
+}
+
+async fn finish_server_task(mut task: JoinHandle<()>, label: &str) {
+    match timeout(Duration::from_secs(2), &mut task).await {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => panic!("{label} server task must not error: {err}"),
+        Err(_) => {
+            task.abort();
+            let _ = task.await;
+        }
+    }
 }
 
 struct PipelineMiddleware {
@@ -157,9 +180,7 @@ impl Interceptor for PipelineInterceptor {
     }
 }
 
-fn build_baseline_server(
-    shutdown: oneshot::Receiver<()>,
-) -> Result<NivasaServer, String> {
+fn build_baseline_server(shutdown: oneshot::Receiver<()>) -> Result<NivasaServer, String> {
     let server = NivasaServer::builder()
         .route(RouteMethod::Get, "/pipeline/baseline", |_request| {
             NivasaResponse::json(json!({
@@ -173,9 +194,7 @@ fn build_baseline_server(
     Ok(server)
 }
 
-fn build_full_pipeline_server(
-    shutdown: oneshot::Receiver<()>,
-) -> Result<NivasaServer, String> {
+fn build_full_pipeline_server(shutdown: oneshot::Receiver<()>) -> Result<NivasaServer, String> {
     let server = NivasaServer::builder()
         .middleware(PipelineMiddleware {
             stage: "applied",
@@ -212,7 +231,7 @@ fn bench_pipeline_overhead(c: &mut Criterion) {
     let client = build_client();
     let mut group = c.benchmark_group("pipeline_overhead");
 
-    let baseline_port = free_port();
+    let baseline_port = pick_port(BASELINE_PORTS);
     let (baseline_shutdown_tx, baseline_shutdown_rx) = oneshot::channel();
     let baseline_server =
         build_baseline_server(baseline_shutdown_rx).expect("baseline server must build");
@@ -237,7 +256,7 @@ fn bench_pipeline_overhead(c: &mut Criterion) {
         },
     );
 
-    let full_port = free_port();
+    let full_port = pick_port(FULL_PORTS);
     let (full_shutdown_tx, full_shutdown_rx) = oneshot::channel();
     let full_server =
         build_full_pipeline_server(full_shutdown_rx).expect("full pipeline server must build");
@@ -267,14 +286,8 @@ fn bench_pipeline_overhead(c: &mut Criterion) {
     let _ = baseline_shutdown_tx.send(());
     let _ = full_shutdown_tx.send(());
     runtime.block_on(async {
-        let _ = timeout(Duration::from_secs(2), baseline_task)
-            .await
-            .expect("baseline server task must finish in time")
-            .expect("baseline server task must not error");
-        let _ = timeout(Duration::from_secs(2), full_task)
-            .await
-            .expect("full pipeline server task must finish in time")
-            .expect("full pipeline server task must not error");
+        finish_server_task(baseline_task, "baseline").await;
+        finish_server_task(full_task, "full pipeline").await;
     });
 
     black_box(());

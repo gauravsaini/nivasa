@@ -1,0 +1,5 @@
+error: `#[api_bearer_auth]` does not take arguments
+ --> tests/trybuild/controller_api_bearer_auth_invalid.rs:9:5
+  |
+9 |     #[nivasa_macros::api_bearer_auth(true)]
+  |     ^

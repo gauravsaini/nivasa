@@ -1,17 +1,13 @@
 use nivasa_core::{DependencyContainer, EventEmitter, EventEmitterModule, Module};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc,
-    Mutex,
+    Arc, Mutex,
 };
 
 #[tokio::test]
 async fn event_emitter_module_registers_injectable_service() {
     let container = DependencyContainer::new();
-    EventEmitterModule::default()
-        .configure(&container)
-        .await
-        .unwrap();
+    EventEmitterModule.configure(&container).await.unwrap();
 
     let emitter = container.resolve::<EventEmitter>().await.unwrap();
     assert_eq!(emitter.listener_count(), 0);

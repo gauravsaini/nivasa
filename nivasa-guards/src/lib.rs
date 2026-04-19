@@ -121,10 +121,12 @@ impl ThrottlerStorage for InMemoryThrottlerStorage {
             .lock()
             .expect("throttler storage lock must be available");
         let now = Instant::now();
-        let entry = state.entry(key.to_owned()).or_insert_with(|| ThrottleWindowState {
-            started_at: now,
-            count: 0,
-        });
+        let entry = state
+            .entry(key.to_owned())
+            .or_insert_with(|| ThrottleWindowState {
+                started_at: now,
+                count: 0,
+            });
 
         if now.duration_since(entry.started_at) >= ttl {
             entry.started_at = now;

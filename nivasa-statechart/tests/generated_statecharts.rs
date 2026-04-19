@@ -681,6 +681,40 @@ fn invalid_event_in_generated_application_state_panics_in_debug() {
 }
 
 #[test]
+fn invalid_event_in_generated_request_state_records_invalid_trace() {
+    let (mut engine, tracer) =
+        traced_engine::<NivasaRequestStatechart>(NivasaRequestState::Received);
+    let expected_valid_events = engine
+        .valid_events()
+        .into_iter()
+        .map(|event| format!("{:?}", event))
+        .collect::<Vec<_>>();
+
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = engine.send_event(NivasaRequestEvent::ResponseSent);
+    }))
+    .expect_err("invalid generated transition must panic in debug");
+
+    assert!(panic_message(panic).contains("SCXML violation"));
+    assert_invalid_trace(
+        &engine,
+        &tracer,
+        &[(
+            "Received".to_string(),
+            "ResponseSent".to_string(),
+            expected_valid_events.clone(),
+        )],
+    );
+
+    let recent = engine.recent_transitions();
+    assert_eq!(recent.len(), 1);
+    assert_eq!(recent[0].kind, TransitionKind::Invalid);
+    assert_eq!(recent[0].from, "Received");
+    assert_eq!(recent[0].event, "ResponseSent");
+    assert_eq!(recent[0].valid_events, expected_valid_events);
+}
+
+#[test]
 fn request_validation_error_short_circuits_to_done() {
     let (mut engine, tracer) =
         traced_engine::<NivasaRequestStatechart>(NivasaRequestState::PipeTransform);

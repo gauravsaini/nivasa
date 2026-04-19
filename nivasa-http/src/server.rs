@@ -5,12 +5,12 @@ use crate::{
 use bytes::{Bytes, BytesMut};
 use futures_util::FutureExt;
 use http::{
-    Method, Request, Response, StatusCode,
     header::{
-        ACCESS_CONTROL_ALLOW_CREDENTIALS, ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderMap, HeaderValue, ACCESS_CONTROL_ALLOW_CREDENTIALS, ACCESS_CONTROL_ALLOW_HEADERS,
         ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_REQUEST_HEADERS,
-        ACCESS_CONTROL_REQUEST_METHOD, ALLOW, CONTENT_TYPE, HeaderMap, HeaderValue, ORIGIN,
+        ACCESS_CONTROL_REQUEST_METHOD, ALLOW, CONTENT_TYPE, ORIGIN,
     },
+    Method, Request, Response, StatusCode,
 };
 use http_body_util::{BodyExt, Full};
 use hyper::{body::Incoming, service::service_fn};
@@ -30,20 +30,20 @@ use nivasa_interceptors::{
 };
 use nivasa_pipes::{ArgumentMetadata, Pipe};
 use nivasa_routing::{
-    RouteDispatchError, RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod, RoutePattern,
-    RouteRegistryError, parse_api_version_accept, parse_api_version_header,
+    parse_api_version_accept, parse_api_version_header, RouteDispatchError, RouteDispatchOutcome,
+    RouteDispatchRegistry, RouteMethod, RoutePattern, RouteRegistryError,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{
     any::type_name,
     future::Future,
     io,
     net::SocketAddr,
-    panic::{AssertUnwindSafe, catch_unwind},
+    panic::{catch_unwind, AssertUnwindSafe},
     pin::Pin,
     sync::{
-        Arc,
         atomic::{AtomicBool, Ordering},
+        Arc,
     },
     time::Duration,
 };
@@ -2288,7 +2288,7 @@ fn shutdown_future(
         None => Box::pin(async move {
             #[cfg(unix)]
             {
-                use tokio::signal::unix::{SignalKind, signal};
+                use tokio::signal::unix::{signal, SignalKind};
 
                 if let Ok(mut sigterm) = signal(SignalKind::terminate()) {
                     tokio::select! {

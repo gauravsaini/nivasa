@@ -14,7 +14,9 @@ async fn test_client_get_status_text_and_header_helpers() {
         .route(RouteMethod::Get, "/hello", |request| {
             let mut response = NivasaResponse::text("hello from client");
 
-            if let Some(kind) = request.header("x-client-kind").and_then(|value| value.to_str().ok())
+            if let Some(kind) = request
+                .header("x-client-kind")
+                .and_then(|value| value.to_str().ok())
             {
                 response = response.with_header("x-client-kind", kind);
             }

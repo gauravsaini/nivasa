@@ -1,6 +1,6 @@
 use super::{
-    DynamicModule, Module, ModuleLifecycleError, ModuleRegistry, ModuleRegistryError, ModuleRuntime,
-    OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy, OnModuleInit,
+    DynamicModule, Module, ModuleLifecycleError, ModuleRegistry, ModuleRegistryError,
+    ModuleRuntime, OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy, OnModuleInit,
 };
 use crate::di::DependencyContainer;
 use async_trait::async_trait;

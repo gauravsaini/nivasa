@@ -9,3 +9,11 @@ error[E0412]: cannot find type `UsersController` in this scope
   |
 8 | impl UsersController {
   |      ^^^^^^^^^^^^^^^ not found in this scope
+
+error: the `Self` constructor can only be used with tuple or unit structs
+ --> tests/trybuild/controller_api_tags_invalid.rs:7:1
+  |
+7 | #[impl_controller]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `impl_controller` (in Nightly builds, run with -Z macro-backtrace for more info)

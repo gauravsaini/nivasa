@@ -34,10 +34,7 @@ fn on_event_macro_emits_handler_metadata() {
     );
 
     let gateway = EventGateway;
-    assert_eq!(
-        gateway.on_user_created("42".to_string()),
-        "created:42"
-    );
+    assert_eq!(gateway.on_user_created("42".to_string()), "created:42");
 }
 
 #[test]

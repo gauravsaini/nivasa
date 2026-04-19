@@ -223,8 +223,7 @@ fn from_core_graphql_response(response: GraphQLCoreResponse) -> GraphQLResponse 
         .map(|error| GraphQLError {
             message: error.message,
             extensions: error.extensions.map(|extensions| {
-                serde_json::to_value(extensions)
-                    .expect("GraphQL error extensions must serialize")
+                serde_json::to_value(extensions).expect("GraphQL error extensions must serialize")
             }),
         })
         .collect();
@@ -247,11 +246,11 @@ where
             tokio::runtime::RuntimeFlavor::MultiThread => {
                 tokio::task::block_in_place(|| handle.block_on(future))
             }
-            tokio::runtime::RuntimeFlavor::CurrentThread => std::thread::spawn(move || {
-                handle.block_on(future)
-            })
-            .join()
-            .expect("GraphQL runtime thread panicked"),
+            tokio::runtime::RuntimeFlavor::CurrentThread => {
+                std::thread::spawn(move || handle.block_on(future))
+                    .join()
+                    .expect("GraphQL runtime thread panicked")
+            }
             _ => tokio::task::block_in_place(|| handle.block_on(future)),
         },
         Err(_) => tokio::runtime::Builder::new_current_thread()

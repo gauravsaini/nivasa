@@ -116,8 +116,7 @@ fn expand_schedule(
                 proc_macro2::Span::call_site(),
                 format!("`#[{kind_name}]` only supports inherent methods"),
             )
-            .to_compile_error()
-            .into();
+            .to_compile_error();
         }
     };
 
@@ -126,8 +125,7 @@ fn expand_schedule(
             method.sig.ident.span(),
             format!("`#[{kind_name}]` only supports inherent methods"),
         )
-        .to_compile_error()
-        .into();
+        .to_compile_error();
     }
 
     let method_name = &method.sig.ident;

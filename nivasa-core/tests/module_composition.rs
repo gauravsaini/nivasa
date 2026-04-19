@@ -23,6 +23,10 @@ struct ImportingSingletonModule {
     seen_public: Arc<Mutex<bool>>,
     saw_hidden_error: Arc<Mutex<bool>>,
 }
+#[derive(Clone)]
+struct LifecycleProbeModule {
+    events: Arc<Mutex<Vec<&'static str>>>,
+}
 
 fn metadata(
     imports: Vec<TypeId>,
@@ -201,6 +205,49 @@ impl Module for ImportingSingletonModule {
     }
 }
 
+#[async_trait]
+impl Module for LifecycleProbeModule {
+    fn metadata(&self) -> ModuleMetadata {
+        metadata(vec![], vec![], vec![], false)
+    }
+
+    async fn configure(
+        &self,
+        _container: &nivasa_core::di::DependencyContainer,
+    ) -> Result<(), nivasa_core::di::error::DiError> {
+        self.events.lock().unwrap().push("probe.configure");
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl nivasa_core::module::OnModuleInit for LifecycleProbeModule {
+    async fn on_module_init(&self) {
+        self.events.lock().unwrap().push("probe.init");
+    }
+}
+
+#[async_trait]
+impl nivasa_core::module::OnModuleDestroy for LifecycleProbeModule {
+    async fn on_module_destroy(&self) {
+        self.events.lock().unwrap().push("probe.destroy");
+    }
+}
+
+#[async_trait]
+impl nivasa_core::module::OnApplicationBootstrap for LifecycleProbeModule {
+    async fn on_application_bootstrap(&self) {
+        self.events.lock().unwrap().push("probe.bootstrap");
+    }
+}
+
+#[async_trait]
+impl nivasa_core::module::OnApplicationShutdown for LifecycleProbeModule {
+    async fn on_application_shutdown(&self) {
+        self.events.lock().unwrap().push("probe.shutdown");
+    }
+}
+
 #[test]
 fn import_resolution_and_re_exports_respect_export_boundaries() {
     let mut registry = ModuleRegistry::new();
@@ -273,4 +320,52 @@ async fn orchestrator_seeds_imported_exported_singletons_without_hidden_provider
 
     assert!(*seen_public.lock().unwrap());
     assert!(*saw_hidden_error.lock().unwrap());
+}
+
+#[tokio::test]
+async fn orchestrator_hook_sets_only_fire_their_selected_callbacks() {
+    async fn run_with_hooks(
+        hooks: nivasa_core::module::ModuleHookSet<LifecycleProbeModule>,
+    ) -> Vec<&'static str> {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let mut orchestrator = ModuleOrchestrator::new();
+        orchestrator.register_with_hooks(
+            LifecycleProbeModule {
+                events: Arc::clone(&events),
+            },
+            hooks,
+        );
+
+        orchestrator.bootstrap().await.unwrap();
+        orchestrator.shutdown().await.unwrap();
+
+        let snapshot = events.lock().unwrap().clone();
+        snapshot
+    }
+
+    let none = run_with_hooks(nivasa_core::module::ModuleHookSet::none()).await;
+    assert_eq!(none, &["probe.configure"]);
+
+    let module_lifecycle =
+        run_with_hooks(nivasa_core::module::ModuleHookSet::module_lifecycle()).await;
+    assert_eq!(module_lifecycle, &["probe.configure", "probe.init", "probe.destroy"]);
+
+    let application_lifecycle =
+        run_with_hooks(nivasa_core::module::ModuleHookSet::application_lifecycle()).await;
+    assert_eq!(
+        application_lifecycle,
+        &["probe.configure", "probe.bootstrap", "probe.shutdown"]
+    );
+
+    let all = run_with_hooks(nivasa_core::module::ModuleHookSet::all()).await;
+    assert_eq!(
+        all,
+        &[
+            "probe.configure",
+            "probe.init",
+            "probe.bootstrap",
+            "probe.shutdown",
+            "probe.destroy",
+        ]
+    );
 }
