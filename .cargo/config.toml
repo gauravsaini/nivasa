@@ -1,2 +1,16 @@
 [env]
 PKG_CONFIG = { value = "scripts/pkg-config-wrapper.sh", relative = true }
+
+[patch.crates-io]
+nivasa-common = { path = "nivasa-common" }
+nivasa-statechart = { path = "nivasa-statechart" }
+nivasa-core = { path = "nivasa-core" }
+nivasa-macros = { path = "nivasa-macros" }
+nivasa-http = { path = "nivasa-http" }
+nivasa-filters = { path = "nivasa-filters" }
+nivasa-guards = { path = "nivasa-guards" }
+nivasa-interceptors = { path = "nivasa-interceptors" }
+nivasa-pipes = { path = "nivasa-pipes" }
+nivasa-routing = { path = "nivasa-routing" }
+nivasa-validation = { path = "nivasa-validation" }
+nivasa-graphql = { path = "nivasa-graphql" }
