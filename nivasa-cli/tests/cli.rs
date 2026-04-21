@@ -1,7 +1,9 @@
 use std::fs;
+use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::Command;
+use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn binary() -> &'static str {
@@ -23,6 +25,23 @@ fn run_cli(args: &[&str]) -> std::process::Output {
         .args(args)
         .output()
         .expect("nivasa command should run")
+}
+
+fn spawn_inspect_server(responses: Vec<&'static str>) -> (u16, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("free port should exist");
+    let port = listener.local_addr().expect("listener should have addr").port();
+    let handle = thread::spawn(move || {
+        for response in responses {
+            let (mut stream, _) = listener.accept().expect("inspect client should connect");
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(response.as_bytes())
+                .expect("inspect response should write");
+        }
+    });
+
+    (port, handle)
 }
 
 #[test]
@@ -101,4 +120,53 @@ fn nivasa_statechart_inspect_reports_connection_error() {
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
     assert!(stderr.contains("failed to connect to 127.0.0.1"));
+}
+
+#[test]
+fn nivasa_statechart_inspect_falls_back_to_later_debug_endpoint() {
+    let (port, server) = spawn_inspect_server(vec![
+        "HTTP/1.1 404 Not Found\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}",
+    ]);
+
+    let output = Command::new(binary())
+        .args(["statechart", "inspect", "--port", &port.to_string()])
+        .output()
+        .expect("nivasa inspect should run");
+
+    server.join().expect("inspect server should exit cleanly");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("/_nivasa/statechart/transitions"));
+    assert!(stdout.contains("\"ok\": true"));
+}
+
+#[test]
+fn nivasa_statechart_visualize_renders_specific_file() {
+    let output = run_cli(&[
+        "statechart",
+        "visualize",
+        "nivasa.application.scxml",
+    ]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("nivasa.application.scxml"));
+    assert!(stdout.contains("<svg"));
+    assert!(stdout.contains("arrowhead"));
+}
+
+#[test]
+fn nivasa_statechart_diff_reports_invalid_revision() {
+    let output = run_cli(&[
+        "statechart",
+        "diff",
+        "definitely-not-a-real-revision",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
+    assert!(stderr.contains("definitely-not-a-real-revision"));
 }

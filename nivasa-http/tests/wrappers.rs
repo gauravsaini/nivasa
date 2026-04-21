@@ -1,4 +1,4 @@
-use http::header::HeaderMap;
+use http::header::{HeaderMap, HeaderValue};
 use http::{Method, Request, StatusCode};
 use nivasa_http::{
     Body, FromRequest, Html, IntoResponse, Json, NivasaRequest, NivasaResponse, Query, Redirect,
@@ -267,4 +267,136 @@ fn body_converts_between_empty_text_json_and_bytes() {
         Body::from(serde_json::json!({"answer": 42})).into_bytes(),
         br#"{"answer":42}"#.to_vec()
     );
+}
+
+#[test]
+fn request_wrapper_covers_invalid_uri_and_header_mutation_paths() {
+    let mut request = NivasaRequest::new(Method::PATCH, "http://[::1", Body::text("payload"));
+
+    assert_eq!(request.method(), Method::PATCH);
+    assert_eq!(request.path(), "/");
+    assert_eq!(request.body().as_bytes(), b"payload");
+
+    request
+        .set_header("x-valid", "ok")
+        .set_header("bad header", "ignored")
+        .set_header("x-bad-value", "bad\nvalue");
+
+    assert_eq!(request.header("x-valid").unwrap(), "ok");
+    assert!(request.header("bad header").is_none());
+    assert!(request.header("x-bad-value").is_none());
+
+    let (parts, body) = request.into_parts();
+    assert_eq!(parts.method, Method::PATCH);
+    assert_eq!(parts.uri.path(), "/");
+    assert_eq!(body, Body::text("payload"));
+}
+
+#[test]
+fn request_helpers_cover_body_header_query_and_path_error_branches() {
+    let mut request = Request::builder()
+        .method(Method::POST)
+        .uri("/users?page=abc")
+        .header("x-count", "abc")
+        .body(Body::bytes(vec![0xff, 0xfe]))
+        .expect("request must build");
+    request
+        .headers_mut()
+        .insert("x-binary", HeaderValue::from_bytes(b"\xff").unwrap());
+    let request = NivasaRequest::from_http(request);
+
+    assert_eq!(request.extract::<Body>().unwrap(), Body::bytes(vec![0xff, 0xfe]));
+    assert_eq!(request.extract::<Vec<u8>>().unwrap(), vec![0xff, 0xfe]);
+
+    let string_err = request.extract::<String>().unwrap_err();
+    assert!(matches!(string_err, RequestExtractError::InvalidBody(_)));
+    assert!(string_err.to_string().starts_with("invalid request body:"));
+
+    let body_err = request.extract::<serde_json::Value>().unwrap_err();
+    assert!(matches!(body_err, RequestExtractError::InvalidBody(_)));
+
+    let query_err = request.query_typed::<u32>("page").unwrap_err();
+    assert!(matches!(
+        query_err,
+        RequestExtractError::InvalidQueryParameter { .. }
+    ));
+    assert!(query_err.to_string().contains("page"));
+
+    let header_err = request.header_typed::<u32>("x-count").unwrap_err();
+    assert!(matches!(
+        header_err,
+        RequestExtractError::InvalidHeader { .. }
+    ));
+    assert!(header_err.to_string().contains("x-count"));
+
+    let utf8_header_err = request.header_typed::<String>("x-binary").unwrap_err();
+    assert!(matches!(
+        utf8_header_err,
+        RequestExtractError::InvalidHeader { .. }
+    ));
+
+    assert!(matches!(
+        request.extract::<Json<serde_json::Value>>().unwrap_err(),
+        RequestExtractError::InvalidBody(_)
+    ));
+
+    let request_with_path = NivasaRequest::new(Method::GET, "/users/abc", Body::empty());
+    let mut pipeline = nivasa_http::RequestPipeline::new(request_with_path);
+    let mut routes = RouteDispatchRegistry::new();
+    routes
+        .register_pattern(RouteMethod::Get, "/users/:id", "show")
+        .unwrap();
+
+    pipeline.parse_request().unwrap();
+    pipeline.complete_middleware().unwrap();
+    assert!(matches!(
+        pipeline.match_route(&routes).unwrap(),
+        RouteDispatchOutcome::Matched(_)
+    ));
+
+    let path_err = pipeline.request().path_param_typed::<u32>("id").unwrap_err();
+    assert!(matches!(
+        path_err,
+        RequestExtractError::InvalidPathParameter { .. }
+    ));
+    assert!(path_err.to_string().contains("id"));
+
+    assert!(matches!(
+        request.extract::<RoutePathCaptures>().unwrap_err(),
+        RequestExtractError::MissingPathParameters
+    ));
+}
+
+#[test]
+fn request_helpers_cover_json_html_and_empty_body_variants() {
+    #[derive(Debug, Deserialize, PartialEq, Eq)]
+    struct CreateUser {
+        name: String,
+    }
+
+    let json_request = NivasaRequest::new(
+        Method::POST,
+        "/users",
+        Body::json(serde_json::json!({"name": "Ada"})),
+    );
+    assert_eq!(
+        json_request.extract::<String>().unwrap(),
+        r#"{"name":"Ada"}"#
+    );
+
+    let html_request =
+        NivasaRequest::new(Method::POST, "/users", Body::html(r#"{"name":"Grace"}"#));
+    assert_eq!(
+        html_request.extract::<Json<CreateUser>>().unwrap().into_inner(),
+        CreateUser {
+            name: "Grace".to_string(),
+        }
+    );
+
+    let empty_request = NivasaRequest::new(Method::POST, "/users", Body::empty());
+    assert_eq!(empty_request.extract::<String>().unwrap(), "");
+    assert!(matches!(
+        empty_request.extract::<serde_json::Value>().unwrap_err(),
+        RequestExtractError::MissingBody
+    ));
 }

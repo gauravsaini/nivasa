@@ -730,6 +730,26 @@ fn bootstrap_config_exposes_a_listen_address_for_startup_reporting() {
 }
 
 #[test]
+fn bootstrap_config_normalizes_docs_paths_and_ipv6_listen_addresses() {
+    let bootstrap = nivasa::AppBootstrapConfig::new(
+        ServerOptions::builder().host("::1").port(4100).build(),
+    )
+    .with_openapi_spec_path(" docs/openapi.json ")
+    .with_swagger_ui_path(" docs/ui ");
+
+    assert_eq!(bootstrap.listen_address(), "[::1]:4100");
+    assert_eq!(bootstrap.openapi_spec_path(), "/docs/openapi.json");
+    assert_eq!(bootstrap.swagger_ui_path(), "/docs/ui");
+
+    let defaults = nivasa::AppBootstrapConfig::default()
+        .with_openapi_spec_path("   ")
+        .with_swagger_ui_path("   ");
+
+    assert_eq!(defaults.openapi_spec_path(), "/api/docs/openapi.json");
+    assert_eq!(defaults.swagger_ui_path(), "/api/docs");
+}
+
+#[test]
 fn bootstrap_config_can_compose_prefixed_route_paths_without_runtime_wiring() {
     let bootstrap =
         nivasa::AppBootstrapConfig::from(ServerOptions::builder().global_prefix("api").build());
@@ -755,6 +775,32 @@ fn bootstrap_config_applies_global_prefix_to_unversioned_route_registration() {
 
     assert_eq!(bootstrap.prefixed_route_path("health"), "/api/health");
     let _ = builder;
+}
+
+#[test]
+fn app_to_server_reports_missing_route_handlers_by_name() {
+    let app = nivasa::NestApplication::create(DemoModule)
+        .build()
+        .expect("build should assemble the root module shell");
+
+    let error = match app.to_server(|_| None) {
+        Ok(_) => panic!("missing handler should fail server bridge"),
+        Err(error) => error,
+    };
+
+    match error {
+        AppBuildError::MissingRouteHandler { handler } => {
+            assert_eq!(handler, "health");
+            assert_eq!(
+                AppBuildError::MissingRouteHandler {
+                    handler: handler.clone(),
+                }
+                .to_string(),
+                "missing route handler `health` while building app server"
+            );
+        }
+        other => panic!("unexpected error: {other}"),
+    }
 }
 
 #[test]

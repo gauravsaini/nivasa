@@ -85,6 +85,26 @@ impl ExceptionFilterMetadata for PanicGlobalFilter {
     }
 }
 
+struct AsyncPanicGlobalFilter;
+
+impl ExceptionFilter<HttpException, NivasaResponse> for AsyncPanicGlobalFilter {
+    fn catch<'a>(
+        &'a self,
+        _exception: HttpException,
+        _host: ArgumentsHost,
+    ) -> ExceptionFilterFuture<'a, NivasaResponse> {
+        Box::pin(async move {
+            panic!("async filter should still fall back to internal error shape");
+        })
+    }
+}
+
+impl ExceptionFilterMetadata for AsyncPanicGlobalFilter {
+    fn exception_type(&self) -> Option<&'static str> {
+        Some(std::any::type_name::<HttpException>())
+    }
+}
+
 fn free_port() -> u16 {
     StdTcpListener::bind("127.0.0.1:0")
         .expect("must bind an ephemeral port")
@@ -167,6 +187,50 @@ async fn global_filter_panics_fall_back_to_the_internal_server_error_shape(
 
     let server = NivasaServer::builder()
         .use_global_filter(PanicGlobalFilter)
+        .interceptor(ErrorInterceptor)
+        .route(RouteMethod::Get, "/filters", |_| {
+            NivasaResponse::text("handler")
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("http://127.0.0.1:{port}/filters"))
+        .body(Full::new(Bytes::new()))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let body = response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+        json!({
+            "statusCode": 500,
+            "message": "request handler failed",
+            "error": "Internal Server Error"
+        })
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn global_filter_future_panics_fall_back_to_the_internal_server_error_shape(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .use_global_filter(AsyncPanicGlobalFilter)
         .interceptor(ErrorInterceptor)
         .route(RouteMethod::Get, "/filters", |_| {
             NivasaResponse::text("handler")

@@ -1,10 +1,13 @@
-use chrono::{TimeZone, Utc};
-use nivasa_scheduling::{CronSchedule, ScheduleModule, SchedulePattern};
+use chrono::{Duration as ChronoDuration, TimeZone, Utc};
+use nivasa_core::di::container::DependencyContainer;
+use nivasa_core::di::provider::Injectable;
+use nivasa_scheduling::{CronSchedule, ScheduleError, ScheduleModule, SchedulePattern};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
 use std::time::Duration;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn cron_schedule_parses_and_computes_next_fire_time() {
@@ -14,6 +17,22 @@ async fn cron_schedule_parses_and_computes_next_fire_time() {
     let next = schedule.next_after(now).expect("next fire time");
 
     assert_eq!(next, Utc.with_ymd_and_hms(2024, 1, 1, 0, 5, 0).unwrap());
+}
+
+#[tokio::test]
+async fn cron_schedule_reports_invalid_expressions() {
+    let error = CronSchedule::parse("not-a-cron").expect_err("invalid cron should fail");
+
+    match error {
+        ScheduleError::InvalidCronExpression {
+            expression,
+            message,
+        } => {
+            assert_eq!(expression, "not-a-cron");
+            assert!(!message.is_empty());
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -177,5 +196,211 @@ async fn interval_jobs_fire_repeatedly_and_timeout_jobs_fire_once() {
         Some(
             Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap() + chrono::Duration::milliseconds(20)
         )
+    );
+}
+
+#[tokio::test]
+async fn schedule_module_rejects_invalid_interval_and_overflowing_patterns() {
+    let scheduler = ScheduleModule::new();
+    let now = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+
+    let zero_interval = scheduler
+        .register_interval_at("zero", Duration::ZERO, now, || async { Ok(()) })
+        .await
+        .expect_err("zero interval should fail");
+    assert_eq!(
+        zero_interval,
+        ScheduleError::InvalidIntervalDuration { every_ms: 0 }
+    );
+
+    let huge_interval = scheduler
+        .register_pattern_at(
+            "huge-interval",
+            SchedulePattern::interval(Duration::MAX),
+            now,
+            || async { Ok(()) },
+        )
+        .await
+        .expect_err("overflowing interval should fail");
+    assert_eq!(
+        huge_interval,
+        ScheduleError::NoUpcomingFireTime {
+            expression: format!("interval:{:?}", Duration::MAX),
+        }
+    );
+
+    let huge_timeout = scheduler
+        .register_timeout_at("huge-timeout", Duration::MAX, now, || async { Ok(()) })
+        .await
+        .expect_err("overflowing timeout should fail");
+    assert_eq!(
+        huge_timeout,
+        ScheduleError::NoUpcomingFireTime {
+            expression: format!("timeout:{:?}", Duration::MAX),
+        }
+    );
+}
+
+#[tokio::test]
+async fn tick_at_returns_job_failed_and_stops_later_due_jobs() {
+    let scheduler = ScheduleModule::new();
+    let now = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+    let healthy_hits = Arc::new(AtomicUsize::new(0));
+
+    let failing_timeout_id = scheduler
+        .register_timeout_at("failing-timeout", Duration::from_millis(10), now, || async {
+            Err("boom".to_string())
+        })
+        .await
+        .expect("timeout job should register");
+
+    let healthy_interval_id = scheduler
+        .register_interval_at("healthy-interval", Duration::from_millis(20), now, {
+            let healthy_hits = Arc::clone(&healthy_hits);
+            move || {
+                let healthy_hits = Arc::clone(&healthy_hits);
+                async move {
+                    healthy_hits.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }
+            }
+        })
+        .await
+        .expect("interval job should register");
+
+    let error = scheduler
+        .tick_at(now + ChronoDuration::milliseconds(20))
+        .await
+        .expect_err("failing timeout should bubble up");
+    assert_eq!(
+        error,
+        ScheduleError::JobFailed {
+            job_name: "failing-timeout".to_string(),
+            message: "boom".to_string(),
+        }
+    );
+
+    assert_eq!(healthy_hits.load(Ordering::SeqCst), 0);
+    assert!(scheduler.job(failing_timeout_id).await.is_none());
+    assert_eq!(
+        scheduler.next_fire_at(healthy_interval_id).await,
+        Some(now + ChronoDuration::milliseconds(20))
+    );
+
+    let fired = scheduler
+        .tick_at(now + ChronoDuration::milliseconds(20))
+        .await
+        .expect("preserved interval should run on next tick");
+    assert_eq!(fired, vec![healthy_interval_id]);
+    assert_eq!(healthy_hits.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        scheduler.next_fire_at(healthy_interval_id).await,
+        Some(now + ChronoDuration::milliseconds(40))
+    );
+}
+
+#[tokio::test]
+async fn schedule_module_job_helpers_cover_missing_and_snapshot_paths() {
+    let scheduler = ScheduleModule::new();
+    let now = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+
+    let interval_id = scheduler
+        .register_interval_at("heartbeat", Duration::from_secs(5), now, || async { Ok(()) })
+        .await
+        .expect("interval job should register");
+
+    let timeout_id = scheduler
+        .register_timeout_at("warmup", Duration::from_secs(2), now, || async { Ok(()) })
+        .await
+        .expect("timeout job should register");
+
+    assert_eq!(scheduler.job_count().await, 2);
+    assert!(!scheduler.remove_job(Uuid::new_v4()).await);
+
+    let mut jobs = scheduler.jobs().await;
+    jobs.sort_by(|left, right| left.name.cmp(&right.name));
+    assert_eq!(jobs.len(), 2);
+    assert_eq!(jobs[0].id, interval_id);
+    assert_eq!(
+        jobs[0].pattern,
+        SchedulePattern::Interval {
+            every: Duration::from_secs(5),
+        }
+    );
+    assert_eq!(jobs[1].id, timeout_id);
+    assert_eq!(
+        jobs[1].pattern,
+        SchedulePattern::Timeout {
+            delay: Duration::from_secs(2),
+        }
+    );
+
+    let fired = scheduler
+        .tick_at(now + ChronoDuration::seconds(1))
+        .await
+        .expect("no jobs should be due yet");
+    assert!(fired.is_empty());
+}
+
+#[tokio::test]
+async fn schedule_module_current_time_helpers_and_injectable_surface_work() {
+    let scheduler = ScheduleModule::new();
+
+    let cron_id = scheduler
+        .register_cron("cron", "0 * * * * *", || async { Ok(()) })
+        .await
+        .expect("cron job should register");
+    let interval_id = scheduler
+        .register_interval("interval", Duration::from_secs(1), || async { Ok(()) })
+        .await
+        .expect("interval job should register");
+    let timeout_id = scheduler
+        .register_timeout("timeout", Duration::from_secs(1), || async { Ok(()) })
+        .await
+        .expect("timeout job should register");
+
+    assert_eq!(scheduler.job_count().await, 3);
+
+    let cron = scheduler.job(cron_id).await.expect("cron job info");
+    assert_eq!(
+        cron.pattern,
+        SchedulePattern::Cron {
+            expression: "0 * * * * *".to_string()
+        }
+    );
+    assert!(cron.next_fire_at.is_some());
+
+    let interval = scheduler
+        .job(interval_id)
+        .await
+        .expect("interval job info");
+    assert_eq!(
+        interval.pattern,
+        SchedulePattern::Interval {
+            every: Duration::from_secs(1),
+        }
+    );
+    assert!(interval.next_fire_at.is_some());
+
+    let timeout = scheduler
+        .job(timeout_id)
+        .await
+        .expect("timeout job info");
+    assert_eq!(
+        timeout.pattern,
+        SchedulePattern::Timeout {
+            delay: Duration::from_secs(1),
+        }
+    );
+    assert!(timeout.next_fire_at.is_some());
+
+    let container = DependencyContainer::new();
+    let built = <ScheduleModule as Injectable>::build(&container)
+        .await
+        .expect("schedule module should build from DI");
+    assert_eq!(built.job_count().await, 0);
+    assert!(
+        <ScheduleModule as Injectable>::dependencies().is_empty(),
+        "schedule module should not require DI dependencies"
     );
 }

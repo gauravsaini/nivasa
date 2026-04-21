@@ -133,6 +133,110 @@ fn route_dispatch_registry_maps_helper_errors_and_blank_version_tokens() {
 }
 
 #[test]
+fn route_registry_helper_apis_expose_entries_and_contains() {
+    let mut registry = RouteRegistry::new();
+
+    assert!(registry.is_empty());
+    assert_eq!(registry.len(), 0);
+    assert_eq!(registry.iter().count(), 0);
+    assert!(!registry.contains("/users"));
+    assert!(registry.resolve_entry("/users").is_none());
+
+    registry.register_static("/users", "users").unwrap();
+    registry.register_pattern("/files/*path", "files").unwrap();
+
+    assert!(!registry.is_empty());
+    assert_eq!(registry.len(), 2);
+    assert_eq!(registry.iter().count(), 2);
+    assert!(registry.contains("users/"));
+    assert_eq!(
+        registry.resolve_entry("/users").map(|entry| entry.pattern.path()),
+        Some("/users".to_string())
+    );
+    assert_eq!(
+        registry
+            .resolve_entry("/files/docs/guide")
+            .map(|entry| entry.pattern.path()),
+        Some("/files/*path".to_string())
+    );
+}
+
+#[test]
+fn route_dispatch_selection_helper_apis_cover_empty_and_populated_selections() {
+    let mut registry = RouteDispatchRegistry::new();
+
+    let empty = registry.select("/missing");
+    assert!(empty.is_empty());
+    assert_eq!(empty.len(), 0);
+    assert_eq!(empty.iter().count(), 0);
+    assert!(empty.resolve_entry("GET").is_none());
+    assert!(empty.resolve_match("GET").is_none());
+    assert!(empty.allowed_methods().is_empty());
+
+    registry.register_static("GET", "/users", "list").unwrap();
+    registry.register_static("POST", "/users", "create").unwrap();
+
+    let selection = registry.select("/users/");
+    assert!(!selection.is_empty());
+    assert_eq!(selection.len(), 2);
+    assert_eq!(selection.iter().count(), 2);
+    assert_eq!(selection.allowed_methods(), vec!["GET".to_string(), "POST".to_string()]);
+    assert_eq!(
+        selection.resolve_entry("POST").map(|entry| entry.value),
+        Some("create")
+    );
+    assert_eq!(selection.resolve_match("POST").map(|matched| matched.entry.value), Some("create"));
+    assert_eq!(selection.resolve("GET"), Some(&"list"));
+}
+
+#[test]
+fn route_dispatch_registry_exposes_entry_contains_and_versioned_match_helpers() {
+    let mut registry = RouteDispatchRegistry::new();
+
+    registry
+        .register_header_versioned_route("GET", "1", "/users/:id", "v1-show")
+        .unwrap();
+    registry
+        .register_media_type_versioned_route("GET", "2", "/users/:id", "v2-show")
+        .unwrap();
+    registry
+        .register_pattern("GET", "/users/:id", "fallback-show")
+        .unwrap();
+
+    assert!(registry.contains("GET", "/users/42"));
+    assert!(!registry.contains("DELETE", "/users/42"));
+    assert_eq!(
+        registry.resolve_entry("GET", "/users/42").map(|entry| entry.value),
+        Some("fallback-show")
+    );
+
+    let header_match = registry
+        .resolve_header_match("GET", "/users/42", Some("1"))
+        .unwrap();
+    assert_eq!(header_match.entry.value, "v1-show");
+    assert_eq!(header_match.entry.version(), Some("v1"));
+    assert_eq!(header_match.captures.get("id"), Some("42"));
+
+    let media_match = registry
+        .resolve_media_type_match(
+            "GET",
+            "/users/7",
+            Some("application/vnd.app.v2+json; charset=utf-8"),
+        )
+        .unwrap();
+    assert_eq!(media_match.entry.value, "v2-show");
+    assert_eq!(media_match.entry.version(), Some("v2"));
+    assert_eq!(media_match.captures.get("id"), Some("7"));
+
+    let fallback_match = registry
+        .resolve_match_versioned("GET", "/users/9", Some("3"))
+        .unwrap();
+    assert_eq!(fallback_match.entry.value, "fallback-show");
+    assert_eq!(fallback_match.entry.version(), None);
+    assert_eq!(fallback_match.captures.get("id"), Some("9"));
+}
+
+#[test]
 fn route_pattern_strict_constructor_rejects_optional_segments() {
     let err = RoutePattern::static_path("/users/:id?").unwrap_err();
 
