@@ -157,3 +157,99 @@ async fn validation_pipe_rejects_invalid_dto_with_field_level_details() -> Resul
     timeout(Duration::from_secs(2), server_task).await??;
     Ok(())
 }
+
+#[tokio::test]
+async fn validation_pipe_rejects_malformed_json_before_handler_runs() -> Result<(), Box<dyn Error>>
+{
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .use_global_filter(DetailedHttpExceptionFilter)
+        .use_global_pipe(ValidationPipe::<SignupDto>::new())
+        .route(RouteMethod::Post, "/validate", |_| {
+            NivasaResponse::text("ok")
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        if let Err(err) = server.listen("127.0.0.1", port).await {
+            panic!("server must stop cleanly: {err}");
+        }
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Full<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let request = Request::post(format!("http://127.0.0.1:{port}/validate"))
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .body(Full::new(Bytes::from_static(br#"{"email":"broken""#)))?;
+
+    let response = client.request(request).await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = response.into_body().collect().await?.to_bytes();
+    let body: Value = serde_json::from_slice(&body)?;
+
+    assert_eq!(body["statusCode"], 400);
+    assert_eq!(body["error"], "Bad Request");
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .starts_with("global pipe could not parse request body as JSON:"));
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn validation_pipe_rejects_non_utf8_request_body_before_handler_runs(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .use_global_filter(DetailedHttpExceptionFilter)
+        .use_global_pipe(ValidationPipe::<SignupDto>::new())
+        .route(RouteMethod::Post, "/validate", |_| {
+            NivasaResponse::text("ok")
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        if let Err(err) = server.listen("127.0.0.1", port).await {
+            panic!("server must stop cleanly: {err}");
+        }
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Full<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let request = Request::post(format!("http://127.0.0.1:{port}/validate"))
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .body(Full::new(Bytes::from_static(&[0xff, 0xfe, 0xfd])))?;
+
+    let response = client.request(request).await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = response.into_body().collect().await?.to_bytes();
+    let body: Value = serde_json::from_slice(&body)?;
+
+    assert_eq!(body["statusCode"], 400);
+    assert_eq!(body["error"], "Bad Request");
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .starts_with("global pipe requires a UTF-8 request body:"));
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
