@@ -1,4 +1,6 @@
 use chrono::{Duration as ChronoDuration, TimeZone, Utc};
+use nivasa_core::di::container::DependencyContainer;
+use nivasa_core::di::provider::Injectable;
 use nivasa_scheduling::{CronSchedule, ScheduleError, ScheduleModule, SchedulePattern};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -284,6 +286,17 @@ async fn tick_at_returns_job_failed_and_stops_later_due_jobs() {
         scheduler.next_fire_at(healthy_interval_id).await,
         Some(now + ChronoDuration::milliseconds(20))
     );
+
+    let fired = scheduler
+        .tick_at(now + ChronoDuration::milliseconds(20))
+        .await
+        .expect("preserved interval should run on next tick");
+    assert_eq!(fired, vec![healthy_interval_id]);
+    assert_eq!(healthy_hits.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        scheduler.next_fire_at(healthy_interval_id).await,
+        Some(now + ChronoDuration::milliseconds(40))
+    );
 }
 
 #[tokio::test]
@@ -327,4 +340,67 @@ async fn schedule_module_job_helpers_cover_missing_and_snapshot_paths() {
         .await
         .expect("no jobs should be due yet");
     assert!(fired.is_empty());
+}
+
+#[tokio::test]
+async fn schedule_module_current_time_helpers_and_injectable_surface_work() {
+    let scheduler = ScheduleModule::new();
+
+    let cron_id = scheduler
+        .register_cron("cron", "0 * * * * *", || async { Ok(()) })
+        .await
+        .expect("cron job should register");
+    let interval_id = scheduler
+        .register_interval("interval", Duration::from_secs(1), || async { Ok(()) })
+        .await
+        .expect("interval job should register");
+    let timeout_id = scheduler
+        .register_timeout("timeout", Duration::from_secs(1), || async { Ok(()) })
+        .await
+        .expect("timeout job should register");
+
+    assert_eq!(scheduler.job_count().await, 3);
+
+    let cron = scheduler.job(cron_id).await.expect("cron job info");
+    assert_eq!(
+        cron.pattern,
+        SchedulePattern::Cron {
+            expression: "0 * * * * *".to_string()
+        }
+    );
+    assert!(cron.next_fire_at.is_some());
+
+    let interval = scheduler
+        .job(interval_id)
+        .await
+        .expect("interval job info");
+    assert_eq!(
+        interval.pattern,
+        SchedulePattern::Interval {
+            every: Duration::from_secs(1),
+        }
+    );
+    assert!(interval.next_fire_at.is_some());
+
+    let timeout = scheduler
+        .job(timeout_id)
+        .await
+        .expect("timeout job info");
+    assert_eq!(
+        timeout.pattern,
+        SchedulePattern::Timeout {
+            delay: Duration::from_secs(1),
+        }
+    );
+    assert!(timeout.next_fire_at.is_some());
+
+    let container = DependencyContainer::new();
+    let built = <ScheduleModule as Injectable>::build(&container)
+        .await
+        .expect("schedule module should build from DI");
+    assert_eq!(built.job_count().await, 0);
+    assert!(
+        <ScheduleModule as Injectable>::dependencies().is_empty(),
+        "schedule module should not require DI dependencies"
+    );
 }
