@@ -7,6 +7,7 @@ use std::sync::{
     Arc,
 };
 use std::time::Duration;
+use tokio::time::sleep;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -239,6 +240,59 @@ async fn schedule_module_rejects_invalid_interval_and_overflowing_patterns() {
             expression: format!("timeout:{:?}", Duration::MAX),
         }
     );
+}
+
+#[tokio::test]
+async fn schedule_module_register_pattern_surfaces_invalid_cron_errors() {
+    let scheduler = ScheduleModule::new();
+
+    let error = scheduler
+        .register_pattern("bad-cron", SchedulePattern::cron("not-a-cron"), || async {
+            Ok(())
+        })
+        .await
+        .expect_err("invalid cron pattern should fail");
+
+    assert!(matches!(
+        error,
+        ScheduleError::InvalidCronExpression { expression, .. } if expression == "not-a-cron"
+    ));
+}
+
+#[tokio::test]
+async fn schedule_module_tick_helper_runs_due_timeout_registered_via_pattern_helper() {
+    let scheduler = ScheduleModule::new();
+    let hits = Arc::new(AtomicUsize::new(0));
+
+    let job_id = scheduler
+        .register_pattern(
+            "delayed-timeout",
+            SchedulePattern::timeout(Duration::from_millis(5)),
+            {
+                let hits = Arc::clone(&hits);
+                move || {
+                    let hits = Arc::clone(&hits);
+                    async move {
+                        hits.fetch_add(1, Ordering::SeqCst);
+                        Ok(())
+                    }
+                }
+            },
+        )
+        .await
+        .expect("timeout pattern should register");
+
+    assert!(scheduler.job(job_id).await.is_some());
+    assert!(scheduler.next_fire_at(job_id).await.is_some());
+
+    sleep(Duration::from_millis(20)).await;
+
+    let fired = scheduler.tick().await.expect("tick helper should run due timeout");
+
+    assert_eq!(fired, vec![job_id]);
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
+    assert!(scheduler.job(job_id).await.is_none());
+    assert_eq!(scheduler.next_fire_at(job_id).await, None);
 }
 
 #[tokio::test]
