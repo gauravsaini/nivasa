@@ -592,6 +592,14 @@ impl Controller for ThrottledController {
     }
 }
 
+struct UnsupportedPatternController;
+
+impl Controller for UnsupportedPatternController {
+    fn metadata(&self) -> nivasa_routing::ControllerMetadata {
+        nivasa_routing::ControllerMetadata::new("/")
+    }
+}
+
 struct DemoModule;
 
 impl Module for DemoModule {
@@ -671,6 +679,39 @@ impl Module for ThrottledModule {
         vec![ModuleControllerRegistration::new(
             TypeId::of::<ThrottledController>(),
             vec![ControllerRouteRegistration::new("GET", "health", "health").with_throttle(1, 60)],
+            Vec::new(),
+        )]
+    }
+}
+
+struct UnsupportedPatternModule;
+
+impl Module for UnsupportedPatternModule {
+    fn metadata(&self) -> ModuleMetadata {
+        ModuleMetadata::default()
+            .with_controllers(vec![TypeId::of::<UnsupportedPatternController>()])
+    }
+
+    fn configure<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        _container: &'life1 DependencyContainer,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DiError>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn controller_registrations(&self) -> Vec<ModuleControllerRegistration> {
+        vec![ModuleControllerRegistration::new(
+            TypeId::of::<UnsupportedPatternController>(),
+            vec![ControllerRouteRegistration::new(
+                "GET",
+                "files/*path/tail",
+                "show",
+            )],
             Vec::new(),
         )]
     }
@@ -813,11 +854,10 @@ fn bootstrap_config_exposes_a_listen_address_for_startup_reporting() {
 
 #[test]
 fn bootstrap_config_normalizes_docs_paths_and_ipv6_listen_addresses() {
-    let bootstrap = nivasa::AppBootstrapConfig::new(
-        ServerOptions::builder().host("::1").port(4100).build(),
-    )
-    .with_openapi_spec_path(" docs/openapi.json ")
-    .with_swagger_ui_path(" docs/ui ");
+    let bootstrap =
+        nivasa::AppBootstrapConfig::new(ServerOptions::builder().host("::1").port(4100).build())
+            .with_openapi_spec_path(" docs/openapi.json ")
+            .with_swagger_ui_path(" docs/ui ");
 
     assert_eq!(bootstrap.listen_address(), "[::1]:4100");
     assert_eq!(bootstrap.openapi_spec_path(), "/docs/openapi.json");
@@ -879,6 +919,34 @@ fn app_to_server_reports_missing_route_handlers_by_name() {
                 }
                 .to_string(),
                 "missing route handler `health` while building app server"
+            );
+        }
+        other => panic!("unexpected error: {other}"),
+    }
+}
+
+#[test]
+fn app_to_server_maps_unsupported_route_patterns_into_duplicate_route_errors() {
+    let app = nivasa::NestApplication::create(UnsupportedPatternModule)
+        .build()
+        .expect("build should keep route metadata as app shell data");
+
+    let error = match app.to_server(|_| Some(Arc::new(|_| NivasaResponse::text("bad-route")))) {
+        Ok(_) => panic!("unsupported static route pattern should fail server bridge"),
+        Err(error) => error,
+    };
+
+    match error {
+        AppBuildError::DuplicateRoute { method, path } => {
+            assert_eq!(method, "GET");
+            assert_eq!(path, "/files/*path/tail");
+            assert_eq!(
+                AppBuildError::DuplicateRoute {
+                    method: method.clone(),
+                    path: path.clone(),
+                }
+                .to_string(),
+                "duplicate route `GET /files/*path/tail` while building app"
             );
         }
         other => panic!("unexpected error: {other}"),
@@ -1184,7 +1252,10 @@ fn bootstrap_config_serves_openapi_spec_over_umbrella_surface() {
         response.header("content-type"),
         Some("application/json".to_string())
     );
-    assert_eq!(response.json::<serde_json::Value>()["info"]["title"], "Umbrella API");
+    assert_eq!(
+        response.json::<serde_json::Value>()["info"]["title"],
+        "Umbrella API"
+    );
     assert_eq!(
         response.json::<serde_json::Value>()["paths"]["/health"]["get"]["summary"],
         "Health check"
