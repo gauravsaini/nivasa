@@ -142,3 +142,13 @@ fn http_exception_uses_unknown_fallback_for_unrecognized_status() {
     assert_eq!(err.error, "Unknown Error");
     assert_eq!(err.to_string(), "599 Unknown Error: proxy exploded");
 }
+
+#[test]
+fn http_status_into_exception_uses_typed_reason_phrase() {
+    let err = HttpStatus::ImATeapot.into_exception("short and stout");
+
+    assert_eq!(err.status_code, 418);
+    assert_eq!(err.message, "short and stout");
+    assert_eq!(err.error, "I'm a teapot");
+    assert_eq!(err.to_string(), "418 I'm a teapot: short and stout");
+}
