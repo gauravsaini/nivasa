@@ -100,6 +100,30 @@ fn nivasa_generate_alias_creates_resource_bundle() {
 }
 
 #[test]
+fn nivasa_generate_named_file_commands_create_expected_files() {
+    let cases = [
+        ("guard", "auth", "auth/auth_guard.rs"),
+        ("interceptor", "audit", "audit/audit_interceptor.rs"),
+        ("pipe", "trim", "trim/trim_pipe.rs"),
+        ("filter", "http", "http/http_filter.rs"),
+        ("middleware", "auth", "auth/auth_middleware.rs"),
+    ];
+
+    for (command, name, relative_path) in cases {
+        let root = temp_dir(command);
+        let output = run_cli_in_dir(&root, &["generate", command, name]);
+
+        assert!(output.status.success(), "{command} should succeed");
+        let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+        assert!(stdout.contains("created"), "{command} should report created file");
+        assert!(
+            root.join(relative_path).is_file(),
+            "{command} should create expected file"
+        );
+    }
+}
+
+#[test]
 fn nivasa_statechart_help_lists_subcommands() {
     let output = run_cli(&["statechart", "--help"]);
 
