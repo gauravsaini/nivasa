@@ -111,6 +111,30 @@ fn http_status_handles_status_code_error_path_and_from_conversions() {
 }
 
 #[test]
+fn http_status_classification_boundaries_exclude_other_ranges() {
+    let redirection = HttpStatus::MultipleChoices;
+    assert!(!redirection.is_informational());
+    assert!(!redirection.is_success());
+    assert!(redirection.is_redirection());
+    assert!(!redirection.is_client_error());
+    assert!(!redirection.is_server_error());
+
+    let client_error = HttpStatus::TooManyRequests;
+    assert!(!client_error.is_informational());
+    assert!(!client_error.is_success());
+    assert!(!client_error.is_redirection());
+    assert!(client_error.is_client_error());
+    assert!(!client_error.is_server_error());
+
+    let server_error = HttpStatus::ServiceUnavailable;
+    assert!(!server_error.is_informational());
+    assert!(!server_error.is_success());
+    assert!(!server_error.is_redirection());
+    assert!(!server_error.is_client_error());
+    assert!(server_error.is_server_error());
+}
+
+#[test]
 fn http_exception_uses_unknown_fallback_for_unrecognized_status() {
     let err = HttpException::new(599, "proxy exploded");
 
