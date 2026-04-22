@@ -232,6 +232,7 @@ fn config_service_get_helpers_cover_default_fallback_and_missing_keys() {
     assert_eq!(service.get_raw("PORT"), Some("3000"));
     assert_eq!(service.get::<u16>("PORT"), Some(3000));
     assert_eq!(service.get::<u16>("BROKEN_PORT"), None);
+    assert_eq!(service.get_or_throw("BROKEN_PORT"), Ok("abc".to_string()));
     assert_eq!(service.get_or_default("BROKEN_PORT", 80), 80);
     assert_eq!(service.get_or_default("MISSING", 80), 80);
 
