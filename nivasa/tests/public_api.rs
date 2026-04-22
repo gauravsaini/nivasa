@@ -18,6 +18,7 @@ use nivasa::prelude::{
     RequestContext, TestClient, TestResponse, WsArgumentsHost,
 };
 use std::any::TypeId;
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::future::Future;
 use std::net::TcpListener as StdTcpListener;
@@ -996,6 +997,89 @@ fn bootstrap_config_can_enable_versioning_without_runtime_wiring() {
         Some("v2")
     );
     assert_eq!(bootstrap.server.versioning, Some(versioning));
+}
+
+#[test]
+fn bootstrap_config_serves_openapi_spec_over_umbrella_surface() {
+    let document = nivasa::openapi::OpenApiDocument {
+        openapi: "3.0.0".to_string(),
+        info: nivasa::openapi::OpenApiInfo {
+            title: "Umbrella API".to_string(),
+            version: "1.2.3".to_string(),
+        },
+        paths: BTreeMap::from([(
+            "/health".to_string(),
+            BTreeMap::from([(
+                "get".to_string(),
+                nivasa::openapi::OpenApiOperation {
+                    tags: vec!["Health".to_string()],
+                    summary: Some("Health check".to_string()),
+                    parameters: Vec::new(),
+                    request_body: None,
+                    responses: BTreeMap::from([(
+                        "200".to_string(),
+                        nivasa::openapi::OpenApiResponse {
+                            description: "ok".to_string(),
+                            content: BTreeMap::from([(
+                                "application/json".to_string(),
+                                nivasa::openapi::OpenApiMediaType {
+                                    schema_ref: "#/components/schemas/HealthDto".to_string(),
+                                },
+                            )]),
+                        },
+                    )]),
+                    security: Vec::new(),
+                },
+            )]),
+        )]),
+        components: nivasa::openapi::OpenApiComponents::default(),
+    };
+    let bootstrap =
+        nivasa::AppBootstrapConfig::default().with_openapi_spec_path(" docs/spec.json ");
+
+    let server = bootstrap
+        .serve_openapi_spec(&document)
+        .expect("OpenAPI spec route should register")
+        .build();
+
+    let response = TestClient::new(server)
+        .get(bootstrap.openapi_spec_path())
+        .send_blocking();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.header("content-type"),
+        Some("application/json".to_string())
+    );
+    assert_eq!(response.json::<serde_json::Value>()["info"]["title"], "Umbrella API");
+    assert_eq!(
+        response.json::<serde_json::Value>()["paths"]["/health"]["get"]["summary"],
+        "Health check"
+    );
+}
+
+#[test]
+fn bootstrap_config_serves_swagger_ui_over_umbrella_surface() {
+    let bootstrap = nivasa::AppBootstrapConfig::default()
+        .with_openapi_spec_path(" docs/spec.json ")
+        .with_swagger_ui_path(" docs/ui ");
+
+    let server = bootstrap
+        .serve_swagger_ui()
+        .expect("Swagger UI route should register")
+        .build();
+
+    let response = TestClient::new(server)
+        .get(bootstrap.swagger_ui_path())
+        .send_blocking();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.header("content-type"),
+        Some("text/html; charset=utf-8".to_string())
+    );
+    assert!(response.text().contains(r#"url: "/docs/spec.json""#));
+    assert!(response.text().contains("<div id=\"swagger-ui\"></div>"));
 }
 
 #[cfg(feature = "config")]
