@@ -1,4 +1,4 @@
-use nivasa_websocket::{ClientEventRegistry, RoomEventRegistry};
+use nivasa_websocket::{ClientEventRegistry, NamespaceRegistry, RoomEventRegistry};
 
 #[test]
 fn websocket_room_broadcast_skips_room_members_without_connected_inboxes() {
@@ -49,4 +49,18 @@ fn websocket_client_event_registry_creates_inbox_on_first_emit_for_disconnected_
         vec![("notice".to_string(), "offline".to_string())]
     );
     assert!(!events.is_empty());
+}
+
+#[test]
+fn websocket_namespace_disconnect_keeps_namespace_when_other_members_remain() {
+    let mut namespaces = NamespaceRegistry::new();
+
+    assert!(namespaces.join("/chat", "general", "client-1"));
+    assert!(namespaces.join("/chat", "general", "client-2"));
+
+    assert!(namespaces.disconnect(&"client-1"));
+    assert!(namespaces.has_namespace("/chat"));
+    assert!(!namespaces.contains("/chat", "general", &"client-1"));
+    assert!(namespaces.contains("/chat", "general", &"client-2"));
+    assert!(!namespaces.disconnect(&"ghost"));
 }
