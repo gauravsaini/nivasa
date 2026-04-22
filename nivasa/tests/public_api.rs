@@ -900,6 +900,31 @@ fn bootstrap_config_applies_global_prefix_to_unversioned_route_registration() {
 }
 
 #[test]
+fn bootstrap_config_can_enable_cors_on_the_public_server_builder_surface() {
+    let bootstrap =
+        nivasa::AppBootstrapConfig::from(ServerOptions::builder().enable_cors().build());
+
+    let server = bootstrap
+        .route(nivasa_routing::RouteMethod::Get, "/health", |_| {
+            NivasaResponse::text("cors-ok")
+        })
+        .expect("CORS-backed route registration should succeed")
+        .build();
+
+    let response = TestClient::new(server)
+        .get("/health")
+        .header("origin", "https://frontend.example")
+        .send_blocking();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.text(), "cors-ok");
+    assert_eq!(
+        response.header("access-control-allow-origin"),
+        Some("*".to_string())
+    );
+}
+
+#[test]
 fn app_to_server_reports_missing_route_handlers_by_name() {
     let app = nivasa::NestApplication::create(DemoModule)
         .build()
