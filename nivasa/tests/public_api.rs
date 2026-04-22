@@ -567,6 +567,14 @@ impl Controller for DemoController {
     }
 }
 
+struct SkipThrottleController;
+
+impl Controller for SkipThrottleController {
+    fn metadata(&self) -> nivasa_routing::ControllerMetadata {
+        nivasa_routing::ControllerMetadata::new("/")
+    }
+}
+
 struct DemoModule;
 
 impl Module for DemoModule {
@@ -590,6 +598,34 @@ impl Module for DemoModule {
         vec![ModuleControllerRegistration::new(
             TypeId::of::<DemoController>(),
             vec![ControllerRouteRegistration::new("GET", "health", "health")],
+            Vec::new(),
+        )]
+    }
+}
+
+struct SkipThrottleModule;
+
+impl Module for SkipThrottleModule {
+    fn metadata(&self) -> ModuleMetadata {
+        ModuleMetadata::default().with_controllers(vec![TypeId::of::<SkipThrottleController>()])
+    }
+
+    fn configure<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        _container: &'life1 DependencyContainer,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DiError>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn controller_registrations(&self) -> Vec<ModuleControllerRegistration> {
+        vec![ModuleControllerRegistration::new(
+            TypeId::of::<SkipThrottleController>(),
+            vec![ControllerRouteRegistration::new("GET", "health", "health").skip_throttle()],
             Vec::new(),
         )]
     }
@@ -802,6 +838,29 @@ fn app_to_server_reports_missing_route_handlers_by_name() {
         }
         other => panic!("unexpected error: {other}"),
     }
+}
+
+#[test]
+fn app_to_server_bridges_routes_marked_to_skip_throttling() {
+    let app = nivasa::NestApplication::create(SkipThrottleModule)
+        .build()
+        .expect("build should assemble the skip-throttle shell");
+
+    assert_eq!(app.routes().len(), 1);
+    assert!(app.routes()[0].skip_throttle);
+    assert_eq!(app.routes()[0].throttle, None);
+
+    let server = app
+        .to_server(|route| match route.handler {
+            "health" => Some(Arc::new(|_| NivasaResponse::text("skip-throttle-ok"))),
+            _ => None,
+        })
+        .expect("skip-throttle route should bridge into a server");
+
+    let response = TestClient::new(server).get("/health").send_blocking();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.text(), "skip-throttle-ok");
 }
 
 #[test]
