@@ -1,0 +1,5 @@
+error: duplicate `path` entry in `#[controller]`
+ --> tests/trybuild/controller_duplicate_path.rs:3:32
+  |
+3 | #[controller({ path: "/users", path: "/admins" })]
+  |                                ^^^^

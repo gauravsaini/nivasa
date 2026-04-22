@@ -24,4 +24,7 @@ fn websocket_gateway_macro_validation() {
     let t = TestCases::new();
     t.compile_fail("tests/trybuild/websocket_gateway_invalid_target.rs");
     t.compile_fail("tests/trybuild/websocket_gateway_invalid_args.rs");
+    t.compile_fail("tests/trybuild/websocket_gateway_missing_path.rs");
+    t.compile_fail("tests/trybuild/websocket_gateway_duplicate_path.rs");
+    t.compile_fail("tests/trybuild/websocket_gateway_duplicate_namespace.rs");
 }

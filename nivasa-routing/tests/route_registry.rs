@@ -248,3 +248,67 @@ fn route_pattern_strict_constructor_rejects_optional_segments() {
         }
     );
 }
+
+#[test]
+fn route_dispatch_selection_stays_empty_when_only_other_versions_exist() {
+    let mut registry = RouteDispatchRegistry::new();
+
+    registry
+        .register_header_versioned_route("GET", "1", "/users", "v1-users")
+        .unwrap();
+
+    let selection = registry.select_versioned("/users/", Some("2"));
+    assert!(selection.is_empty());
+    assert_eq!(selection.path(), "/users");
+    assert_eq!(selection.version(), Some("v2"));
+    assert!(!selection.exact_version_match());
+    assert!(selection.resolve("GET").is_none());
+    assert!(selection.resolve_match("GET").is_none());
+    assert_eq!(selection.dispatch("GET"), RouteDispatchOutcome::NotFound);
+    assert_eq!(
+        registry.dispatch_versioned("GET", "/users", Some("2")),
+        RouteDispatchOutcome::NotFound
+    );
+}
+
+#[test]
+fn versioned_helper_resolvers_fall_back_when_header_parsers_reject_input() {
+    let mut registry = RouteDispatchRegistry::new();
+
+    registry.register_static("GET", "/users", "fallback").unwrap();
+    registry
+        .register_header_versioned_route("GET", "1", "/users", "v1-users")
+        .unwrap();
+    registry
+        .register_media_type_versioned_route("GET", "2", "/users", "v2-users")
+        .unwrap();
+
+    assert_eq!(
+        registry.resolve_header_versioned("GET", "/users", Some("   ")),
+        Some(&"fallback")
+    );
+    assert_eq!(
+        registry.resolve_media_type_versioned("GET", "/users", Some("application/json")),
+        Some(&"fallback")
+    );
+    assert_eq!(
+        registry.dispatch_header_versioned("GET", "/users", Some("")),
+        RouteDispatchOutcome::Matched(
+            registry.resolve_entry("GET", "/users").expect("fallback route exists")
+        )
+    );
+}
+
+#[test]
+fn route_pattern_captures_expose_unnamed_wildcards_through_iter() {
+    let pattern = RoutePattern::parse("/files/*").unwrap();
+
+    let captures = pattern.captures("/files/docs/guide").unwrap();
+    let items = captures.iter().collect::<Vec<_>>();
+
+    assert_eq!(captures.len(), 1);
+    assert_eq!(captures.get("*"), Some("docs/guide"));
+    assert_eq!(captures.wildcard(), Some("docs/guide"));
+    assert_eq!(captures.wildcard_name(), None);
+    assert_eq!(items, vec![("*", "docs/guide")]);
+}

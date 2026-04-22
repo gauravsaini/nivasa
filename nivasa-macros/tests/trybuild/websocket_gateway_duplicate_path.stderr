@@ -1,0 +1,5 @@
+error: duplicate `path` entry in `#[websocket_gateway]`
+ --> tests/trybuild/websocket_gateway_duplicate_path.rs:3:36
+  |
+3 | #[websocket_gateway({ path: "/ws", path: "/chat" })]
+  |                                    ^^^^

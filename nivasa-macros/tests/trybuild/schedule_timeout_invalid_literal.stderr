@@ -1,0 +1,7 @@
+error: `#[timeout]` expects a millisecond integer like `#[timeout(3000)]`
+ --> tests/trybuild/schedule_timeout_invalid_literal.rs:6:5
+  |
+6 |     #[timeout("soon")]
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `timeout` (in Nightly builds, run with -Z macro-backtrace for more info)

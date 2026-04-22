@@ -1,0 +1,15 @@
+error: `#[interceptor]` requires at least one interceptor type
+ --> tests/trybuild/graphql_interceptor_requires_arg.rs:6:5
+  |
+6 |     #[interceptor()]
+  |     ^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `interceptor` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused import: `resolver`
+ --> tests/trybuild/graphql_interceptor_requires_arg.rs:1:34
+  |
+1 | use nivasa_macros::{interceptor, resolver};
+  |                                  ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default

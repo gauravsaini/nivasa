@@ -1,0 +1,13 @@
+error: `#[roles]` requires at least one role type
+ --> tests/trybuild/module_roles_empty.rs:4:1
+  |
+4 | #[roles()]
+  | ^
+
+warning: unused import: `roles`
+ --> tests/trybuild/module_roles_empty.rs:1:29
+  |
+1 | use nivasa_macros::{module, roles};
+  |                             ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default

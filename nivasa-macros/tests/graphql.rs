@@ -104,4 +104,8 @@ fn graphql_macro_validation() {
     t.compile_fail("tests/trybuild/graphql_invalid_target.rs");
     t.compile_fail("tests/trybuild/graphql_invalid_args.rs");
     t.compile_fail("tests/trybuild/graphql_empty_name.rs");
+    t.compile_fail("tests/trybuild/graphql_guard_requires_arg.rs");
+    t.compile_fail("tests/trybuild/graphql_interceptor_requires_arg.rs");
+    t.compile_fail("tests/trybuild/graphql_invalid_guard_marker.rs");
+    t.compile_fail("tests/trybuild/graphql_invalid_interceptor_marker.rs");
 }

@@ -140,12 +140,18 @@ fn dynamic_module_pre_bootstrap_callback_runs_only_when_invoked() {
 
 #[test]
 fn dynamic_module_pre_bootstrap_errors_bubble_through_orchestrator_helper() {
-    let module = DynamicModule::new(ModuleMetadata::new()).with_pre_bootstrap(|| {
-        Err("pre-bootstrap refused to run".to_string())
-    });
+    let module = DynamicModule::new(ModuleMetadata::new())
+        .with_pre_bootstrap(|| Err("pre-bootstrap refused to run".to_string()));
 
     let err = ModuleOrchestrator::run_dynamic_pre_bootstrap(&module).unwrap_err();
     assert_eq!(err, "pre-bootstrap refused to run");
+}
+
+#[test]
+fn dynamic_module_without_pre_bootstrap_callback_is_noop() {
+    let module = DynamicModule::new(ModuleMetadata::new());
+
+    assert_eq!(module.run_pre_bootstrap(), Ok(()));
 }
 
 #[test]

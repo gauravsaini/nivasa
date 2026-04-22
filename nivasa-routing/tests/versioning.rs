@@ -176,3 +176,33 @@ fn versioned_dispatch_falls_back_for_media_type_requests() {
                 && entry.value == "fallback"
     ));
 }
+
+#[test]
+fn versioned_helpers_normalize_wrapped_tokens_and_deduplicate_allowed_methods() {
+    let mut registry = RouteDispatchRegistry::new();
+
+    registry
+        .register_header_versioned_route("GET", "V2", "/users", "v2-users")
+        .unwrap();
+    registry.register_static("GET", "/users", "default").unwrap();
+    registry
+        .register_pattern("GET", "/:slug?", "fallback-get")
+        .unwrap();
+    registry.register_static("POST", "/users", "create").unwrap();
+
+    let exact = registry.select_versioned("/users/", Some("/V2/"));
+    assert_eq!(exact.path(), "/users");
+    assert_eq!(exact.version(), Some("v2"));
+    assert!(exact.exact_version_match());
+    assert_eq!(exact.allowed_methods(), vec!["GET".to_string()]);
+    assert_eq!(exact.resolve("GET"), Some(&"v2-users"));
+
+    let fallback = registry.select_versioned("/users/", Some("/V9/"));
+    assert_eq!(fallback.path(), "/users");
+    assert_eq!(fallback.version(), Some("v9"));
+    assert!(!fallback.exact_version_match());
+    assert_eq!(fallback.len(), 3);
+    assert_eq!(fallback.allowed_methods(), vec!["GET".to_string(), "POST".to_string()]);
+    assert_eq!(fallback.resolve("GET"), Some(&"default"));
+    assert_eq!(fallback.resolve("POST"), Some(&"create"));
+}

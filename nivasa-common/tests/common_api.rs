@@ -54,10 +54,16 @@ fn request_context_overwrites_previous_values() {
     );
 
     assert!(context
-        .set_class_metadata("controller", serde_json::Value::String("UsersController".into()))
+        .set_class_metadata(
+            "controller",
+            serde_json::Value::String("UsersController".into())
+        )
         .is_none());
     assert_eq!(
-        context.set_class_metadata("controller", serde_json::Value::String("AccountsController".into())),
+        context.set_class_metadata(
+            "controller",
+            serde_json::Value::String("AccountsController".into())
+        ),
         Some(serde_json::Value::String("UsersController".into()))
     );
     assert_eq!(
@@ -92,6 +98,43 @@ fn http_status_reports_invalid_codes_and_known_roundtrips() {
 }
 
 #[test]
+fn http_status_handles_status_code_error_path_and_from_conversions() {
+    let accepted_code: u16 = HttpStatus::Accepted.into();
+    let gateway_timeout: http::StatusCode = HttpStatus::GatewayTimeout.into();
+
+    assert_eq!(accepted_code, 202);
+    assert_eq!(gateway_timeout, http::StatusCode::GATEWAY_TIMEOUT);
+    assert_eq!(
+        HttpStatus::try_from(http::StatusCode::from_u16(777).unwrap()),
+        Err(InvalidHttpStatus(777))
+    );
+}
+
+#[test]
+fn http_status_classification_boundaries_exclude_other_ranges() {
+    let redirection = HttpStatus::MultipleChoices;
+    assert!(!redirection.is_informational());
+    assert!(!redirection.is_success());
+    assert!(redirection.is_redirection());
+    assert!(!redirection.is_client_error());
+    assert!(!redirection.is_server_error());
+
+    let client_error = HttpStatus::TooManyRequests;
+    assert!(!client_error.is_informational());
+    assert!(!client_error.is_success());
+    assert!(!client_error.is_redirection());
+    assert!(client_error.is_client_error());
+    assert!(!client_error.is_server_error());
+
+    let server_error = HttpStatus::ServiceUnavailable;
+    assert!(!server_error.is_informational());
+    assert!(!server_error.is_success());
+    assert!(!server_error.is_redirection());
+    assert!(!server_error.is_client_error());
+    assert!(server_error.is_server_error());
+}
+
+#[test]
 fn http_exception_uses_unknown_fallback_for_unrecognized_status() {
     let err = HttpException::new(599, "proxy exploded");
 
@@ -100,3 +143,12 @@ fn http_exception_uses_unknown_fallback_for_unrecognized_status() {
     assert_eq!(err.to_string(), "599 Unknown Error: proxy exploded");
 }
 
+#[test]
+fn http_status_into_exception_uses_typed_reason_phrase() {
+    let err = HttpStatus::ImATeapot.into_exception("short and stout");
+
+    assert_eq!(err.status_code, 418);
+    assert_eq!(err.message, "short and stout");
+    assert_eq!(err.error, "I'm a teapot");
+    assert_eq!(err.to_string(), "418 I'm a teapot: short and stout");
+}

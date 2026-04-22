@@ -31,6 +31,11 @@ fn controller_macro_validation() {
     t.compile_fail("tests/trybuild/controller_parameter_extractors_body_namevalue_invalid.rs");
     t.compile_fail("tests/trybuild/controller_invalid_key.rs");
     t.compile_fail("tests/trybuild/controller_missing_path.rs");
+    t.compile_fail("tests/trybuild/controller_duplicate_path.rs");
+    t.compile_fail("tests/trybuild/controller_duplicate_version.rs");
+    t.compile_fail("tests/trybuild/controller_trailing_args_invalid.rs");
+    t.compile_fail("tests/trybuild/controller_duplicate_throttle.rs");
+    t.compile_fail("tests/trybuild/controller_duplicate_skip_throttle.rs");
     t.compile_fail("tests/trybuild/controller_parameter_extractors_invalid.rs");
     t.compile_fail("tests/trybuild/controller_custom_param_invalid.rs");
     t.compile_fail("tests/trybuild/controller_parameter_extractors_flag_invalid.rs");

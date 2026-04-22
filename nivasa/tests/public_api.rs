@@ -18,6 +18,7 @@ use nivasa::prelude::{
     RequestContext, TestClient, TestResponse, WsArgumentsHost,
 };
 use std::any::TypeId;
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::future::Future;
 use std::net::TcpListener as StdTcpListener;
@@ -183,13 +184,22 @@ fn nest_application_reports_startup_banner_routes_and_listen_address() {
         .build()
         .expect("build should assemble the root module shell");
     let report = app.startup_report();
+    let startup_lines = app.startup_lines();
 
     assert!(report.banner.contains("Nivasa v"));
     assert!(report.banner.contains(env!("CARGO_PKG_VERSION")));
     assert!(report.root_module.contains("DemoModule"));
     assert_eq!(report.routes_registered, 1);
     assert_eq!(report.listen_address, "127.0.0.1:3000");
-    assert_eq!(app.startup_lines().len(), 4);
+    assert_eq!(
+        startup_lines,
+        vec![
+            report.banner.clone(),
+            format!("root module loaded: {}", report.root_module),
+            format!("routes registered: {}", report.routes_registered),
+            format!("listen address: {}", report.listen_address),
+        ]
+    );
 }
 
 #[test]
@@ -566,6 +576,30 @@ impl Controller for DemoController {
     }
 }
 
+struct SkipThrottleController;
+
+impl Controller for SkipThrottleController {
+    fn metadata(&self) -> nivasa_routing::ControllerMetadata {
+        nivasa_routing::ControllerMetadata::new("/")
+    }
+}
+
+struct ThrottledController;
+
+impl Controller for ThrottledController {
+    fn metadata(&self) -> nivasa_routing::ControllerMetadata {
+        nivasa_routing::ControllerMetadata::new("/")
+    }
+}
+
+struct UnsupportedPatternController;
+
+impl Controller for UnsupportedPatternController {
+    fn metadata(&self) -> nivasa_routing::ControllerMetadata {
+        nivasa_routing::ControllerMetadata::new("/")
+    }
+}
+
 struct DemoModule;
 
 impl Module for DemoModule {
@@ -589,6 +623,95 @@ impl Module for DemoModule {
         vec![ModuleControllerRegistration::new(
             TypeId::of::<DemoController>(),
             vec![ControllerRouteRegistration::new("GET", "health", "health")],
+            Vec::new(),
+        )]
+    }
+}
+
+struct SkipThrottleModule;
+
+impl Module for SkipThrottleModule {
+    fn metadata(&self) -> ModuleMetadata {
+        ModuleMetadata::default().with_controllers(vec![TypeId::of::<SkipThrottleController>()])
+    }
+
+    fn configure<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        _container: &'life1 DependencyContainer,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DiError>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn controller_registrations(&self) -> Vec<ModuleControllerRegistration> {
+        vec![ModuleControllerRegistration::new(
+            TypeId::of::<SkipThrottleController>(),
+            vec![ControllerRouteRegistration::new("GET", "health", "health").skip_throttle()],
+            Vec::new(),
+        )]
+    }
+}
+
+struct ThrottledModule;
+
+impl Module for ThrottledModule {
+    fn metadata(&self) -> ModuleMetadata {
+        ModuleMetadata::default().with_controllers(vec![TypeId::of::<ThrottledController>()])
+    }
+
+    fn configure<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        _container: &'life1 DependencyContainer,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DiError>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn controller_registrations(&self) -> Vec<ModuleControllerRegistration> {
+        vec![ModuleControllerRegistration::new(
+            TypeId::of::<ThrottledController>(),
+            vec![ControllerRouteRegistration::new("GET", "health", "health").with_throttle(1, 60)],
+            Vec::new(),
+        )]
+    }
+}
+
+struct UnsupportedPatternModule;
+
+impl Module for UnsupportedPatternModule {
+    fn metadata(&self) -> ModuleMetadata {
+        ModuleMetadata::default()
+            .with_controllers(vec![TypeId::of::<UnsupportedPatternController>()])
+    }
+
+    fn configure<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        _container: &'life1 DependencyContainer,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DiError>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn controller_registrations(&self) -> Vec<ModuleControllerRegistration> {
+        vec![ModuleControllerRegistration::new(
+            TypeId::of::<UnsupportedPatternController>(),
+            vec![ControllerRouteRegistration::new(
+                "GET",
+                "files/*path/tail",
+                "show",
+            )],
             Vec::new(),
         )]
     }
@@ -731,11 +854,10 @@ fn bootstrap_config_exposes_a_listen_address_for_startup_reporting() {
 
 #[test]
 fn bootstrap_config_normalizes_docs_paths_and_ipv6_listen_addresses() {
-    let bootstrap = nivasa::AppBootstrapConfig::new(
-        ServerOptions::builder().host("::1").port(4100).build(),
-    )
-    .with_openapi_spec_path(" docs/openapi.json ")
-    .with_swagger_ui_path(" docs/ui ");
+    let bootstrap =
+        nivasa::AppBootstrapConfig::new(ServerOptions::builder().host("::1").port(4100).build())
+            .with_openapi_spec_path(" docs/openapi.json ")
+            .with_swagger_ui_path(" docs/ui ");
 
     assert_eq!(bootstrap.listen_address(), "[::1]:4100");
     assert_eq!(bootstrap.openapi_spec_path(), "/docs/openapi.json");
@@ -778,6 +900,31 @@ fn bootstrap_config_applies_global_prefix_to_unversioned_route_registration() {
 }
 
 #[test]
+fn bootstrap_config_can_enable_cors_on_the_public_server_builder_surface() {
+    let bootstrap =
+        nivasa::AppBootstrapConfig::from(ServerOptions::builder().enable_cors().build());
+
+    let server = bootstrap
+        .route(nivasa_routing::RouteMethod::Get, "/health", |_| {
+            NivasaResponse::text("cors-ok")
+        })
+        .expect("CORS-backed route registration should succeed")
+        .build();
+
+    let response = TestClient::new(server)
+        .get("/health")
+        .header("origin", "https://frontend.example")
+        .send_blocking();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.text(), "cors-ok");
+    assert_eq!(
+        response.header("access-control-allow-origin"),
+        Some("*".to_string())
+    );
+}
+
+#[test]
 fn app_to_server_reports_missing_route_handlers_by_name() {
     let app = nivasa::NestApplication::create(DemoModule)
         .build()
@@ -801,6 +948,86 @@ fn app_to_server_reports_missing_route_handlers_by_name() {
         }
         other => panic!("unexpected error: {other}"),
     }
+}
+
+#[test]
+fn app_to_server_maps_unsupported_route_patterns_into_duplicate_route_errors() {
+    let app = nivasa::NestApplication::create(UnsupportedPatternModule)
+        .build()
+        .expect("build should keep route metadata as app shell data");
+
+    let error = match app.to_server(|_| Some(Arc::new(|_| NivasaResponse::text("bad-route")))) {
+        Ok(_) => panic!("unsupported static route pattern should fail server bridge"),
+        Err(error) => error,
+    };
+
+    match error {
+        AppBuildError::DuplicateRoute { method, path } => {
+            assert_eq!(method, "GET");
+            assert_eq!(path, "/files/*path/tail");
+            assert_eq!(
+                AppBuildError::DuplicateRoute {
+                    method: method.clone(),
+                    path: path.clone(),
+                }
+                .to_string(),
+                "duplicate route `GET /files/*path/tail` while building app"
+            );
+        }
+        other => panic!("unexpected error: {other}"),
+    }
+}
+
+#[test]
+fn app_to_server_bridges_routes_marked_to_skip_throttling() {
+    let app = nivasa::NestApplication::create(SkipThrottleModule)
+        .build()
+        .expect("build should assemble the skip-throttle shell");
+
+    assert_eq!(app.routes().len(), 1);
+    assert!(app.routes()[0].skip_throttle);
+    assert_eq!(app.routes()[0].throttle, None);
+
+    let server = app
+        .to_server(|route| match route.handler {
+            "health" => Some(Arc::new(|_| NivasaResponse::text("skip-throttle-ok"))),
+            _ => None,
+        })
+        .expect("skip-throttle route should bridge into a server");
+
+    let response = TestClient::new(server).get("/health").send_blocking();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.text(), "skip-throttle-ok");
+}
+
+#[test]
+fn app_to_server_bridges_routes_marked_with_throttle_metadata() {
+    let app = nivasa::NestApplication::create(ThrottledModule)
+        .build()
+        .expect("build should assemble the throttled shell");
+
+    assert_eq!(app.routes().len(), 1);
+    assert!(!app.routes()[0].skip_throttle);
+    assert_eq!(
+        app.routes()[0]
+            .throttle
+            .as_ref()
+            .map(|throttle| (throttle.limit, throttle.ttl_secs)),
+        Some((1, 60))
+    );
+
+    let server = app
+        .to_server(|route| match route.handler {
+            "health" => Some(Arc::new(|_| NivasaResponse::text("throttle-ok"))),
+            _ => None,
+        })
+        .expect("throttled route should bridge into a server");
+
+    let response = TestClient::new(server).get("/health").send_blocking();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.text(), "throttle-ok");
 }
 
 #[test]
@@ -996,6 +1223,92 @@ fn bootstrap_config_can_enable_versioning_without_runtime_wiring() {
         Some("v2")
     );
     assert_eq!(bootstrap.server.versioning, Some(versioning));
+}
+
+#[test]
+fn bootstrap_config_serves_openapi_spec_over_umbrella_surface() {
+    let document = nivasa::openapi::OpenApiDocument {
+        openapi: "3.0.0".to_string(),
+        info: nivasa::openapi::OpenApiInfo {
+            title: "Umbrella API".to_string(),
+            version: "1.2.3".to_string(),
+        },
+        paths: BTreeMap::from([(
+            "/health".to_string(),
+            BTreeMap::from([(
+                "get".to_string(),
+                nivasa::openapi::OpenApiOperation {
+                    tags: vec!["Health".to_string()],
+                    summary: Some("Health check".to_string()),
+                    parameters: Vec::new(),
+                    request_body: None,
+                    responses: BTreeMap::from([(
+                        "200".to_string(),
+                        nivasa::openapi::OpenApiResponse {
+                            description: "ok".to_string(),
+                            content: BTreeMap::from([(
+                                "application/json".to_string(),
+                                nivasa::openapi::OpenApiMediaType {
+                                    schema_ref: "#/components/schemas/HealthDto".to_string(),
+                                },
+                            )]),
+                        },
+                    )]),
+                    security: Vec::new(),
+                },
+            )]),
+        )]),
+        components: nivasa::openapi::OpenApiComponents::default(),
+    };
+    let bootstrap =
+        nivasa::AppBootstrapConfig::default().with_openapi_spec_path(" docs/spec.json ");
+
+    let server = bootstrap
+        .serve_openapi_spec(&document)
+        .expect("OpenAPI spec route should register")
+        .build();
+
+    let response = TestClient::new(server)
+        .get(bootstrap.openapi_spec_path())
+        .send_blocking();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.header("content-type"),
+        Some("application/json".to_string())
+    );
+    assert_eq!(
+        response.json::<serde_json::Value>()["info"]["title"],
+        "Umbrella API"
+    );
+    assert_eq!(
+        response.json::<serde_json::Value>()["paths"]["/health"]["get"]["summary"],
+        "Health check"
+    );
+}
+
+#[test]
+fn bootstrap_config_serves_swagger_ui_over_umbrella_surface() {
+    let bootstrap = nivasa::AppBootstrapConfig::default()
+        .with_openapi_spec_path(" docs/spec.json ")
+        .with_swagger_ui_path(" docs/ui ");
+
+    let server = bootstrap
+        .serve_swagger_ui()
+        .expect("Swagger UI route should register")
+        .build();
+
+    let response = TestClient::new(server)
+        .get(bootstrap.swagger_ui_path())
+        .send_blocking();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.header("content-type"),
+        Some("text/html; charset=utf-8".to_string())
+    );
+    assert!(response.text().contains(r#"url: "/docs/spec.json""#));
+    assert!(response.text().contains("<div id=\"swagger-ui\"></div>"));
 }
 
 #[cfg(feature = "config")]

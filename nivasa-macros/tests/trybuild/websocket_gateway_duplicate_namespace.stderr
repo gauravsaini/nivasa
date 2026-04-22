@@ -1,0 +1,5 @@
+error: duplicate `namespace` entry in `#[websocket_gateway]`
+ --> tests/trybuild/websocket_gateway_duplicate_namespace.rs:3:56
+  |
+3 | #[websocket_gateway({ path: "/ws", namespace: "/chat", namespace: "/chat-2" })]
+  |                                                        ^^^^^^^^^

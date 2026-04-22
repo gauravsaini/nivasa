@@ -1,0 +1,13 @@
+error: `#[set_metadata]` requires a `key` entry
+ --> tests/trybuild/module_set_metadata_missing_key.rs:4:1
+  |
+4 | #[set_metadata(value = "billing")]
+  | ^
+
+warning: unused import: `set_metadata`
+ --> tests/trybuild/module_set_metadata_missing_key.rs:1:29
+  |
+1 | use nivasa_macros::{module, set_metadata};
+  |                             ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
