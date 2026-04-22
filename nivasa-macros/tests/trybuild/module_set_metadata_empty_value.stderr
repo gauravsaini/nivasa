@@ -1,0 +1,13 @@
+error: `#[set_metadata]` key and value cannot be empty
+ --> tests/trybuild/module_set_metadata_empty_value.rs:4:1
+  |
+4 | #[set_metadata(key = "tenant", value = " ")]
+  | ^
+
+warning: unused import: `set_metadata`
+ --> tests/trybuild/module_set_metadata_empty_value.rs:1:29
+  |
+1 | use nivasa_macros::{module, set_metadata};
+  |                             ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default

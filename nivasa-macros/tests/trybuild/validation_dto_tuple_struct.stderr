@@ -1,0 +1,5 @@
+error: `#[derive(Dto)]` only supports structs with named fields
+ --> tests/trybuild/validation_dto_tuple_struct.rs:4:1
+  |
+4 | struct InvalidTupleDto(
+  | ^^^^^^

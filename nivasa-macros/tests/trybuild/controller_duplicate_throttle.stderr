@@ -1,0 +1,5 @@
+error: duplicate `#[throttle]` entry in controller
+ --> tests/trybuild/controller_duplicate_throttle.rs:5:1
+  |
+5 | #[nivasa_macros::throttle(limit = 1, ttl = 10)]
+  | ^

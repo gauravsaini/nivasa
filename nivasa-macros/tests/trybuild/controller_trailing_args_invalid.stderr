@@ -1,0 +1,5 @@
+error: unexpected trailing controller arguments
+ --> tests/trybuild/controller_trailing_args_invalid.rs:3:37
+  |
+3 | #[controller("/users", version = "1", extra = "2")]
+  |                                     ^

@@ -1,0 +1,5 @@
+error: duplicate `version` entry in `#[controller]`
+ --> tests/trybuild/controller_duplicate_version.rs:3:46
+  |
+3 | #[controller({ path: "/users", version: "1", version: "2" })]
+  |                                              ^^^^^^^

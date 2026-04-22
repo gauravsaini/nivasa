@@ -1,0 +1,5 @@
+error: `#[derive(Dto)]` only supports structs
+ --> tests/trybuild/validation_dto_enum.rs:4:1
+  |
+4 | enum InvalidEnumDto {
+  | ^^^^

@@ -1,0 +1,13 @@
+error: duplicate `#[skip_throttle]` entry in controller
+ --> tests/trybuild/controller_duplicate_skip_throttle.rs:5:1
+  |
+5 | #[skip_throttle]
+  | ^
+
+warning: unused import: `skip_throttle`
+ --> tests/trybuild/controller_duplicate_skip_throttle.rs:1:33
+  |
+1 | use nivasa_macros::{controller, skip_throttle};
+  |                                 ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default

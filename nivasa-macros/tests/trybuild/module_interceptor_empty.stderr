@@ -1,0 +1,13 @@
+error: `#[interceptor]` requires at least one interceptor type
+ --> tests/trybuild/module_interceptor_empty.rs:4:1
+  |
+4 | #[interceptor()]
+  | ^
+
+warning: unused import: `interceptor`
+ --> tests/trybuild/module_interceptor_empty.rs:1:21
+  |
+1 | use nivasa_macros::{interceptor, module};
+  |                     ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default

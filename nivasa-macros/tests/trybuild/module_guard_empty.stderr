@@ -1,0 +1,13 @@
+error: `#[guard]` requires at least one guard type
+ --> tests/trybuild/module_guard_empty.rs:4:1
+  |
+4 | #[guard()]
+  | ^
+
+warning: unused import: `guard`
+ --> tests/trybuild/module_guard_empty.rs:1:21
+  |
+1 | use nivasa_macros::{guard, module};
+  |                     ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
