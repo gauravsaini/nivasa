@@ -1,0 +1,5 @@
+error: `#[interval]` expects a positive millisecond value
+ --> tests/trybuild/schedule_interval_zero.rs:6:16
+  |
+6 |     #[interval(0)]
+  |                ^
