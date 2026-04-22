@@ -184,13 +184,22 @@ fn nest_application_reports_startup_banner_routes_and_listen_address() {
         .build()
         .expect("build should assemble the root module shell");
     let report = app.startup_report();
+    let startup_lines = app.startup_lines();
 
     assert!(report.banner.contains("Nivasa v"));
     assert!(report.banner.contains(env!("CARGO_PKG_VERSION")));
     assert!(report.root_module.contains("DemoModule"));
     assert_eq!(report.routes_registered, 1);
     assert_eq!(report.listen_address, "127.0.0.1:3000");
-    assert_eq!(app.startup_lines().len(), 4);
+    assert_eq!(
+        startup_lines,
+        vec![
+            report.banner.clone(),
+            format!("root module loaded: {}", report.root_module),
+            format!("routes registered: {}", report.routes_registered),
+            format!("listen address: {}", report.listen_address),
+        ]
+    );
 }
 
 #[test]
@@ -575,6 +584,14 @@ impl Controller for SkipThrottleController {
     }
 }
 
+struct ThrottledController;
+
+impl Controller for ThrottledController {
+    fn metadata(&self) -> nivasa_routing::ControllerMetadata {
+        nivasa_routing::ControllerMetadata::new("/")
+    }
+}
+
 struct DemoModule;
 
 impl Module for DemoModule {
@@ -626,6 +643,34 @@ impl Module for SkipThrottleModule {
         vec![ModuleControllerRegistration::new(
             TypeId::of::<SkipThrottleController>(),
             vec![ControllerRouteRegistration::new("GET", "health", "health").skip_throttle()],
+            Vec::new(),
+        )]
+    }
+}
+
+struct ThrottledModule;
+
+impl Module for ThrottledModule {
+    fn metadata(&self) -> ModuleMetadata {
+        ModuleMetadata::default().with_controllers(vec![TypeId::of::<ThrottledController>()])
+    }
+
+    fn configure<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        _container: &'life1 DependencyContainer,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DiError>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn controller_registrations(&self) -> Vec<ModuleControllerRegistration> {
+        vec![ModuleControllerRegistration::new(
+            TypeId::of::<ThrottledController>(),
+            vec![ControllerRouteRegistration::new("GET", "health", "health").with_throttle(1, 60)],
             Vec::new(),
         )]
     }
@@ -861,6 +906,35 @@ fn app_to_server_bridges_routes_marked_to_skip_throttling() {
 
     assert_eq!(response.status(), 200);
     assert_eq!(response.text(), "skip-throttle-ok");
+}
+
+#[test]
+fn app_to_server_bridges_routes_marked_with_throttle_metadata() {
+    let app = nivasa::NestApplication::create(ThrottledModule)
+        .build()
+        .expect("build should assemble the throttled shell");
+
+    assert_eq!(app.routes().len(), 1);
+    assert!(!app.routes()[0].skip_throttle);
+    assert_eq!(
+        app.routes()[0]
+            .throttle
+            .as_ref()
+            .map(|throttle| (throttle.limit, throttle.ttl_secs)),
+        Some((1, 60))
+    );
+
+    let server = app
+        .to_server(|route| match route.handler {
+            "health" => Some(Arc::new(|_| NivasaResponse::text("throttle-ok"))),
+            _ => None,
+        })
+        .expect("throttled route should bridge into a server");
+
+    let response = TestClient::new(server).get("/health").send_blocking();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.text(), "throttle-ok");
 }
 
 #[test]
