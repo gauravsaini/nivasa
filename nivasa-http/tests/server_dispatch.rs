@@ -240,3 +240,60 @@ async fn server_generates_request_id_for_early_invalid_body_errors() -> Result<(
     assert!(!handler_called.load(Ordering::SeqCst));
     Ok(())
 }
+
+#[tokio::test]
+async fn server_generates_request_id_for_early_payload_too_large_errors(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let handler_called = Arc::new(AtomicBool::new(false));
+    let handler_called_for_route = Arc::clone(&handler_called);
+
+    let server = NivasaServer::builder()
+        .route(RouteMethod::Post, "/too-large", move |_| {
+            handler_called_for_route.store(true, Ordering::SeqCst);
+            NivasaResponse::new(http::StatusCode::OK, Body::text("ok"))
+        })
+        .expect("route must register")
+        .request_body_size_limit(4)
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(http::Method::POST)
+        .uri(format!("http://127.0.0.1:{port}/too-large"))
+        .header("x-request-id", "   ")
+        .body(http_body_util::Full::new(Bytes::from_static(b"hello")))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let request_id = response
+        .headers()
+        .get("x-request-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .expect("response must include a generated request id")
+        .to_owned();
+    let body = response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    timeout(Duration::from_secs(2), server_task).await??;
+
+    assert_eq!(status, http::StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(body, Bytes::from_static(b"request body too large"));
+    assert!(!request_id.is_empty());
+    assert!(!handler_called.load(Ordering::SeqCst));
+    Ok(())
+}
