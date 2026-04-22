@@ -287,6 +287,54 @@ fn load_env_ignores_missing_env_files_when_flagged_to_skip_files() {
 }
 
 #[test]
+fn load_env_expands_braced_and_literal_dollar_edge_cases() {
+    let path = write_temp_env_file(
+        "NIVASA_CONFIG_EXPAND_BASE=localhost\n\
+NIVASA_CONFIG_EXPAND_BRACED=http://${NIVASA_CONFIG_EXPAND_BASE}:3000\n\
+NIVASA_CONFIG_EXPAND_MISSING=prefix-${NIVASA_CONFIG_EXPAND_UNKNOWN}-suffix\n\
+NIVASA_CONFIG_EXPAND_INVALID=cost$-usd\n\
+NIVASA_CONFIG_EXPAND_UNCLOSED=${NIVASA_CONFIG_EXPAND_BASE\n\
+NIVASA_CONFIG_EXPAND_TRAILING=ends-with-$\n",
+    );
+    let options = ConfigOptions::new()
+        .with_env_file_path(path.to_string_lossy().to_string())
+        .with_expand_variables(true);
+
+    let loaded = ConfigModule::load_env(&options).expect("env file should load");
+
+    assert_eq!(
+        loaded
+            .get("NIVASA_CONFIG_EXPAND_BRACED")
+            .map(String::as_str),
+        Some("http://localhost:3000")
+    );
+    assert_eq!(
+        loaded
+            .get("NIVASA_CONFIG_EXPAND_MISSING")
+            .map(String::as_str),
+        Some("prefix--suffix")
+    );
+    assert_eq!(
+        loaded
+            .get("NIVASA_CONFIG_EXPAND_INVALID")
+            .map(String::as_str),
+        Some("cost$-usd")
+    );
+    assert_eq!(
+        loaded
+            .get("NIVASA_CONFIG_EXPAND_UNCLOSED")
+            .map(String::as_str),
+        Some("${NIVASA_CONFIG_EXPAND_BASE")
+    );
+    assert_eq!(
+        loaded
+            .get("NIVASA_CONFIG_EXPAND_TRAILING")
+            .map(String::as_str),
+        Some("ends-with-$")
+    );
+}
+
+#[test]
 fn validate_schema_aggregates_custom_validation_issues_with_required_keys() {
     let loaded = BTreeMap::from([
         ("HOST".to_string(), "10.0.0.1".to_string()),
