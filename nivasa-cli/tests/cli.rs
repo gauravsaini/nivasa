@@ -27,6 +27,14 @@ fn run_cli(args: &[&str]) -> std::process::Output {
         .expect("nivasa command should run")
 }
 
+fn run_cli_in_dir(dir: &std::path::Path, args: &[&str]) -> std::process::Output {
+    Command::new(binary())
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .expect("nivasa command should run")
+}
+
 fn spawn_inspect_server(responses: Vec<&'static str>) -> (u16, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("free port should exist");
     let port = listener.local_addr().expect("listener should have addr").port();
@@ -53,6 +61,42 @@ fn nivasa_help_lists_top_level_commands() {
     assert!(stdout.contains("info"));
     assert!(stdout.contains("generate"));
     assert!(stdout.contains("statechart"));
+}
+
+#[test]
+fn nivasa_new_creates_project_from_cli() {
+    let root = temp_dir("new-cli");
+
+    let output = run_cli_in_dir(&root, &["new", "demo-app"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("created demo-app"));
+
+    let project_dir = root.join("demo-app");
+    assert!(project_dir.join("Cargo.toml").is_file());
+    assert!(project_dir.join("src/main.rs").is_file());
+    assert!(project_dir
+        .join("statecharts/nivasa.request.scxml")
+        .is_file());
+}
+
+#[test]
+fn nivasa_generate_alias_creates_resource_bundle() {
+    let root = temp_dir("generate-alias");
+
+    let output = run_cli_in_dir(&root, &["g", "resource", "users"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("created"));
+
+    let resource_dir = root.join("users");
+    assert!(resource_dir.join("users_module.rs").is_file());
+    assert!(resource_dir.join("users_controller.rs").is_file());
+    assert!(resource_dir.join("users_service.rs").is_file());
+    assert!(resource_dir.join("dto/create_users_dto.rs").is_file());
+    assert!(resource_dir.join("dto/update_users_dto.rs").is_file());
 }
 
 #[test]
@@ -144,6 +188,26 @@ fn nivasa_statechart_inspect_falls_back_to_later_debug_endpoint() {
 }
 
 #[test]
+fn nivasa_statechart_inspect_reports_last_http_error_when_all_endpoints_fail() {
+    let (port, server) = spawn_inspect_server(vec![
+        "HTTP/1.1 404 Not Found\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+    ]);
+
+    let output = Command::new(binary())
+        .args(["statechart", "inspect", "--port", &port.to_string()])
+        .output()
+        .expect("nivasa inspect should run");
+
+    server.join().expect("inspect server should exit cleanly");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
+    assert!(stderr.contains("returned HTTP 500 Internal Server Error"));
+}
+
+#[test]
 fn nivasa_statechart_visualize_renders_specific_file() {
     let output = run_cli(&[
         "statechart",
@@ -159,6 +223,18 @@ fn nivasa_statechart_visualize_renders_specific_file() {
 }
 
 #[test]
+fn nivasa_statechart_visualize_without_file_renders_all_statecharts() {
+    let output = run_cli(&["statechart", "visualize"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("nivasa.application.scxml"));
+    assert!(stdout.contains("nivasa.module.scxml"));
+    assert!(stdout.contains("nivasa.provider.scxml"));
+    assert!(stdout.contains("nivasa.request.scxml"));
+}
+
+#[test]
 fn nivasa_statechart_diff_reports_invalid_revision() {
     let output = run_cli(&[
         "statechart",
@@ -169,4 +245,13 @@ fn nivasa_statechart_diff_reports_invalid_revision() {
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
     assert!(stderr.contains("definitely-not-a-real-revision"));
+}
+
+#[test]
+fn nivasa_statechart_diff_head_reports_no_changes() {
+    let output = run_cli(&["statechart", "diff", "HEAD"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("No SCXML differences found against HEAD."));
 }
