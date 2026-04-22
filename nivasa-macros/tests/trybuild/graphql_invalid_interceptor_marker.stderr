@@ -1,0 +1,5 @@
+error: invalid interceptor marker
+ --> tests/trybuild/graphql_invalid_interceptor_marker.rs:6:5
+  |
+6 |     /// nivasa-interceptor:
+  |     ^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,7 @@
+error: `#[websocket_gateway]` requires a `path` entry
+ --> tests/trybuild/websocket_gateway_missing_path.rs:3:1
+  |
+3 | #[websocket_gateway({ namespace: "/chat" })]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `websocket_gateway` (in Nightly builds, run with -Z macro-backtrace for more info)

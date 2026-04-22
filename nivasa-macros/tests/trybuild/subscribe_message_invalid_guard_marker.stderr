@@ -1,0 +1,5 @@
+error: invalid guard marker
+ --> tests/trybuild/subscribe_message_invalid_guard_marker.rs:6:5
+  |
+6 |     /// nivasa-guard:
+  |     ^^^^^^^^^^^^^^^^^

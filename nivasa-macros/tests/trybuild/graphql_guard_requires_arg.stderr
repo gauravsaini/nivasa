@@ -1,0 +1,15 @@
+error: `#[guard]` requires at least one guard type
+ --> tests/trybuild/graphql_guard_requires_arg.rs:6:5
+  |
+6 |     #[nivasa_macros::guard()]
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `nivasa_macros::guard` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused import: `nivasa_macros::resolver`
+ --> tests/trybuild/graphql_guard_requires_arg.rs:1:5
+  |
+1 | use nivasa_macros::resolver;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
