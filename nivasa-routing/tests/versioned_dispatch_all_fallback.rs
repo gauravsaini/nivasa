@@ -22,6 +22,13 @@ fn header_versioned_dispatch_falls_back_to_unversioned_all_route() {
     assert_eq!(matched.entry.value, "fallback-all");
     assert_eq!(matched.captures.get("id"), Some("42"));
 
+    let helper_match = registry
+        .resolve_header_match(" patch ", "/users/42", Some("2"))
+        .unwrap();
+    assert_eq!(helper_match.entry.method, RouteMethod::All);
+    assert_eq!(helper_match.entry.value, "fallback-all");
+    assert_eq!(helper_match.captures.get("id"), Some("42"));
+
     assert!(matches!(
         registry.dispatch_header_versioned(" patch ", "/users/42", Some("2")),
         RouteDispatchOutcome::Matched(entry)
