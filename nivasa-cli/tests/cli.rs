@@ -151,6 +151,18 @@ fn nivasa_statechart_validate_rejects_all_and_file() {
 }
 
 #[test]
+fn nivasa_statechart_validate_without_args_validates_all_files() {
+    let output = run_cli(&["statechart", "validate"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("nivasa.application.scxml: valid"));
+    assert!(stdout.contains("nivasa.module.scxml: valid"));
+    assert!(stdout.contains("nivasa.provider.scxml: valid"));
+    assert!(stdout.contains("nivasa.request.scxml: valid"));
+}
+
+#[test]
 fn nivasa_statechart_inspect_reports_connection_error() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("free port should exist");
     let port = listener.local_addr().expect("listener should have addr").port();
