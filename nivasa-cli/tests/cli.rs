@@ -235,6 +235,27 @@ fn nivasa_statechart_visualize_without_file_renders_all_statecharts() {
 }
 
 #[test]
+fn nivasa_statechart_visualize_reports_missing_file() {
+    let output = run_cli(&["statechart", "visualize", "missing-statechart.scxml"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
+    assert!(stderr.contains("statechart file not found: missing-statechart.scxml"));
+}
+
+#[test]
+fn nivasa_statechart_parity_reports_generated_registry_matches_sources() {
+    let output = run_cli(&["statechart", "parity"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("nivasa.application.scxml: parity ok"));
+    assert!(stdout.contains("nivasa.module.scxml: parity ok"));
+    assert!(stdout.contains("nivasa.provider.scxml: parity ok"));
+    assert!(stdout.contains("nivasa.request.scxml: parity ok"));
+}
+
+#[test]
 fn nivasa_statechart_diff_reports_invalid_revision() {
     let output = run_cli(&[
         "statechart",
