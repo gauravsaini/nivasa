@@ -13,6 +13,11 @@ struct AuditorRole;
 struct LoggingMiddleware;
 struct AuditInterceptor;
 struct TraceInterceptor;
+struct DocGuard;
+struct DocInterceptorA;
+struct DocInterceptorB;
+struct BillingRole;
+struct AuditRole;
 
 #[injectable]
 struct Service;
@@ -53,6 +58,13 @@ struct AppModule;
 
 #[module({})]
 struct EmptyModule;
+
+/// __NIVASA_GUARD__ DocGuard
+/// __NIVASA_INTERCEPTOR__ DocInterceptorA, DocInterceptorB
+/// __NIVASA_ROLES__ BillingRole, AuditRole
+/// nivasa-set-metadata: scope=billing
+#[module({})]
+struct DocMarkerModule;
 
 #[test]
 fn module_macro_exposes_registration_metadata_helpers() {
@@ -161,4 +173,23 @@ fn module_macro_defaults_optional_helpers_to_empty() {
     assert!(EmptyModule::__nivasa_module_controller_registrations().is_empty());
     assert!(module.metadata().imports.is_empty());
     assert!(module.controller_registrations().is_empty());
+}
+
+#[test]
+fn module_macro_parses_doc_marker_helpers() {
+    let _ = (DocGuard, DocInterceptorA, DocInterceptorB, BillingRole, AuditRole);
+
+    assert_eq!(DocMarkerModule::__nivasa_module_guards(), vec!["DocGuard"]);
+    assert_eq!(
+        DocMarkerModule::__nivasa_module_interceptors(),
+        vec!["DocInterceptorA", "DocInterceptorB"]
+    );
+    assert_eq!(
+        DocMarkerModule::__nivasa_module_roles(),
+        vec!["BillingRole", "AuditRole"]
+    );
+    assert_eq!(
+        DocMarkerModule::__nivasa_module_set_metadata(),
+        vec![("scope", "billing")]
+    );
 }
