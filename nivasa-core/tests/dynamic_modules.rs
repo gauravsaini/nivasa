@@ -4,7 +4,7 @@ use nivasa_core::module::{
 };
 use std::any::TypeId;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
 };
 
@@ -165,6 +165,64 @@ fn dynamic_module_without_pre_bootstrap_callback_is_noop() {
     let module = DynamicModule::new(ModuleMetadata::new());
 
     assert_eq!(module.run_pre_bootstrap(), Ok(()));
+}
+
+#[test]
+fn dynamic_module_merged_metadata_preserves_fields_and_deduplicates_providers() {
+    let metadata = ModuleMetadata::new()
+        .with_imports(vec![TypeId::of::<FeatureDynamicModuleMarker>()])
+        .with_providers(vec![TypeId::of::<RootService>()])
+        .with_controllers(vec![TypeId::of::<DynamicConsumerModule>()])
+        .with_exports(vec![TypeId::of::<RootService>()])
+        .with_middlewares(vec![TypeId::of::<DynamicImportingConsumerModule>()])
+        .with_global(true);
+    let module = DynamicModule::new(metadata.clone()).with_providers(vec![
+        TypeId::of::<RootService>(),
+        TypeId::of::<FeatureService>(),
+    ]);
+
+    let merged = module.merged_metadata();
+
+    assert_eq!(merged.imports, metadata.imports);
+    assert_eq!(merged.controllers, metadata.controllers);
+    assert_eq!(merged.exports, metadata.exports);
+    assert_eq!(merged.middlewares, metadata.middlewares);
+    assert!(merged.is_global);
+    assert_eq!(
+        merged.providers,
+        vec![TypeId::of::<RootService>(), TypeId::of::<FeatureService>()]
+    );
+    assert_eq!(module.metadata.providers, vec![TypeId::of::<RootService>()]);
+}
+
+#[test]
+fn dynamic_module_clone_keeps_pre_bootstrap_and_latest_provider_list() {
+    let runs = Arc::new(AtomicUsize::new(0));
+    let cloned_runs = runs.clone();
+    let module = DynamicModule::new(ModuleMetadata::new())
+        .with_providers(vec![TypeId::of::<RootService>()])
+        .with_providers(vec![
+            TypeId::of::<FeatureService>(),
+            TypeId::of::<FeatureServiceTwo>(),
+        ])
+        .with_pre_bootstrap(move || {
+            cloned_runs.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        });
+    let cloned = module.clone();
+
+    assert_eq!(
+        cloned.providers,
+        vec![
+            TypeId::of::<FeatureService>(),
+            TypeId::of::<FeatureServiceTwo>()
+        ]
+    );
+
+    module.run_pre_bootstrap().unwrap();
+    cloned.run_pre_bootstrap().unwrap();
+
+    assert_eq!(runs.load(Ordering::SeqCst), 2);
 }
 
 #[test]
