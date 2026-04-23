@@ -123,4 +123,32 @@ fn schema_diagnostics_display_location_and_multiline_collections() {
     assert!(load_error
         .to_string()
         .contains("failed to load W3C SCXML XSD schema"));
+
+    let filename_only = SchemaDiagnostic {
+        level: "error".to_string(),
+        message: "filename only".to_string(),
+        filename: Some("chart.scxml".to_string()),
+        line: None,
+        column: None,
+        domain: 12,
+        code: 22,
+    };
+    assert_eq!(
+        filename_only.to_string(),
+        "chart.scxml: filename only (level=error, domain=12, code=22)"
+    );
+
+    let line_only = SchemaDiagnostic {
+        level: "error".to_string(),
+        message: "line only".to_string(),
+        filename: None,
+        line: Some(8),
+        column: None,
+        domain: 13,
+        code: 23,
+    };
+    assert_eq!(
+        line_only.to_string(),
+        "8: line only (level=error, domain=13, code=23)"
+    );
 }

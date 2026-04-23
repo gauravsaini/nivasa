@@ -30,6 +30,13 @@ fn global_registry_helpers_keep_self_exports_visible() {
     assert!(registry.register(&GlobalSelfModule));
     assert_eq!(registry.len(), 1);
     assert!(!registry.is_empty());
+    assert!(registry.contains::<GlobalSelfModule>());
+
+    let entry = registry
+        .get::<GlobalSelfModule>()
+        .expect("registered module entry should be fetchable");
+    assert_eq!(entry.type_name, type_name::<GlobalSelfModule>());
+    assert!(entry.metadata.is_global);
 
     assert!(!registry.register(&GlobalSelfModule));
     assert_eq!(registry.len(), 1);

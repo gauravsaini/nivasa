@@ -145,6 +145,7 @@ async fn tower_service_middleware_clones_cloneable_services_without_serializing(
     };
 
     let middleware = nivasa_http::TowerServiceMiddleware::new_cloneable(service);
+    assert!(format!("{middleware:?}").contains("TowerServiceMiddleware"));
 
     let future_a = middleware.use_(
         NivasaRequest::new(Method::POST, "/clone-a", Body::text("one")),

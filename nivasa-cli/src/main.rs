@@ -1216,12 +1216,13 @@ fn to_pascal_case(name: &str) -> String {
 mod tests {
     use super::{
         generate_controller, generate_filter, generate_guard, generate_interceptor,
-        generate_middleware, generate_module, generate_pipe, generate_resource, generate_service,
-        new_controller_template, new_create_dto_template, new_filter_template, new_guard_template,
-        new_interceptor_template, new_middleware_template, new_module_template, new_pipe_template,
-        new_project_app_module_rs, new_project_cargo_toml, new_project_main_rs,
-        new_service_template, new_update_dto_template, normalize_generator_name, parse_array_items,
-        register_generated_item, relative_path_string, render_array_items, render_module_fields,
+        generate_middleware, generate_module, generate_named_file, generate_pipe,
+        generate_resource, generate_service, generated_type_name, new_controller_template,
+        new_create_dto_template, new_filter_template, new_guard_template, new_interceptor_template,
+        new_middleware_template, new_module_template, new_pipe_template, new_project_app_module_rs,
+        new_project_cargo_toml, new_project_main_rs, new_service_template, new_update_dto_template,
+        normalize_generator_name, parse_array_items, parse_module_fields, register_generated_item,
+        relative_path_string, render_array_items, render_module_fields, resolve_target_file,
         scaffold_new_project, to_pascal_case,
     };
     use std::fs;
@@ -1567,6 +1568,68 @@ mod tests {
             fs::read_to_string(resource_dir.join("dto/update_users_dto.rs")).unwrap(),
             new_update_dto_template("Users")
         );
+    }
+
+    #[test]
+    fn generic_generator_and_target_helpers_cover_edge_paths() {
+        let root = temp_dir("generic-generator");
+        let generated = generate_named_file(&root, "Audit Log", "probe", |normalized, pascal| {
+            format!("{normalized}:{pascal}")
+        })
+        .expect("generic generation should succeed");
+
+        assert_eq!(generated, root.join("audit_log/audit_log_probe.rs"));
+        assert_eq!(
+            fs::read_to_string(&generated).unwrap(),
+            "audit_log:AuditLog"
+        );
+        assert_eq!(
+            generate_named_file(&root, "Audit Log", "probe", |_, _| String::new()).unwrap_err(),
+            format!("probe file already exists: {}", generated.display())
+        );
+
+        let relative = resolve_target_file(
+            &root,
+            PathBuf::from("audit_log/audit_log_probe.rs").as_path(),
+        )
+        .expect("relative target should resolve from base dir");
+        assert_eq!(relative, generated);
+        let absolute = resolve_target_file(&root, &generated)
+            .expect("absolute target should be accepted directly");
+        assert_eq!(absolute, generated);
+        assert!(
+            resolve_target_file(&root, PathBuf::from("missing.rs").as_path())
+                .unwrap_err()
+                .contains("module file not found")
+        );
+
+        assert_eq!(
+            generated_type_name("audit log", "Guard").unwrap(),
+            "AuditLogGuard"
+        );
+        assert_eq!(
+            generated_type_name("!!!", "Guard").unwrap_err(),
+            "name cannot be empty"
+        );
+    }
+
+    #[test]
+    fn module_metadata_parser_reports_malformed_fields() {
+        assert_eq!(
+            parse_module_fields("@: []").unwrap_err(),
+            "failed to parse module metadata field name"
+        );
+        assert_eq!(
+            parse_module_fields("imports []").unwrap_err(),
+            "module metadata field `imports` missing `:`"
+        );
+
+        let parsed = parse_module_fields(
+            r#"imports: [UsersModule], providers: [Factory::new("a,b", { nested: true })]"#,
+        )
+        .expect("nested metadata fields should parse");
+        assert_eq!(parsed[0].0, "imports");
+        assert_eq!(parsed[1].0, "providers");
     }
 
     fn temp_dir(prefix: &str) -> PathBuf {

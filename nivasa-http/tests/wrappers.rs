@@ -1,8 +1,8 @@
 use http::header::{HeaderMap, HeaderValue};
 use http::{Method, Request, StatusCode};
 use nivasa_http::{
-    Body, FromRequest, Html, IntoResponse, Json, NivasaRequest, NivasaResponse, Query, Redirect,
-    RequestExtractError, Text,
+    Body, ClientIp, ControllerResponse, FromRequest, Html, IntoResponse, Json, NivasaRequest,
+    NivasaResponse, Query, Redirect, RequestExtractError, Text,
 };
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod, RoutePathCaptures};
 use serde::Deserialize;
@@ -243,6 +243,67 @@ fn response_ergonomics_support_builder_and_result() {
     assert_eq!(ok.status(), StatusCode::OK);
     assert_eq!(ok.body().as_bytes(), b"done");
     assert_eq!(err.status(), StatusCode::BAD_REQUEST);
+}
+
+#[test]
+fn controller_response_mutators_and_response_conversions_preserve_parts() {
+    let mut controller_response = ControllerResponse::new();
+    controller_response
+        .status(StatusCode::CREATED)
+        .header("x-mode", "controller")
+        .text("created");
+    let response = controller_response.into_response();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    assert_eq!(response.headers().get("x-mode").unwrap(), "controller");
+    assert_eq!(response.body().as_bytes(), b"created");
+
+    let mut controller_response = ControllerResponse::new();
+    controller_response.html("<p>ready</p>");
+    assert_eq!(
+        controller_response
+            .into_response()
+            .headers()
+            .get(http::header::CONTENT_TYPE)
+            .unwrap(),
+        "text/html; charset=utf-8"
+    );
+
+    let mut controller_response = ControllerResponse::new();
+    controller_response.json(serde_json::json!({ "ok": true }));
+    assert_eq!(
+        controller_response
+            .into_response()
+            .headers()
+            .get(http::header::CONTENT_TYPE)
+            .unwrap(),
+        "application/json"
+    );
+
+    let mut controller_response = ControllerResponse::new();
+    controller_response.bytes([1_u8, 2, 3]);
+    assert_eq!(
+        controller_response.into_response().body().as_bytes(),
+        &[1, 2, 3]
+    );
+
+    let raw = http::Response::builder()
+        .status(StatusCode::ACCEPTED)
+        .body(Body::text("raw"))
+        .unwrap();
+    let wrapped = NivasaResponse::from(raw);
+    let unwrapped: http::Response<Body> = wrapped.into();
+    assert_eq!(unwrapped.status(), StatusCode::ACCEPTED);
+    assert_eq!(unwrapped.body().as_bytes(), b"raw");
+}
+
+#[test]
+fn client_ip_helpers_support_owned_and_borrowed_values() {
+    let borrowed = ClientIp::from("198.51.100.10");
+    assert_eq!(borrowed.as_str(), "198.51.100.10");
+
+    let owned = ClientIp::from(String::from("203.0.113.7"));
+    assert_eq!(owned.into_string(), "203.0.113.7");
 }
 
 #[test]
