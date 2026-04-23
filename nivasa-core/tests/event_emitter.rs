@@ -1,4 +1,6 @@
-use nivasa_core::{DependencyContainer, EventEmitter, EventEmitterModule, Module};
+use nivasa_core::{
+    di::provider::Injectable, DependencyContainer, EventEmitter, EventEmitterModule, Module,
+};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc, Mutex,
@@ -101,4 +103,35 @@ async fn event_emitter_dispatches_exact_wildcard_and_async_handlers() {
         catch_all_payloads.lock().unwrap().as_slice(),
         ["alice".to_string(), "bob".to_string()]
     );
+}
+
+#[tokio::test]
+async fn event_emitter_helper_edges_cover_debug_prefix_and_module_metadata() {
+    let emitter = EventEmitter::new();
+    let dot_wildcard_hits = Arc::new(AtomicUsize::new(0));
+
+    {
+        let dot_wildcard_hits = Arc::clone(&dot_wildcard_hits);
+        emitter.on(".*", move |_| {
+            let dot_wildcard_hits = Arc::clone(&dot_wildcard_hits);
+            async move {
+                dot_wildcard_hits.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+    }
+
+    assert_eq!(emitter.emit("anything", "payload").await, 1);
+    assert_eq!(dot_wildcard_hits.load(Ordering::SeqCst), 1);
+    assert!(format!("{emitter:?}").contains("listener_count"));
+    assert!(EventEmitter::dependencies().is_empty());
+
+    let module = EventEmitterModule::new();
+    let metadata = module.metadata();
+    assert!(metadata.is_global);
+    assert!(metadata
+        .providers
+        .contains(&std::any::TypeId::of::<EventEmitter>()));
+    assert!(metadata
+        .exports
+        .contains(&std::any::TypeId::of::<EventEmitter>()));
 }

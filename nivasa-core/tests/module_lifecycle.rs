@@ -172,5 +172,8 @@ async fn application_shutdown_hook_shape_stays_consistent_across_public_paths() 
     <ShutdownMirror as OnApplicationShutdown>::on_application_shutdown(&hooks).await;
     <ShutdownMirror as app_lifecycle::OnApplicationShutdown>::on_application_shutdown(&hooks).await;
 
-    assert_eq!(&*events.lock().unwrap(), &["module.shutdown", "module.shutdown"]);
+    assert_eq!(
+        &*events.lock().unwrap(),
+        &["module.shutdown", "module.shutdown"]
+    );
 }

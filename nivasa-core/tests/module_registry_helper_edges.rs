@@ -43,5 +43,7 @@ fn global_registry_helpers_keep_self_exports_visible() {
         .unwrap();
 
     assert!(visible.contains(&TypeId::of::<GlobalService>()));
-    assert!(registry.is_visible_to::<GlobalSelfModule, GlobalService>().unwrap());
+    assert!(registry
+        .is_visible_to::<GlobalSelfModule, GlobalService>()
+        .unwrap());
 }

@@ -30,16 +30,24 @@ fn parser_loads_checked_in_request_chart_from_file() {
     assert!(doc.has_state("done"));
     assert!(doc.history_states.is_empty());
 
-    assert_eq!(doc.top_level_states.first().map(String::as_str), Some("received"));
-    assert_eq!(doc.top_level_states.last().map(String::as_str), Some("done"));
+    assert_eq!(
+        doc.top_level_states.first().map(String::as_str),
+        Some("received")
+    );
+    assert_eq!(
+        doc.top_level_states.last().map(String::as_str),
+        Some("done")
+    );
 
     let route_matching = &doc.states["route_matching"];
     assert_eq!(route_matching.transitions.len(), 3);
     assert!(route_matching
         .transitions
         .iter()
-        .any(|transition| transition.event.as_deref() == Some("route.not_found")
-            && transition.target == vec!["error_handling".to_string()]));
+        .any(
+            |transition| transition.event.as_deref() == Some("route.not_found")
+                && transition.target == vec!["error_handling".to_string()]
+        ));
 }
 
 #[test]
@@ -92,7 +100,10 @@ fn parser_captures_nested_state_features_without_changing_runtime_behavior() {
         branch_a.transitions[0].target,
         vec!["branch_b".to_string(), "branch_c".to_string()]
     );
-    assert_eq!(branch_a.transitions[0].transition_type, TransitionType::Internal);
+    assert_eq!(
+        branch_a.transitions[0].transition_type,
+        TransitionType::Internal
+    );
     assert_eq!(branch_a.invoke.len(), 1);
     assert_eq!(branch_a.invoke[0].invoke_type, Some("service".to_string()));
     assert_eq!(branch_a.invoke[0].id, Some("svc".to_string()));
@@ -114,7 +125,10 @@ fn parser_captures_nested_state_features_without_changing_runtime_behavior() {
     let parallel = &doc.states[&parallel_id];
     assert_eq!(parallel.state_type, StateType::Parallel);
     assert_eq!(parallel.parent, Some("outer".to_string()));
-    assert_eq!(parallel.children, vec!["branch_b".to_string(), "branch_c".to_string()]);
+    assert_eq!(
+        parallel.children,
+        vec!["branch_b".to_string(), "branch_c".to_string()]
+    );
 
     assert_eq!(doc.history_states.len(), 1);
     assert_eq!(doc.history_states[0].id, "outer_history");

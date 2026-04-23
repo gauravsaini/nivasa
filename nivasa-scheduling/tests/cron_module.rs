@@ -287,7 +287,10 @@ async fn schedule_module_tick_helper_runs_due_timeout_registered_via_pattern_hel
 
     sleep(Duration::from_millis(20)).await;
 
-    let fired = scheduler.tick().await.expect("tick helper should run due timeout");
+    let fired = scheduler
+        .tick()
+        .await
+        .expect("tick helper should run due timeout");
 
     assert_eq!(fired, vec![job_id]);
     assert_eq!(hits.load(Ordering::SeqCst), 1);
@@ -302,9 +305,12 @@ async fn tick_at_returns_job_failed_and_stops_later_due_jobs() {
     let healthy_hits = Arc::new(AtomicUsize::new(0));
 
     let failing_timeout_id = scheduler
-        .register_timeout_at("failing-timeout", Duration::from_millis(10), now, || async {
-            Err("boom".to_string())
-        })
+        .register_timeout_at(
+            "failing-timeout",
+            Duration::from_millis(10),
+            now,
+            || async { Err("boom".to_string()) },
+        )
         .await
         .expect("timeout job should register");
 
@@ -359,7 +365,9 @@ async fn schedule_module_job_helpers_cover_missing_and_snapshot_paths() {
     let now = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
 
     let interval_id = scheduler
-        .register_interval_at("heartbeat", Duration::from_secs(5), now, || async { Ok(()) })
+        .register_interval_at("heartbeat", Duration::from_secs(5), now, || async {
+            Ok(())
+        })
         .await
         .expect("interval job should register");
 
@@ -424,10 +432,7 @@ async fn schedule_module_current_time_helpers_and_injectable_surface_work() {
     );
     assert!(cron.next_fire_at.is_some());
 
-    let interval = scheduler
-        .job(interval_id)
-        .await
-        .expect("interval job info");
+    let interval = scheduler.job(interval_id).await.expect("interval job info");
     assert_eq!(
         interval.pattern,
         SchedulePattern::Interval {
@@ -436,10 +441,7 @@ async fn schedule_module_current_time_helpers_and_injectable_surface_work() {
     );
     assert!(interval.next_fire_at.is_some());
 
-    let timeout = scheduler
-        .job(timeout_id)
-        .await
-        .expect("timeout job info");
+    let timeout = scheduler.job(timeout_id).await.expect("timeout job info");
     assert_eq!(
         timeout.pattern,
         SchedulePattern::Timeout {

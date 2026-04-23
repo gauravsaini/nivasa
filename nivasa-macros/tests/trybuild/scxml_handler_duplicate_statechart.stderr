@@ -1,0 +1,5 @@
+error: duplicate `statechart` argument
+ --> tests/trybuild/scxml_handler_duplicate_statechart.rs:3:41
+  |
+3 | #[scxml_handler(statechart = "request", statechart = "module", state = "guard_chain")]
+  |                                         ^^^^^^^^^^

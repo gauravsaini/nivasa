@@ -14,9 +14,9 @@ use nivasa_routing::RouteMethod;
 use serde_json::json;
 use std::{hint::black_box, net::TcpListener as StdTcpListener, time::Duration};
 use tokio::{
-    task::JoinHandle,
     runtime::Runtime,
     sync::oneshot,
+    task::JoinHandle,
     time::{sleep, timeout},
 };
 

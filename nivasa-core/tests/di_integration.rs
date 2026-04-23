@@ -87,7 +87,11 @@ async fn test_missing_provider_returns_clear_error() {
 async fn test_resolve_optional_returns_none_for_missing_and_some_for_registered_values() {
     let container = DependencyContainer::new();
 
-    assert!(container.resolve_optional::<ServiceA>().await.unwrap().is_none());
+    assert!(container
+        .resolve_optional::<ServiceA>()
+        .await
+        .unwrap()
+        .is_none());
 
     container.register_value(String::from("config")).await;
     container.initialize().await.unwrap();

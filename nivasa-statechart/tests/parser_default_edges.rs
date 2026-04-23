@@ -21,7 +21,10 @@ fn parser_applies_default_scxml_and_transition_values() {
     assert_eq!(start.transitions[0].event.as_deref(), Some("go"));
     assert_eq!(start.transitions[0].cond.as_deref(), Some("ready"));
     assert!(start.transitions[0].target.is_empty());
-    assert_eq!(start.transitions[0].transition_type, TransitionType::External);
+    assert_eq!(
+        start.transitions[0].transition_type,
+        TransitionType::External
+    );
 
     assert_eq!(start.invoke.len(), 1);
     assert!(!start.invoke[0].autoforward);

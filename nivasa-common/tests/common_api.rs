@@ -327,5 +327,8 @@ fn http_status_class_helpers_track_numeric_ranges_for_every_variant() {
 fn invalid_http_status_displays_human_readable_message() {
     let err = InvalidHttpStatus(777);
 
-    assert_eq!(err.to_string(), "unsupported standard HTTP status code: 777");
+    assert_eq!(
+        err.to_string(),
+        "unsupported standard HTTP status code: 777"
+    );
 }

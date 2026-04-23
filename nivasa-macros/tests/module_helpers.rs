@@ -177,7 +177,13 @@ fn module_macro_defaults_optional_helpers_to_empty() {
 
 #[test]
 fn module_macro_parses_doc_marker_helpers() {
-    let _ = (DocGuard, DocInterceptorA, DocInterceptorB, BillingRole, AuditRole);
+    let _ = (
+        DocGuard,
+        DocInterceptorA,
+        DocInterceptorB,
+        BillingRole,
+        AuditRole,
+    );
 
     assert_eq!(DocMarkerModule::__nivasa_module_guards(), vec!["DocGuard"]);
     assert_eq!(

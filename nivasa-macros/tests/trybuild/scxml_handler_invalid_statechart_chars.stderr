@@ -1,0 +1,5 @@
+error: `statechart` may only contain ASCII letters, digits, `_`, or `-`
+ --> tests/trybuild/scxml_handler_invalid_statechart_chars.rs:3:30
+  |
+3 | #[scxml_handler(statechart = "request!", state = "guard_chain")]
+  |                              ^^^^^^^^^^

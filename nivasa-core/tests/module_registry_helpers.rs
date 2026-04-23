@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use nivasa_core::di::{DependencyContainer, error::DiError};
+use nivasa_core::di::{error::DiError, DependencyContainer};
 use nivasa_core::module::{
     DynamicModule, Module, ModuleMetadata, ModuleRegistry, ModuleRegistryError,
 };
@@ -154,10 +154,9 @@ fn import_sources_report_missing_imports_before_resolution_walk() {
 #[test]
 fn exported_surface_uses_dynamic_module_merged_provider_metadata() {
     let mut registry = ModuleRegistry::new();
-    let dynamic_module = DynamicModule::new(
-        ModuleMetadata::new().with_exports(vec![TypeId::of::<RootProvider>()]),
-    )
-    .with_providers(vec![TypeId::of::<RootProvider>()]);
+    let dynamic_module =
+        DynamicModule::new(ModuleMetadata::new().with_exports(vec![TypeId::of::<RootProvider>()]))
+            .with_providers(vec![TypeId::of::<RootProvider>()]);
 
     assert!(registry.register_dynamic::<DynamicProviderModuleMarker>(dynamic_module));
 

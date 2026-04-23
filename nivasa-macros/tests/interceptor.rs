@@ -65,8 +65,9 @@ fn interceptor_macro_registers_dispatch_handlers_for_supported_signatures() {
 
     assert!(nivasa_http::resolve_controller_route_handler("/events", "list").is_some());
     assert!(nivasa_http::resolve_controller_route_handler("/events", "create").is_some());
-    assert!(
-        nivasa_http::resolve_controller_route_handler("/events/request-aware", "request_aware")
-            .is_some()
-    );
+    assert!(nivasa_http::resolve_controller_route_handler(
+        "/events/request-aware",
+        "request_aware"
+    )
+    .is_some());
 }

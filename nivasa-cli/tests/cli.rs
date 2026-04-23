@@ -37,7 +37,10 @@ fn run_cli_in_dir(dir: &std::path::Path, args: &[&str]) -> std::process::Output 
 
 fn spawn_inspect_server(responses: Vec<&'static str>) -> (u16, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("free port should exist");
-    let port = listener.local_addr().expect("listener should have addr").port();
+    let port = listener
+        .local_addr()
+        .expect("listener should have addr")
+        .port();
     let handle = thread::spawn(move || {
         for response in responses {
             let (mut stream, _) = listener.accept().expect("inspect client should connect");
@@ -115,7 +118,10 @@ fn nivasa_generate_named_file_commands_create_expected_files() {
 
         assert!(output.status.success(), "{command} should succeed");
         let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
-        assert!(stdout.contains("created"), "{command} should report created file");
+        assert!(
+            stdout.contains("created"),
+            "{command} should report created file"
+        );
         assert!(
             root.join(relative_path).is_file(),
             "{command} should create expected file"
@@ -189,7 +195,10 @@ fn nivasa_statechart_validate_without_args_validates_all_files() {
 #[test]
 fn nivasa_statechart_inspect_reports_connection_error() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("free port should exist");
-    let port = listener.local_addr().expect("listener should have addr").port();
+    let port = listener
+        .local_addr()
+        .expect("listener should have addr")
+        .port();
     drop(listener);
 
     let output = Command::new(binary())
@@ -245,11 +254,7 @@ fn nivasa_statechart_inspect_reports_last_http_error_when_all_endpoints_fail() {
 
 #[test]
 fn nivasa_statechart_visualize_renders_specific_file() {
-    let output = run_cli(&[
-        "statechart",
-        "visualize",
-        "nivasa.application.scxml",
-    ]);
+    let output = run_cli(&["statechart", "visualize", "nivasa.application.scxml"]);
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
@@ -293,11 +298,7 @@ fn nivasa_statechart_parity_reports_generated_registry_matches_sources() {
 
 #[test]
 fn nivasa_statechart_diff_reports_invalid_revision() {
-    let output = run_cli(&[
-        "statechart",
-        "diff",
-        "definitely-not-a-real-revision",
-    ]);
+    let output = run_cli(&["statechart", "diff", "definitely-not-a-real-revision"]);
 
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
