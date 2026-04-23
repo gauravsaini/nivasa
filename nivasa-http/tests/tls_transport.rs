@@ -61,7 +61,8 @@ fn fixture_dir() -> PathBuf {
     std::env::temp_dir().join(format!("nivasa-tls-{unique}"))
 }
 
-fn generate_tls_material() -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>), Box<dyn Error>> {
+fn generate_tls_material(
+) -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>), Box<dyn Error>> {
     let dir = fixture_dir();
     fs::create_dir_all(&dir)?;
 

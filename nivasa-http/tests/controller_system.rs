@@ -649,11 +649,7 @@ mod runtime_extraction {
     #[test]
     fn controller_body_runtime_maps_invalid_json_to_bad_request() {
         let response = run_controller_action_with_body::<Json<CreateUser>, _, _>(
-            &NivasaRequest::new(
-                Method::POST,
-                "/body/create",
-                Body::text(r#"{"name":"Ada""#),
-            ),
+            &NivasaRequest::new(Method::POST, "/body/create", Body::text(r#"{"name":"Ada""#)),
             |_| NivasaResponse::text("unreachable"),
         );
 

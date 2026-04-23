@@ -1,6 +1,9 @@
 use bytes::Bytes;
 use http::{
-    header::{ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_REQUEST_HEADERS, ACCESS_CONTROL_REQUEST_METHOD, ORIGIN},
+    header::{
+        ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_REQUEST_HEADERS,
+        ACCESS_CONTROL_REQUEST_METHOD, ORIGIN,
+    },
     Method, StatusCode,
 };
 use http_body_util::{BodyExt, Empty};
@@ -68,7 +71,10 @@ async fn cors_preflight_omits_allow_headers_when_configured_list_is_empty(
 
     let response = client.request(request).await?;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
-    assert!(response.headers().get(ACCESS_CONTROL_ALLOW_HEADERS).is_none());
+    assert!(response
+        .headers()
+        .get(ACCESS_CONTROL_ALLOW_HEADERS)
+        .is_none());
 
     let body = response.into_body().collect().await?.to_bytes();
     assert!(body.is_empty());

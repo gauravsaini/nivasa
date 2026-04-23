@@ -18,7 +18,10 @@ fn json_wrapper_falls_back_when_serialization_fails() {
     let response = Json(AlwaysFailSerialize).into_response();
 
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(response.headers().get(CONTENT_TYPE).unwrap(), "application/json");
+    assert_eq!(
+        response.headers().get(CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&response.body().as_bytes()).unwrap(),
         serde_json::json!({

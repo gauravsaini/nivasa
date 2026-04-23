@@ -67,7 +67,10 @@ async fn cors_preflight_omits_allow_methods_when_requested_method_is_blank(
 
     let response = client.request(request).await?;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
-    assert!(response.headers().get(ACCESS_CONTROL_ALLOW_METHODS).is_none());
+    assert!(response
+        .headers()
+        .get(ACCESS_CONTROL_ALLOW_METHODS)
+        .is_none());
 
     let body = response.into_body().collect().await?.to_bytes();
     assert!(body.is_empty());
