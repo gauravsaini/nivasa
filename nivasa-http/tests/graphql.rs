@@ -45,8 +45,7 @@ fn graphql_post_executes_a_real_schema() {
 
 #[test]
 fn graphql_from_schema_forwards_variables_and_operation_name() {
-    let schema =
-        GraphQLSchema::build(EchoQuery::default(), EmptyMutation, EmptySubscription).finish();
+    let schema = GraphQLSchema::build(EchoQuery, EmptyMutation, EmptySubscription).finish();
     let server = build_server(
         GraphQLModule::from_schema(schema)
             .endpoint_path("/api/graphql")
@@ -77,8 +76,7 @@ fn graphql_from_schema_forwards_variables_and_operation_name() {
 #[test]
 fn graphql_from_core_module_maps_schema_errors_and_serves_separate_playground() {
     let build_module = || {
-        let schema =
-            GraphQLSchema::build(EchoQuery::default(), EmptyMutation, EmptySubscription).finish();
+        let schema = GraphQLSchema::build(EchoQuery, EmptyMutation, EmptySubscription).finish();
         let core_module = nivasa_http::graphql::GraphQLCoreModule::from_schema(schema);
         GraphQLModule::from_graphql_module(core_module)
             .endpoint_path("/api/graphql")
