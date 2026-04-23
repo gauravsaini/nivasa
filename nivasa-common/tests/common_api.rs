@@ -140,6 +140,11 @@ fn http_status_informational_helper_accepts_1xx() {
 }
 
 #[test]
+fn http_status_success_helper_accepts_2xx() {
+    assert!(HttpStatus::Ok.is_success());
+}
+
+#[test]
 fn http_exception_uses_unknown_fallback_for_unrecognized_status() {
     let err = HttpException::new(599, "proxy exploded");
 
