@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use bytes::Bytes;
-use http::{HeaderValue, Method, StatusCode};
+use http::{HeaderValue, Method, Request, StatusCode};
 use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
@@ -10,8 +10,8 @@ use nivasa_filters::{
 };
 use nivasa_guards::{ExecutionContext as GuardExecutionContext, Guard, GuardFuture};
 use nivasa_http::{
-    Body, HelmetMiddleware, NextMiddleware, NivasaMiddleware, NivasaRequest, NivasaResponse,
-    NivasaServer, RequestIdMiddleware,
+    Body, ClientIp, ControllerParamExtractor, HelmetMiddleware, NextMiddleware, NivasaMiddleware,
+    NivasaRequest, NivasaResponse, NivasaServer, RequestIdMiddleware,
 };
 use nivasa_routing::RouteMethod;
 use serde_json::json;
@@ -25,6 +25,23 @@ use tokio::{sync::oneshot, time::sleep};
 use uuid::Uuid;
 
 struct PassThroughMiddleware;
+
+#[derive(Clone)]
+struct TestSession {
+    id: &'static str,
+}
+
+struct HeaderTenantExtractor;
+
+impl ControllerParamExtractor<String> for HeaderTenantExtractor {
+    fn extract(&self, request: &NivasaRequest) -> Result<String, HttpException> {
+        request
+            .header("x-tenant")
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| HttpException::bad_request("tenant missing"))
+    }
+}
 
 #[async_trait]
 impl NivasaMiddleware for PassThroughMiddleware {
@@ -841,6 +858,10 @@ fn controller_action_helpers_cover_request_query_body_and_path_extraction() {
         .captures("/users/42")
         .expect("route captures should resolve");
     request.set_path_params(captures);
+    request.set_header("x-action", "go");
+    request.set_header("x-tenant", "acme");
+    request.insert_extension(ClientIp::new("192.0.2.10"));
+    request.insert_extension(TestSession { id: "session-1" });
 
     let request_response = nivasa_http::run_controller_action_with_request(&request, |req| {
         NivasaResponse::text(req.path().to_owned())
@@ -864,6 +885,60 @@ fn controller_action_helpers_cover_request_query_body_and_path_extraction() {
             NivasaResponse::text(body["name"].as_str().unwrap_or_default().to_owned())
         });
     assert_eq!(body_response.body(), &Body::text("Ada"));
+
+    let headers_response = nivasa_http::run_controller_action_with_headers(&request, |headers| {
+        let action = headers
+            .get("x-action")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        NivasaResponse::text(action.to_owned())
+    });
+    assert_eq!(headers_response.body(), &Body::text("go"));
+
+    let header_response = nivasa_http::run_controller_action_with_header::<String, _, _>(
+        &request,
+        "x-action",
+        NivasaResponse::text,
+    );
+    assert_eq!(header_response.body(), &Body::text("go"));
+
+    let ip_response = nivasa_http::run_controller_action_with_ip(&request, NivasaResponse::text);
+    assert_eq!(ip_response.body(), &Body::text("192.0.2.10"));
+
+    let forwarded_request = Request::builder()
+        .method(Method::GET)
+        .uri("/users")
+        .header("forwarded", r#"for="198.51.100.8";proto=https"#)
+        .body(Body::empty())
+        .expect("request must build");
+    let forwarded_request = NivasaRequest::from_http(forwarded_request);
+    let forwarded_response =
+        nivasa_http::run_controller_action_with_ip(&forwarded_request, NivasaResponse::text);
+    assert_eq!(forwarded_response.body(), &Body::text("198.51.100.8"));
+
+    let real_ip_request = Request::builder()
+        .method(Method::GET)
+        .uri("/users")
+        .header("x-real-ip", "203.0.113.9")
+        .body(Body::empty())
+        .expect("request must build");
+    let real_ip_request = NivasaRequest::from_http(real_ip_request);
+    let real_ip_response =
+        nivasa_http::run_controller_action_with_ip(&real_ip_request, NivasaResponse::text);
+    assert_eq!(real_ip_response.body(), &Body::text("203.0.113.9"));
+
+    let session_response =
+        nivasa_http::run_controller_action_with_session::<TestSession, _, _>(&request, |session| {
+            NivasaResponse::text(session.id)
+        });
+    assert_eq!(session_response.body(), &Body::text("session-1"));
+
+    let custom_response = nivasa_http::run_controller_action_with_custom_param(
+        &request,
+        HeaderTenantExtractor,
+        NivasaResponse::text,
+    );
+    assert_eq!(custom_response.body(), &Body::text("acme"));
 
     let contract = nivasa_http::resolve_controller_guard_execution(
         "list",

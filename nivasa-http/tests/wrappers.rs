@@ -6,6 +6,7 @@ use nivasa_http::{
 };
 use nivasa_routing::{RouteDispatchOutcome, RouteDispatchRegistry, RouteMethod, RoutePathCaptures};
 use serde::Deserialize;
+use std::net::{IpAddr, Ipv4Addr};
 
 #[test]
 fn request_wrapper_exposes_basic_parts() {
@@ -144,6 +145,9 @@ fn request_extract_error_display_covers_all_variants() {
             error: "invalid digit".into(),
         },
         RequestExtractError::InvalidQuery("field `page`: invalid digit".into()),
+        RequestExtractError::MissingExtension {
+            type_name: "session",
+        },
     ];
 
     let rendered = errors.map(|error| error.to_string());
@@ -161,6 +165,7 @@ fn request_extract_error_display_covers_all_variants() {
         rendered[9],
         "invalid query string: field `page`: invalid digit"
     );
+    assert_eq!(rendered[10], "request is missing extension `session`");
 }
 
 #[test]
@@ -340,6 +345,34 @@ fn request_wrapper_covers_invalid_uri_and_header_mutation_paths() {
     assert_eq!(parts.method, Method::PATCH);
     assert_eq!(parts.uri.path(), "/");
     assert_eq!(body, Body::text("payload"));
+}
+
+#[test]
+fn request_extensions_cover_typed_insert_lookup_and_extraction() {
+    let mut request = NivasaRequest::new(Method::GET, "/users", Body::empty());
+
+    let missing_ip = request.extract::<IpAddr>().unwrap_err();
+    assert!(matches!(
+        missing_ip,
+        RequestExtractError::MissingExtension { .. }
+    ));
+
+    request
+        .extensions_mut()
+        .insert::<String>("session-123".to_string());
+    assert_eq!(
+        request.extensions().get::<String>().map(String::as_str),
+        Some("session-123")
+    );
+
+    let first_ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    assert_eq!(request.insert_extension(first_ip), None);
+    assert_eq!(request.extension::<IpAddr>().copied(), Some(first_ip));
+    assert_eq!(request.extract::<IpAddr>().unwrap(), first_ip);
+
+    let second_ip = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+    assert_eq!(request.insert_extension(second_ip), Some(first_ip));
+    assert_eq!(request.extract::<IpAddr>().unwrap(), second_ip);
 }
 
 #[test]
