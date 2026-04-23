@@ -75,6 +75,41 @@ fn graphql_from_schema_forwards_variables_and_operation_name() {
 }
 
 #[test]
+fn graphql_from_core_module_maps_schema_errors_and_serves_separate_playground() {
+    let build_module = || {
+        let schema =
+            GraphQLSchema::build(EchoQuery::default(), EmptyMutation, EmptySubscription).finish();
+        let core_module = nivasa_http::graphql::GraphQLCoreModule::from_schema(schema);
+        GraphQLModule::from_graphql_module(core_module)
+            .endpoint_path("/api/graphql")
+            .playground_path("/playground")
+            .title("Admin <GraphQL>")
+    };
+
+    let playground = TestClient::new(build_server(build_module()))
+        .get("/playground")
+        .send_blocking();
+    assert_eq!(playground.status(), 200);
+    let html = playground.text();
+    assert!(html.contains("Admin &lt;GraphQL&gt;"));
+    assert!(html.contains("GraphQL playground for /api/graphql"));
+
+    let response = TestClient::new(build_server(build_module()))
+        .post("/api/graphql")
+        .body(Body::json(json!({
+            "query": "{ missingField }"
+        })))
+        .send_blocking();
+
+    assert_eq!(response.status(), 200);
+    let value: serde_json::Value = response.json();
+    assert!(value["errors"][0]["message"]
+        .as_str()
+        .expect("graphql error message")
+        .contains("Unknown field"));
+}
+
+#[test]
 fn graphql_get_serves_the_playground_ui() {
     let server = build_server(
         GraphQLModule::new(|request: GraphQLRequest| {

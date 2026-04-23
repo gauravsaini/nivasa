@@ -73,6 +73,7 @@ fn subscribe_message_macro_validation() {
     let t = TestCases::new();
     t.compile_fail("tests/trybuild/subscribe_message_invalid_target.rs");
     t.compile_fail("tests/trybuild/subscribe_message_invalid_args.rs");
+    t.compile_fail("tests/trybuild/subscribe_message_empty_name.rs");
     t.compile_fail("tests/trybuild/subscribe_message_guard_requires_arg.rs");
     t.compile_fail("tests/trybuild/subscribe_message_interceptor_requires_arg.rs");
     t.compile_fail("tests/trybuild/subscribe_message_invalid_guard_marker.rs");

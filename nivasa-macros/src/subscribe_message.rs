@@ -9,7 +9,15 @@ const INTERCEPTOR_MARKER_PREFIX: &str = "nivasa-interceptor:";
 
 pub fn subscribe_message(attr: TokenStream, item: TokenStream) -> TokenStream {
     let event = match syn::parse::<LitStr>(attr) {
-        Ok(event) => event,
+        Ok(event) if !event.value().trim().is_empty() => event,
+        Ok(event) => {
+            return Error::new(
+                event.span(),
+                "`#[subscribe_message]` expects a non-empty event name like `#[subscribe_message(\"event_name\")]`",
+            )
+            .to_compile_error()
+            .into();
+        }
         Err(_) => {
             return Error::new(
                 proc_macro2::Span::call_site(),
