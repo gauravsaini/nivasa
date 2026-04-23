@@ -1,4 +1,6 @@
-use nivasa_statechart::{validate_scxml_schema, SchemaValidationError};
+use nivasa_statechart::{
+    validate_scxml_schema, SchemaDiagnostic, SchemaDiagnostics, SchemaValidationError,
+};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -81,4 +83,44 @@ fn schema_invalid_scxml_returns_a_schema_error() {
         }
         other => panic!("expected XSD validation failure, got {other:?}"),
     }
+}
+
+#[test]
+fn schema_diagnostics_display_location_and_multiline_collections() {
+    let first = SchemaDiagnostic {
+        level: "warning".to_string(),
+        message: "first".to_string(),
+        filename: Some("chart.scxml".to_string()),
+        line: Some(7),
+        column: Some(3),
+        domain: 10,
+        code: 20,
+    };
+    assert_eq!(
+        first.to_string(),
+        "chart.scxml:7:3: first (level=warning, domain=10, code=20)"
+    );
+
+    let second = SchemaDiagnostic {
+        level: "none".to_string(),
+        message: "second".to_string(),
+        filename: None,
+        line: None,
+        column: Some(9),
+        domain: 11,
+        code: 21,
+    };
+    let diagnostics = SchemaDiagnostics(vec![first, second]);
+    assert_eq!(
+        diagnostics.to_string(),
+        "chart.scxml:7:3: first (level=warning, domain=10, code=20)\n:9: second (level=none, domain=11, code=21)"
+    );
+
+    let load_error = SchemaValidationError::SchemaLoad {
+        schema_path: PathBuf::from("schema.xsd"),
+        diagnostics,
+    };
+    assert!(load_error
+        .to_string()
+        .contains("failed to load W3C SCXML XSD schema"));
 }

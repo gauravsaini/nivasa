@@ -43,6 +43,14 @@ impl OpenApiControllerMetadataProvider for ManualUsersController {
     }
 }
 
+struct MinimalController;
+
+impl OpenApiControllerMetadataProvider for MinimalController {
+    fn routes() -> Vec<(&'static str, String, &'static str)> {
+        vec![("GET", "/status".to_string(), "status")]
+    }
+}
+
 #[test]
 fn openapi_builder_collects_controller_route_and_api_metadata() {
     let document = build_openapi_document(
@@ -97,6 +105,19 @@ fn openapi_builder_collects_controller_route_and_api_metadata() {
         document.components.security_schemes["bearerAuth"].scheme,
         "bearer"
     );
+}
+
+#[test]
+fn openapi_provider_defaults_optional_metadata_to_empty() {
+    let metadata = OpenApiControllerMetadata::from_provider::<MinimalController>();
+
+    assert_eq!(metadata.routes.len(), 1);
+    assert!(metadata.api_tags.is_empty());
+    assert!(metadata.api_operations.is_empty());
+    assert!(metadata.api_params.is_empty());
+    assert!(metadata.api_responses.is_empty());
+    assert!(metadata.api_bodies.is_empty());
+    assert!(metadata.api_bearer_auth.is_empty());
 }
 
 #[test]

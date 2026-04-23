@@ -173,6 +173,34 @@ async fn test_lazy_dependency_resolves_on_first_access() {
 }
 
 #[tokio::test]
+async fn lazy_errors_do_not_poison_retry_and_clone_reuses_resolver() {
+    let counter = Arc::new(AtomicUsize::new(0));
+    let calls = Arc::clone(&counter);
+    let lazy = Lazy::new(move || {
+        let calls = Arc::clone(&calls);
+        async move {
+            let attempt = calls.fetch_add(1, Ordering::SeqCst);
+            if attempt == 0 {
+                Err(DiError::Registration("not ready".to_string()))
+            } else {
+                Ok(Arc::new(LazyLeaf { id: attempt }))
+            }
+        }
+    });
+    let cloned = lazy.clone();
+
+    assert!(lazy.get().await.is_err());
+    let first = lazy.get().await.unwrap();
+    let second = lazy.get().await.unwrap();
+    let cloned_value = cloned.get().await.unwrap();
+
+    assert_eq!(first.id, 1);
+    assert!(Arc::ptr_eq(&first, &second));
+    assert_eq!(cloned_value.id, 2);
+    assert_eq!(counter.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
 async fn test_register_value_factory_and_diamond_shared_singleton() {
     let container = DependencyContainer::new();
     let counter = Arc::new(AtomicUsize::new(0));
