@@ -2548,6 +2548,125 @@ mod tests {
     }
 
     #[test]
+    fn cors_finalization_and_address_helpers_cover_none_and_trimmed_edges() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ACCESS_CONTROL_REQUEST_METHOD,
+            HeaderValue::from_static("PUT"),
+        );
+        headers.insert(
+            ACCESS_CONTROL_REQUEST_HEADERS,
+            HeaderValue::from_static("x-token"),
+        );
+
+        assert!(allow_methods_header_value(&headers, None).is_none());
+        assert!(allow_headers_header_value(&headers, None).is_none());
+
+        let preflight = build_cors_preflight_nivasa_response(&headers, None, None);
+        assert_eq!(preflight.status(), StatusCode::NO_CONTENT);
+        assert!(preflight
+            .headers()
+            .get(ACCESS_CONTROL_ALLOW_METHODS)
+            .is_none());
+        assert!(preflight
+            .headers()
+            .get(ACCESS_CONTROL_ALLOW_HEADERS)
+            .is_none());
+
+        let cors = CorsOptions::permissive().allow_credentials(true);
+        let finalized = finalize_nivasa_response(
+            NivasaResponse::text("ok"),
+            Some(&cors),
+            Some("https://client.example"),
+            Some("req-123"),
+        );
+        assert_eq!(
+            finalized.headers().get(REQUEST_ID_HEADER).unwrap(),
+            "req-123"
+        );
+        assert_eq!(
+            finalized
+                .headers()
+                .get(ACCESS_CONTROL_ALLOW_ORIGIN)
+                .unwrap(),
+            "https://client.example"
+        );
+        assert_eq!(
+            finalized
+                .headers()
+                .get(ACCESS_CONTROL_ALLOW_CREDENTIALS)
+                .unwrap(),
+            "true"
+        );
+
+        let response = finalize_response(
+            NivasaResponse::text("ok"),
+            Some(&cors),
+            Some("https://client.example"),
+            Some("req-456"),
+        );
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(REQUEST_ID_HEADER).unwrap(),
+            "req-456"
+        );
+        assert_eq!(
+            socket_addr(" 127.0.0.1 ", 3000)
+                .expect("trimmed address should parse")
+                .to_string(),
+            "127.0.0.1:3000"
+        );
+    }
+
+    #[test]
+    fn versioned_route_selection_covers_fallback_and_path_mismatch_edges() {
+        let mut routes = RouteDispatchRegistry::new();
+        let fallback = RouteHandlerBinding::new(|_| NivasaResponse::text("fallback"));
+        let users_v2 = RouteHandlerBinding::new(|_| NivasaResponse::text("v2"));
+        let reports_v2 = RouteHandlerBinding::new(|_| NivasaResponse::text("reports"));
+
+        routes
+            .register(
+                RouteMethod::Get,
+                RoutePattern::parse("/users".to_string()).unwrap(),
+                fallback,
+            )
+            .unwrap();
+        routes
+            .register_versioned(
+                RouteMethod::Get,
+                RoutePattern::parse("/users".to_string()).unwrap(),
+                Some("v2".to_string()),
+                users_v2,
+            )
+            .unwrap();
+        routes
+            .register_versioned(
+                RouteMethod::Get,
+                RoutePattern::parse("/reports".to_string()).unwrap(),
+                Some("v2".to_string()),
+                reports_v2,
+            )
+            .unwrap();
+
+        let mut exact = NivasaRequest::new(Method::GET, "/users", Body::empty());
+        exact.set_header("X-API-Version", "2");
+        let selected = versioned_routes_for_request(&exact, &routes);
+        assert!(selected.resolve_entry("GET", "/users").is_some());
+        assert_eq!(selected.len(), 1);
+
+        let mut fallback_request = NivasaRequest::new(Method::GET, "/users", Body::empty());
+        fallback_request.set_header("X-API-Version", "9");
+        let selected = versioned_routes_for_request(&fallback_request, &routes);
+        assert!(selected.resolve_entry("GET", "/users").is_some());
+        assert_eq!(selected.len(), 1);
+
+        let no_path_match = NivasaRequest::new(Method::GET, "/missing", Body::empty());
+        let selected = versioned_routes_for_request(&no_path_match, &routes);
+        assert!(selected.is_empty());
+    }
+
+    #[test]
     fn request_context_from_request_seeds_request_metadata_and_authorization() {
         let mut request = NivasaRequest::new(Method::POST, "/users/42", Body::text("payload"));
         request.set_header(AUTHORIZATION.as_str(), "Bearer header.payload.signature");
