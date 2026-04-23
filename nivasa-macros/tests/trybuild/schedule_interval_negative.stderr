@@ -1,0 +1,5 @@
+error: `#[interval]` expects a millisecond integer like `#[interval(5000)]`
+ --> tests/trybuild/schedule_interval_negative.rs:6:16
+  |
+6 |     #[interval(-1)]
+  |                ^

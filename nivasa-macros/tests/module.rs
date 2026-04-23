@@ -10,5 +10,6 @@ fn module_macro_validation() {
     t.compile_fail("tests/trybuild/module_interceptor_empty.rs");
     t.compile_fail("tests/trybuild/module_roles_empty.rs");
     t.compile_fail("tests/trybuild/module_set_metadata_missing_key.rs");
+    t.compile_fail("tests/trybuild/module_set_metadata_missing_value.rs");
     t.compile_fail("tests/trybuild/module_set_metadata_empty_value.rs");
 }
