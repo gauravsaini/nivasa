@@ -162,3 +162,170 @@ fn http_status_into_exception_uses_typed_reason_phrase() {
     assert_eq!(err.error, "I'm a teapot");
     assert_eq!(err.to_string(), "418 I'm a teapot: short and stout");
 }
+
+#[test]
+fn http_status_variants_roundtrip_through_numeric_and_http_types() {
+    let variants = [
+        HttpStatus::Continue,
+        HttpStatus::SwitchingProtocols,
+        HttpStatus::Processing,
+        HttpStatus::EarlyHints,
+        HttpStatus::Ok,
+        HttpStatus::Created,
+        HttpStatus::Accepted,
+        HttpStatus::NonAuthoritativeInformation,
+        HttpStatus::NoContent,
+        HttpStatus::ResetContent,
+        HttpStatus::PartialContent,
+        HttpStatus::MultiStatus,
+        HttpStatus::AlreadyReported,
+        HttpStatus::ImUsed,
+        HttpStatus::MultipleChoices,
+        HttpStatus::MovedPermanently,
+        HttpStatus::Found,
+        HttpStatus::SeeOther,
+        HttpStatus::NotModified,
+        HttpStatus::UseProxy,
+        HttpStatus::TemporaryRedirect,
+        HttpStatus::PermanentRedirect,
+        HttpStatus::BadRequest,
+        HttpStatus::Unauthorized,
+        HttpStatus::PaymentRequired,
+        HttpStatus::Forbidden,
+        HttpStatus::NotFound,
+        HttpStatus::MethodNotAllowed,
+        HttpStatus::NotAcceptable,
+        HttpStatus::ProxyAuthenticationRequired,
+        HttpStatus::RequestTimeout,
+        HttpStatus::Conflict,
+        HttpStatus::Gone,
+        HttpStatus::LengthRequired,
+        HttpStatus::PreconditionFailed,
+        HttpStatus::PayloadTooLarge,
+        HttpStatus::UriTooLong,
+        HttpStatus::UnsupportedMediaType,
+        HttpStatus::RangeNotSatisfiable,
+        HttpStatus::ExpectationFailed,
+        HttpStatus::ImATeapot,
+        HttpStatus::MisdirectedRequest,
+        HttpStatus::UnprocessableEntity,
+        HttpStatus::Locked,
+        HttpStatus::FailedDependency,
+        HttpStatus::TooEarly,
+        HttpStatus::UpgradeRequired,
+        HttpStatus::PreconditionRequired,
+        HttpStatus::TooManyRequests,
+        HttpStatus::RequestHeaderFieldsTooLarge,
+        HttpStatus::UnavailableForLegalReasons,
+        HttpStatus::InternalServerError,
+        HttpStatus::NotImplemented,
+        HttpStatus::BadGateway,
+        HttpStatus::ServiceUnavailable,
+        HttpStatus::GatewayTimeout,
+        HttpStatus::HttpVersionNotSupported,
+        HttpStatus::VariantAlsoNegotiates,
+        HttpStatus::InsufficientStorage,
+        HttpStatus::LoopDetected,
+        HttpStatus::NotExtended,
+        HttpStatus::NetworkAuthenticationRequired,
+    ];
+
+    for variant in variants {
+        let code = variant.as_u16();
+        let status_code = variant.to_http_status_code();
+        let display = variant.to_string();
+
+        assert_eq!(u16::from(variant), code);
+        assert_eq!(status_code.as_u16(), code);
+        assert_eq!(HttpStatus::try_from(code), Ok(variant));
+        assert_eq!(HttpStatus::try_from(status_code), Ok(variant));
+        assert!(display.starts_with(&format!("{code} ")));
+        assert!(display.ends_with(variant.reason_phrase()));
+        assert!(!variant.reason_phrase().is_empty());
+    }
+}
+
+#[test]
+fn http_status_class_helpers_track_numeric_ranges_for_every_variant() {
+    let variants = [
+        HttpStatus::Continue,
+        HttpStatus::SwitchingProtocols,
+        HttpStatus::Processing,
+        HttpStatus::EarlyHints,
+        HttpStatus::Ok,
+        HttpStatus::Created,
+        HttpStatus::Accepted,
+        HttpStatus::NonAuthoritativeInformation,
+        HttpStatus::NoContent,
+        HttpStatus::ResetContent,
+        HttpStatus::PartialContent,
+        HttpStatus::MultiStatus,
+        HttpStatus::AlreadyReported,
+        HttpStatus::ImUsed,
+        HttpStatus::MultipleChoices,
+        HttpStatus::MovedPermanently,
+        HttpStatus::Found,
+        HttpStatus::SeeOther,
+        HttpStatus::NotModified,
+        HttpStatus::UseProxy,
+        HttpStatus::TemporaryRedirect,
+        HttpStatus::PermanentRedirect,
+        HttpStatus::BadRequest,
+        HttpStatus::Unauthorized,
+        HttpStatus::PaymentRequired,
+        HttpStatus::Forbidden,
+        HttpStatus::NotFound,
+        HttpStatus::MethodNotAllowed,
+        HttpStatus::NotAcceptable,
+        HttpStatus::ProxyAuthenticationRequired,
+        HttpStatus::RequestTimeout,
+        HttpStatus::Conflict,
+        HttpStatus::Gone,
+        HttpStatus::LengthRequired,
+        HttpStatus::PreconditionFailed,
+        HttpStatus::PayloadTooLarge,
+        HttpStatus::UriTooLong,
+        HttpStatus::UnsupportedMediaType,
+        HttpStatus::RangeNotSatisfiable,
+        HttpStatus::ExpectationFailed,
+        HttpStatus::ImATeapot,
+        HttpStatus::MisdirectedRequest,
+        HttpStatus::UnprocessableEntity,
+        HttpStatus::Locked,
+        HttpStatus::FailedDependency,
+        HttpStatus::TooEarly,
+        HttpStatus::UpgradeRequired,
+        HttpStatus::PreconditionRequired,
+        HttpStatus::TooManyRequests,
+        HttpStatus::RequestHeaderFieldsTooLarge,
+        HttpStatus::UnavailableForLegalReasons,
+        HttpStatus::InternalServerError,
+        HttpStatus::NotImplemented,
+        HttpStatus::BadGateway,
+        HttpStatus::ServiceUnavailable,
+        HttpStatus::GatewayTimeout,
+        HttpStatus::HttpVersionNotSupported,
+        HttpStatus::VariantAlsoNegotiates,
+        HttpStatus::InsufficientStorage,
+        HttpStatus::LoopDetected,
+        HttpStatus::NotExtended,
+        HttpStatus::NetworkAuthenticationRequired,
+    ];
+
+    for variant in variants {
+        let code = variant.as_u16();
+
+        assert_eq!(variant.is_informational(), (100..=199).contains(&code));
+        assert_eq!(variant.is_success(), (200..=299).contains(&code));
+        assert_eq!(variant.is_redirection(), (300..=399).contains(&code));
+        assert_eq!(variant.is_client_error(), (400..=499).contains(&code));
+        assert_eq!(variant.is_server_error(), (500..=599).contains(&code));
+    }
+}
+
+#[test]
+fn invalid_http_status_displays_human_readable_message() {
+    let err = InvalidHttpStatus(777);
+
+    assert_eq!(err.to_string(), "unsupported standard HTTP status code: 777");
+}
