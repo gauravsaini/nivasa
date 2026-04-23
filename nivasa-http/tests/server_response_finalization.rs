@@ -1,8 +1,9 @@
 use bytes::Bytes;
 use http::{
     header::{
-        ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_REQUEST_METHOD,
-        ORIGIN,
+        ACCESS_CONTROL_ALLOW_CREDENTIALS, ACCESS_CONTROL_ALLOW_HEADERS,
+        ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_REQUEST_HEADERS,
+        ACCESS_CONTROL_REQUEST_METHOD, ORIGIN,
     },
     Method, StatusCode,
 };
@@ -233,6 +234,163 @@ async fn server_generates_request_id_for_success_responses_even_when_handler_set
     Uuid::parse_str(&request_id).expect("server should seed a UUID request id");
     let body = response.into_body().collect().await?.to_bytes();
     assert_eq!(body, Bytes::from_static(b"ok"));
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn credentialed_cors_without_origin_sets_credentials_but_not_allow_origin(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .route(RouteMethod::Get, "/cors", |_| NivasaResponse::text("ok"))
+        .expect("route must register")
+        .cors_options(CorsOptions::permissive().allow_credentials(true))
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Empty<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("http://127.0.0.1:{port}/cors"))
+        .body(Empty::<Bytes>::new())?;
+
+    let response = client.request(request).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response
+        .headers()
+        .get(ACCESS_CONTROL_ALLOW_ORIGIN)
+        .is_none());
+    assert_eq!(
+        response
+            .headers()
+            .get(ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .expect("credentialed cors header should be present"),
+        "true"
+    );
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn cors_preflight_echoes_options_and_requested_headers_when_not_pinned(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .route(RouteMethod::Get, "/cors", |_| NivasaResponse::text("ok"))
+        .expect("route must register")
+        .enable_cors()
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Empty<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let preflight = http::Request::builder()
+        .method(Method::OPTIONS)
+        .uri(format!("http://127.0.0.1:{port}/cors"))
+        .header(ORIGIN, "https://app.example")
+        .header(ACCESS_CONTROL_REQUEST_METHOD, "OPTIONS")
+        .header(ACCESS_CONTROL_REQUEST_HEADERS, "x-demo, authorization")
+        .body(Empty::<Bytes>::new())?;
+
+    let response = client.request(preflight).await?;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        response
+            .headers()
+            .get(ACCESS_CONTROL_ALLOW_METHODS)
+            .expect("allow methods header should echo OPTIONS"),
+        "OPTIONS"
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(ACCESS_CONTROL_ALLOW_HEADERS)
+            .expect("allow headers should echo requested headers"),
+        "x-demo, authorization"
+    );
+
+    drop(client);
+    let _ = shutdown_tx.send(());
+    timeout(Duration::from_secs(2), server_task).await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn cors_preflight_empty_allow_lists_suppress_method_and_header_echo(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = NivasaServer::builder()
+        .route(RouteMethod::Get, "/cors", |_| NivasaResponse::text("ok"))
+        .expect("route must register")
+        .cors_options(
+            CorsOptions::permissive()
+                .allow_methods(Vec::<Method>::new())
+                .allow_headers(Vec::<String>::new()),
+        )
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move {
+        server
+            .listen("127.0.0.1", port)
+            .await
+            .expect("server must stop cleanly");
+    });
+
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Empty<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let preflight = http::Request::builder()
+        .method(Method::OPTIONS)
+        .uri(format!("http://127.0.0.1:{port}/cors"))
+        .header(ORIGIN, "https://app.example")
+        .header(ACCESS_CONTROL_REQUEST_METHOD, "GET")
+        .header(ACCESS_CONTROL_REQUEST_HEADERS, "x-demo")
+        .body(Empty::<Bytes>::new())?;
+
+    let response = client.request(preflight).await?;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(response
+        .headers()
+        .get(ACCESS_CONTROL_ALLOW_METHODS)
+        .is_none());
+    assert!(response
+        .headers()
+        .get(ACCESS_CONTROL_ALLOW_HEADERS)
+        .is_none());
 
     drop(client);
     let _ = shutdown_tx.send(());
