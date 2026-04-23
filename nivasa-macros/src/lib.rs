@@ -58,6 +58,7 @@ mod controller;
 mod filter;
 mod graphql;
 mod injectable;
+mod marker_metadata;
 mod middleware;
 mod module_macro;
 mod on_event;
