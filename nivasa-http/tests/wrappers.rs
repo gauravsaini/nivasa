@@ -14,6 +14,11 @@ fn request_wrapper_exposes_basic_parts() {
     assert_eq!(request.method(), Method::POST);
     assert_eq!(request.path(), "/users/42");
     assert_eq!(request.body().as_bytes(), b"hello");
+
+    let cloned = NivasaRequest::from_request(&request).expect("request clone extracts");
+    let inner: Request<Body> = cloned.into();
+    assert_eq!(inner.method(), Method::POST);
+    assert_eq!(inner.uri().path(), "/users/42");
 }
 
 #[test]
@@ -111,6 +116,51 @@ fn request_extraction_supports_single_query_and_header_values() {
         request.header_typed::<u32>("missing"),
         Err(RequestExtractError::MissingHeader { .. })
     ));
+}
+
+#[test]
+fn request_extract_error_display_covers_all_variants() {
+    let errors = [
+        RequestExtractError::MissingBody,
+        RequestExtractError::MissingPathParameters,
+        RequestExtractError::MissingPathParameter { name: "id".into() },
+        RequestExtractError::MissingQueryParameter {
+            name: "page".into(),
+        },
+        RequestExtractError::MissingHeader {
+            name: "x-token".into(),
+        },
+        RequestExtractError::InvalidBody("bad json".into()),
+        RequestExtractError::InvalidPathParameter {
+            name: "id".into(),
+            error: "invalid digit".into(),
+        },
+        RequestExtractError::InvalidQueryParameter {
+            name: "page".into(),
+            error: "invalid digit".into(),
+        },
+        RequestExtractError::InvalidHeader {
+            name: "x-count".into(),
+            error: "invalid digit".into(),
+        },
+        RequestExtractError::InvalidQuery("field `page`: invalid digit".into()),
+    ];
+
+    let rendered = errors.map(|error| error.to_string());
+
+    assert_eq!(rendered[0], "request body is empty");
+    assert_eq!(rendered[1], "request has no captured path parameters");
+    assert_eq!(rendered[2], "request is missing path parameter `id`");
+    assert_eq!(rendered[3], "request is missing query parameter `page`");
+    assert_eq!(rendered[4], "request is missing header `x-token`");
+    assert_eq!(rendered[5], "invalid request body: bad json");
+    assert_eq!(rendered[6], "invalid path parameter `id`: invalid digit");
+    assert_eq!(rendered[7], "invalid query parameter `page`: invalid digit");
+    assert_eq!(rendered[8], "invalid header `x-count`: invalid digit");
+    assert_eq!(
+        rendered[9],
+        "invalid query string: field `page`: invalid digit"
+    );
 }
 
 #[test]
