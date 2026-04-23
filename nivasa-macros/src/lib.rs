@@ -68,8 +68,6 @@ mod validation;
 mod websocket_gateway;
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote};
-use syn::{Error, FnArg, ImplItemFn, LitStr};
 
 #[proc_macro_attribute]
 /// Mark a module container for Nivasa's DI graph.
@@ -364,61 +362,7 @@ pub fn subscription(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 /// Register a cron schedule handler method.
 pub fn cron(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let expression = match syn::parse::<LitStr>(attr) {
-        Ok(expression) if !expression.value().trim().is_empty() => expression,
-        Ok(expression) => {
-            return Error::new(
-                expression.span(),
-                "`#[cron]` expects a non-empty cron expression like `#[cron(\"0 */5 * * * *\")]`",
-            )
-            .to_compile_error()
-            .into();
-        }
-        Err(_) => {
-            return Error::new(
-                proc_macro2::Span::call_site(),
-                "`#[cron]` expects a cron expression like `#[cron(\"0 */5 * * * *\")]`",
-            )
-            .to_compile_error()
-            .into();
-        }
-    };
-
-    let method = match syn::parse::<ImplItemFn>(item) {
-        Ok(method) => method,
-        Err(_) => {
-            return Error::new(
-                proc_macro2::Span::call_site(),
-                "`#[cron]` only supports inherent methods",
-            )
-            .to_compile_error()
-            .into();
-        }
-    };
-
-    if !matches!(method.sig.inputs.first(), Some(FnArg::Receiver(_))) {
-        return Error::new(
-            method.sig.ident.span(),
-            "`#[cron]` only supports inherent methods",
-        )
-        .to_compile_error()
-        .into();
-    }
-
-    let method_name = &method.sig.ident;
-    let helper_name = format_ident!("__nivasa_cron_metadata_for_{}", method_name);
-    let schedule_path = quote! {
-        ::nivasa_scheduling::SchedulePattern::cron(#expression)
-    };
-
-    quote! {
-        #method
-
-        pub fn #helper_name() -> ::nivasa_scheduling::SchedulePattern {
-            #schedule_path
-        }
-    }
-    .into()
+    schedule::cron(attr, item)
 }
 
 #[proc_macro_attribute]

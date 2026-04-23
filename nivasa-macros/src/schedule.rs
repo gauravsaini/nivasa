@@ -2,7 +2,6 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Error, FnArg, ImplItemFn, LitInt, LitStr};
 
-#[allow(dead_code)]
 pub fn cron(attr: TokenStream, item: TokenStream) -> TokenStream {
     let expression = match syn::parse::<LitStr>(attr) {
         Ok(expression) if !expression.value().trim().is_empty() => expression,
