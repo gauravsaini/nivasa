@@ -1,0 +1,5 @@
+error: invalid module roles marker
+ --> tests/trybuild/module_doc_roles_invalid.rs:3:1
+  |
+3 | /// __NIVASA_ROLES__ , ,
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
