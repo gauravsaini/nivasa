@@ -1042,7 +1042,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 10.1 — Testing
 - [ ] Achieve >95% code coverage across all crates
-  - latest full workspace `cargo llvm-cov --workspace --summary-only` is green but below target at 88.70% line / 88.63% region coverage; top remaining miss buckets are `nivasa-macros/src/controller.rs`, `nivasa-http/src/server.rs`, `nivasa-cli/src/main.rs`, `nivasa-routing/src/lib.rs`, `nivasa/src/application.rs`, and macro helper files (`graphql.rs`, `injectable.rs`, `on_event.rs`, `schedule.rs`, `scxml_handler.rs`, `subscribe_message.rs`)
+  - latest full workspace `cargo llvm-cov --workspace --summary-only` is green but below target at 89.60% line / 89.40% region coverage; recent coverage slices lifted CLI helpers, core lazy/dynamic/event-emitter helpers, routing helpers, SCXML handler/schema/types edges, and OpenAPI metadata defaults; top remaining miss buckets are `nivasa-macros/src/controller.rs`, `nivasa-http/src/server.rs`, `nivasa-http/src/lib.rs`, `nivasa/src/application.rs`, core module registry/runtime, and macro helper files (`graphql.rs`, `injectable.rs`, `on_event.rs`, `schedule.rs`, `subscribe_message.rs`)
 - [x] Add in-process request lifecycle integration coverage (middleware → guard → interceptor → handler → Done)
 - [x] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
 - [x] Write integration tests: module composition (nested modules, imports/exports)
