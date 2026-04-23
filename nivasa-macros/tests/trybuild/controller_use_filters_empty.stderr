@@ -1,0 +1,15 @@
+error: `#[use_filters]` requires at least one filter type
+ --> tests/trybuild/controller_use_filters_empty.rs:3:1
+  |
+3 | #[use_filters()]
+  | ^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `use_filters` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused import: `controller`
+ --> tests/trybuild/controller_use_filters_empty.rs:1:21
+  |
+1 | use nivasa_macros::{controller, use_filters};
+  |                     ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default

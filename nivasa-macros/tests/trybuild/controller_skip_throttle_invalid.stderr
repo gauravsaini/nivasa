@@ -1,0 +1,5 @@
+error: `#[skip_throttle]` does not accept arguments
+ --> tests/trybuild/controller_skip_throttle_invalid.rs:4:1
+  |
+4 | #[nivasa_macros::skip_throttle(true)]
+  | ^
