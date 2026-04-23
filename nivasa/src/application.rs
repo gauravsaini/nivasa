@@ -1074,6 +1074,116 @@ mod openapi_tests {
             "string"
         );
     }
+
+    #[test]
+    fn openapi_document_bridge_preserves_full_operation_shape() {
+        use std::collections::BTreeMap;
+
+        let mut security = BTreeMap::new();
+        security.insert("bearerAuth".to_string(), vec!["read:docs".to_string()]);
+
+        let document = OpenApiDocument {
+            openapi: "3.1.0".to_string(),
+            info: crate::openapi::OpenApiInfo {
+                title: "Admin".to_string(),
+                version: "2.0.0".to_string(),
+            },
+            paths: BTreeMap::from([(
+                "/admin".to_string(),
+                BTreeMap::from([(
+                    "post".to_string(),
+                    OpenApiOperation {
+                        tags: vec!["Admin".to_string()],
+                        summary: None,
+                        parameters: vec![OpenApiParameter {
+                            name: "tenant".to_string(),
+                            location: "header".to_string(),
+                            description: "Tenant id".to_string(),
+                            required: false,
+                            schema: crate::openapi::OpenApiInlineSchema {
+                                schema_type: "uuid".to_string(),
+                            },
+                        }],
+                        request_body: Some(OpenApiRequestBody {
+                            required: true,
+                            content: BTreeMap::from([(
+                                "application/json".to_string(),
+                                OpenApiMediaType {
+                                    schema_ref: "#/components/schemas/CreateAdmin".to_string(),
+                                },
+                            )]),
+                        }),
+                        responses: BTreeMap::from([(
+                            "201".to_string(),
+                            OpenApiResponse {
+                                description: "created".to_string(),
+                                content: BTreeMap::from([(
+                                    "application/json".to_string(),
+                                    OpenApiMediaType {
+                                        schema_ref: "#/components/schemas/Admin".to_string(),
+                                    },
+                                )]),
+                            },
+                        )]),
+                        security: vec![security],
+                    },
+                )]),
+            )]),
+            components: OpenApiComponents {
+                schemas: BTreeMap::from([(
+                    "Admin".to_string(),
+                    crate::openapi::OpenApiSchema {
+                        schema_type: "object".to_string(),
+                    },
+                )]),
+                security_schemes: BTreeMap::from([
+                    (
+                        "bearerAuth".to_string(),
+                        crate::openapi::OpenApiSecurityScheme {
+                            scheme_type: "http".to_string(),
+                            scheme: "bearer".to_string(),
+                            bearer_format: Some("JWT".to_string()),
+                        },
+                    ),
+                    (
+                        "apiKey".to_string(),
+                        crate::openapi::OpenApiSecurityScheme {
+                            scheme_type: "apiKey".to_string(),
+                            scheme: "header".to_string(),
+                            bearer_format: None,
+                        },
+                    ),
+                ]),
+            },
+        };
+
+        let value = openapi_document_to_value(&document);
+
+        assert_eq!(value["openapi"], "3.1.0");
+        assert_eq!(value["paths"]["/admin"]["post"]["summary"], Value::Null);
+        assert_eq!(
+            value["paths"]["/admin"]["post"]["requestBody"]["content"]["application/json"]
+                ["schema"]["$ref"],
+            "#/components/schemas/CreateAdmin"
+        );
+        assert_eq!(
+            value["paths"]["/admin"]["post"]["responses"]["201"]["content"]["application/json"]
+                ["schema"]["$ref"],
+            "#/components/schemas/Admin"
+        );
+        assert_eq!(
+            value["paths"]["/admin"]["post"]["security"][0]["bearerAuth"][0],
+            "read:docs"
+        );
+        assert_eq!(
+            value["components"]["securitySchemes"]["bearerAuth"]["bearerFormat"],
+            "JWT"
+        );
+        assert_eq!(
+            value["components"]["securitySchemes"]["apiKey"]["bearerFormat"],
+            Value::Null
+        );
+    }
 }
 
 /// Fluent builder for [`ServerOptions`].
@@ -1328,6 +1438,7 @@ mod docs_tests {
         assert!(!options.cors);
         assert_eq!(options.global_prefix, None);
         assert_eq!(options.versioning, None);
+        assert_eq!(options.listen_address(), "127.0.0.1:3000");
     }
 
     #[test]
@@ -1483,5 +1594,62 @@ mod docs_tests {
             di_error.to_string(),
             "Provider not found for type: DemoService"
         );
+    }
+
+    #[test]
+    fn display_errors_and_startup_report_cover_user_facing_strings() {
+        let preflight = AppBuildError::PreflightValidation {
+            message: "missing DATABASE_URL".to_string(),
+        };
+        let duplicate = AppBuildError::DuplicateRoute {
+            method: "GET".to_string(),
+            path: "/health".to_string(),
+        };
+        let missing = AppBuildError::MissingRouteHandler {
+            handler: "HealthController::check".to_string(),
+        };
+        let report = AppStartupReport {
+            banner: "Nivasa".to_string(),
+            root_module: "AppModule",
+            routes_registered: 2,
+            listen_address: "[::1]:3000".to_string(),
+        };
+
+        assert_eq!(
+            preflight.to_string(),
+            "preflight validation failed: missing DATABASE_URL"
+        );
+        assert_eq!(
+            duplicate.to_string(),
+            "duplicate route `GET /health` while building app"
+        );
+        assert_eq!(
+            missing.to_string(),
+            "missing route handler `HealthController::check` while building app server"
+        );
+        assert_eq!(
+            report.lines(),
+            vec![
+                "Nivasa".to_string(),
+                "root module loaded: AppModule".to_string(),
+                "routes registered: 2".to_string(),
+                "listen address: [::1]:3000".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn address_and_swagger_path_normalization_cover_edge_cases() {
+        let defaulted = AppBootstrapConfig::default()
+            .with_openapi_spec_path("   ")
+            .with_swagger_ui_path("   ");
+        let rooted = AppBootstrapConfig::default().with_swagger_ui_path("/docs/");
+
+        assert_eq!(defaulted.openapi_spec_path(), DEFAULT_OPENAPI_SPEC_PATH);
+        assert_eq!(defaulted.swagger_ui_path(), DEFAULT_SWAGGER_UI_PATH);
+        assert_eq!(rooted.swagger_ui_path(), "/docs/");
+        assert_eq!(format_listen_address("::1", 3000), "[::1]:3000");
+        assert_eq!(format_listen_address("[::1]", 3000), "[::1]:3000");
+        assert!(startup_banner().contains(env!("CARGO_PKG_VERSION")));
     }
 }

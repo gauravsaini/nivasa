@@ -1042,7 +1042,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 10.1 — Testing
 - [ ] Achieve >95% code coverage across all crates
-  - recent HTTP coverage-gap work added explicit coverage for request-context authorization seeding in `nivasa-http/src/server.rs` and the guard-error request path, but the `>95%` threshold is still unproven; `cargo llvm-cov` can start with local LLVM overrides, but the workspace coverage run currently stops on a public API surface mismatch in `nivasa/tests/public_api.rs`, so the enforcement gate stays blocked until that test surface is aligned
+  - latest full workspace `cargo llvm-cov --workspace --summary-only` is green but below target at ~86.75% line / ~86.74% region coverage; recent follow-up slices added macro schedule/controller/module coverage and umbrella app OpenAPI/startup/error-display coverage, but the `>95%` threshold remains open
 - [x] Add in-process request lifecycle integration coverage (middleware → guard → interceptor → handler → Done)
 - [x] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
 - [x] Write integration tests: module composition (nested modules, imports/exports)
