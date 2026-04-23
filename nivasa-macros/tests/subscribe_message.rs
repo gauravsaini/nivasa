@@ -20,6 +20,16 @@ impl ChatGateway {
     }
 }
 
+#[websocket_gateway("/direct-ws")]
+struct DirectAttrChatGateway;
+
+impl DirectAttrChatGateway {
+    #[subscribe_message("chat.direct")]
+    #[nivasa_macros::guard(RoomGuard)]
+    #[interceptor(AuditInterceptor)]
+    fn on_direct(&self) {}
+}
+
 #[test]
 fn subscribe_message_macro_emits_handler_metadata() {
     assert_eq!(
@@ -36,6 +46,16 @@ fn subscribe_message_macro_emits_handler_metadata() {
     );
     let gateway = ChatGateway;
     assert_eq!(gateway.on_join("general".to_string()), "joined:general");
+
+    assert_eq!(
+        DirectAttrChatGateway::__nivasa_subscribe_message_guard_metadata_for_on_direct(),
+        vec!["RoomGuard"],
+    );
+    assert_eq!(
+        DirectAttrChatGateway::__nivasa_subscribe_message_interceptor_metadata_for_on_direct(),
+        vec!["AuditInterceptor"],
+    );
+    DirectAttrChatGateway.on_direct();
 }
 
 #[allow(dead_code)]

@@ -31,6 +31,15 @@ impl GraphqlGateway {
     }
 }
 
+struct DirectAttrGraphqlGateway;
+
+impl DirectAttrGraphqlGateway {
+    #[resolver("directUsers")]
+    #[nivasa_macros::guard(QueryGuard)]
+    #[interceptor(AuditInterceptor)]
+    fn users(&self) {}
+}
+
 #[test]
 fn graphql_macros_emit_handler_metadata() {
     assert_eq!(
@@ -66,6 +75,16 @@ fn graphql_macros_emit_handler_metadata() {
     );
     assert_eq!(gateway.create_user("delta".to_string()), "created:delta");
     assert_eq!(gateway.user_created("42".to_string()), "subscribed:42");
+
+    assert_eq!(
+        DirectAttrGraphqlGateway::__nivasa_graphql_resolver_guard_metadata_for_users(),
+        vec!["QueryGuard"],
+    );
+    assert_eq!(
+        DirectAttrGraphqlGateway::__nivasa_graphql_resolver_interceptor_metadata_for_users(),
+        vec!["AuditInterceptor"],
+    );
+    DirectAttrGraphqlGateway.users();
 }
 
 #[allow(dead_code)]
