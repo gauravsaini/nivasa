@@ -45,3 +45,10 @@ fn swagger_ui_assets_render_custom_metadata() {
     assert!(body.contains(r#"<span class="swagger-ui-version">v2.3.4</span>"#));
     assert!(body.contains(r#"url: "/docs/openapi.json""#));
 }
+
+#[test]
+fn swagger_ui_assets_default_blank_spec_url() {
+    let assets = swagger_ui_assets("   ");
+
+    assert!(assets[0].body.contains(r#"url: "/api/docs/openapi.json""#));
+}

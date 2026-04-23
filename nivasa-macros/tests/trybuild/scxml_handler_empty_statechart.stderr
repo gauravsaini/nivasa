@@ -1,0 +1,5 @@
+error: `statechart` cannot be empty
+ --> tests/trybuild/scxml_handler_empty_statechart.rs:3:30
+  |
+3 | #[scxml_handler(statechart = "", state = "guard_chain")]
+  |                              ^^

@@ -83,10 +83,7 @@ fn throttler_options_defaults_and_marker_module_are_stable() {
     assert_eq!(options.ttl, Duration::from_secs(60));
     assert!(!options.is_global);
     assert_eq!(module, ThrottlerModule);
-    assert_eq!(
-        ThrottlerOptionsProvider,
-        ThrottlerOptionsProvider::default()
-    );
+    assert_eq!(ThrottlerOptionsProvider, ThrottlerOptionsProvider);
 }
 
 #[test]

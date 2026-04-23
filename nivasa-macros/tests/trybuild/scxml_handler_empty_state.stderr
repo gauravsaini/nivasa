@@ -1,0 +1,5 @@
+error: `state` cannot be empty
+ --> tests/trybuild/scxml_handler_empty_state.rs:3:49
+  |
+3 | #[scxml_handler(statechart = "request", state = "")]
+  |                                                 ^^

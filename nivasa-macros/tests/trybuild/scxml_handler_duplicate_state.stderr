@@ -1,0 +1,5 @@
+error: duplicate `state` argument
+ --> tests/trybuild/scxml_handler_duplicate_state.rs:3:64
+  |
+3 | #[scxml_handler(statechart = "request", state = "guard_chain", state = "done")]
+  |                                                                ^^^^^

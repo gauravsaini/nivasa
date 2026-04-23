@@ -1,0 +1,5 @@
+error: `state` must be a single SCXML state identifier, not a path
+ --> tests/trybuild/scxml_handler_invalid_state_path.rs:3:49
+  |
+3 | #[scxml_handler(statechart = "request", state = "../guard_chain")]
+  |                                                 ^^^^^^^^^^^^^^^^

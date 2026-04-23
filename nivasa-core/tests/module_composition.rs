@@ -348,7 +348,10 @@ async fn orchestrator_hook_sets_only_fire_their_selected_callbacks() {
 
     let module_lifecycle =
         run_with_hooks(nivasa_core::module::ModuleHookSet::module_lifecycle()).await;
-    assert_eq!(module_lifecycle, &["probe.configure", "probe.init", "probe.destroy"]);
+    assert_eq!(
+        module_lifecycle,
+        &["probe.configure", "probe.init", "probe.destroy"]
+    );
 
     let application_lifecycle =
         run_with_hooks(nivasa_core::module::ModuleHookSet::application_lifecycle()).await;

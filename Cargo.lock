@@ -1954,6 +1954,7 @@ dependencies = [
  "nivasa-http",
  "nivasa-pipes",
  "nivasa-routing",
+ "nivasa-scheduling",
  "nivasa-validation",
  "proc-macro2",
  "quick-xml",

@@ -45,8 +45,8 @@ macro_rules! shared_reexports {
         };
         pub use nivasa_core::module::{
             ConfigurableModule, ControllerRouteRegistration, DynamicModule,
-            ModuleControllerRegistration, ModuleHookSet, ModuleLifecycleError,
-            ModuleOrchestrator, ModuleOrchestratorError, ModuleRuntime,
+            ModuleControllerRegistration, ModuleHookSet, ModuleLifecycleError, ModuleOrchestrator,
+            ModuleOrchestratorError, ModuleRuntime,
         };
         pub use nivasa_core::{
             DependencyContainer, DiError, Module, ModuleEntry, ModuleMetadata, ModuleRegistry,
@@ -87,18 +87,17 @@ macro_rules! shared_reexports {
         };
         pub use nivasa_macros::{
             all, body, controller, custom_param, delete, file, files, get, head, header, headers,
-            http_code, impl_controller, injectable, ip, module, options, param, patch, post,
-            put, query, req, res, scxml_handler, session, use_filters,
+            http_code, impl_controller, injectable, ip, module, options, param, patch, post, put,
+            query, req, res, scxml_handler, session, use_filters,
         };
         pub use nivasa_pipes as pipes;
         pub use nivasa_pipes::{ArgumentMetadata, Pipe};
         pub use nivasa_routing::Controller;
         pub use nivasa_statechart::{
-            GENERATED_STATECHARTS, NivasaApplicationEvent, NivasaApplicationState,
-            NivasaApplicationStatechart, NivasaModuleEvent, NivasaModuleState,
-            NivasaModuleStatechart, NivasaProviderEvent, NivasaProviderState,
-            NivasaProviderStatechart, NivasaRequestEvent, NivasaRequestState,
-            NivasaRequestStatechart, StatechartEngine, StatechartSpec,
+            NivasaApplicationEvent, NivasaApplicationState, NivasaApplicationStatechart,
+            NivasaModuleEvent, NivasaModuleState, NivasaModuleStatechart, NivasaProviderEvent,
+            NivasaProviderState, NivasaProviderStatechart, NivasaRequestEvent, NivasaRequestState,
+            NivasaRequestStatechart, StatechartEngine, StatechartSpec, GENERATED_STATECHARTS,
         };
         #[cfg(feature = "validation")]
         pub use nivasa_validation as validation;

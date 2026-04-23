@@ -10,7 +10,9 @@ use std::{
 };
 
 use nivasa_common::RequestContext;
-use nivasa_guards::{AuthGuard, ExecutionContext, Guard, RolesGuard, ThrottlerGuard, ThrottlerStorage};
+use nivasa_guards::{
+    AuthGuard, ExecutionContext, Guard, RolesGuard, ThrottlerGuard, ThrottlerStorage,
+};
 
 #[derive(Debug, Default)]
 struct RecordingStorage {
@@ -125,8 +127,10 @@ fn throttler_guard_skips_storage_when_skip_flag_is_set() {
 fn auth_guard_falls_back_to_context_custom_data() {
     let guard = AuthGuard::new();
 
-    let string_context = ExecutionContext::new(())
-        .with_custom_data("authorization", String::from("Bearer header.payload.signature"));
+    let string_context = ExecutionContext::new(()).with_custom_data(
+        "authorization",
+        String::from("Bearer header.payload.signature"),
+    );
     assert!(run_ready(guard.can_activate(&string_context)).unwrap());
 
     let static_context = ExecutionContext::new(())
@@ -172,5 +176,4 @@ unsafe fn noop_clone(_: *const ()) -> RawWaker {
 
 unsafe fn noop(_: *const ()) {}
 
-static NOOP_RAW_WAKER_VTABLE: RawWakerVTable =
-    RawWakerVTable::new(noop_clone, noop, noop, noop);
+static NOOP_RAW_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(noop_clone, noop, noop, noop);

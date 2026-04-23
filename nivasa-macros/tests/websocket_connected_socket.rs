@@ -7,6 +7,7 @@ struct ChatGateway;
 #[impl_controller]
 impl ChatGateway {
     #[nivasa_macros::post("/messages")]
+    #[allow(dead_code)]
     fn publish(#[nivasa_macros::connected_socket] client: String) {
         let _ = client;
     }

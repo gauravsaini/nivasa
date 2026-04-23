@@ -118,7 +118,9 @@ fn route_dispatch_registry_maps_helper_errors_and_blank_version_tokens() {
         }
     );
 
-    registry.register_static("GET", "/users", "default").unwrap();
+    registry
+        .register_static("GET", "/users", "default")
+        .unwrap();
 
     let err = registry
         .register_header_versioned_route("GET", "   ", "/users", "versioned")
@@ -128,6 +130,72 @@ fn route_dispatch_registry_maps_helper_errors_and_blank_version_tokens() {
         RouteDispatchError::DuplicateRoute {
             method: "GET".to_string(),
             path: "/users".to_string()
+        }
+    );
+}
+
+#[test]
+fn route_errors_and_methods_cover_display_and_other_variants() {
+    let registry_error = RouteRegistryError::DuplicateRoute {
+        path: "/users".to_string(),
+    };
+    assert_eq!(registry_error.to_string(), "duplicate route `/users`");
+    let registry_error = RouteRegistryError::UnsupportedPatternSegment {
+        path: "/users/:id".to_string(),
+        segment: ":id".to_string(),
+    };
+    assert_eq!(
+        registry_error.to_string(),
+        "unsupported route segment `:id` in `/users/:id`"
+    );
+
+    let dispatch_error = RouteDispatchError::DuplicateRoute {
+        method: "POST".to_string(),
+        path: "/users".to_string(),
+    };
+    assert_eq!(dispatch_error.to_string(), "duplicate route `POST /users`");
+    let dispatch_error = RouteDispatchError::UnsupportedPatternSegment {
+        path: "/files/*path/:bad".to_string(),
+        segment: ":bad".to_string(),
+    };
+    assert_eq!(
+        dispatch_error.to_string(),
+        "unsupported route segment `:bad` in `/files/*path/:bad`"
+    );
+
+    assert_eq!(RouteMethod::parse("put").as_str(), "PUT");
+    assert_eq!(RouteMethod::parse("delete").as_str(), "DELETE");
+    assert_eq!(RouteMethod::parse("patch").as_str(), "PATCH");
+    assert_eq!(RouteMethod::parse("head").as_str(), "HEAD");
+    assert_eq!(RouteMethod::parse("options").as_str(), "OPTIONS");
+    assert_eq!(RouteMethod::parse("trace").as_str(), "TRACE");
+    assert_eq!(RouteMethod::from("all").as_str(), "ALL");
+    assert_eq!(RouteMethod::from("custom".to_string()).as_str(), "CUSTOM");
+}
+
+#[test]
+fn versioned_registration_helpers_map_unsupported_pattern_errors() {
+    let mut registry = RouteDispatchRegistry::<&'static str>::new();
+
+    let header_error = registry
+        .register_header_versioned_route("GET", "1", "/files/*path/:bad", "bad")
+        .unwrap_err();
+    assert_eq!(
+        header_error,
+        RouteDispatchError::UnsupportedPatternSegment {
+            path: "/files/*path/:bad".to_string(),
+            segment: "*path".to_string()
+        }
+    );
+
+    let media_error = registry
+        .register_media_type_versioned_route("GET", "1", "/files/*path/:bad", "bad")
+        .unwrap_err();
+    assert_eq!(
+        media_error,
+        RouteDispatchError::UnsupportedPatternSegment {
+            path: "/files/*path/:bad".to_string(),
+            segment: "*path".to_string()
         }
     );
 }
@@ -150,7 +218,9 @@ fn route_registry_helper_apis_expose_entries_and_contains() {
     assert_eq!(registry.iter().count(), 2);
     assert!(registry.contains("users/"));
     assert_eq!(
-        registry.resolve_entry("/users").map(|entry| entry.pattern.path()),
+        registry
+            .resolve_entry("/users")
+            .map(|entry| entry.pattern.path()),
         Some("/users".to_string())
     );
     assert_eq!(
@@ -174,18 +244,28 @@ fn route_dispatch_selection_helper_apis_cover_empty_and_populated_selections() {
     assert!(empty.allowed_methods().is_empty());
 
     registry.register_static("GET", "/users", "list").unwrap();
-    registry.register_static("POST", "/users", "create").unwrap();
+    registry
+        .register_static("POST", "/users", "create")
+        .unwrap();
 
     let selection = registry.select("/users/");
     assert!(!selection.is_empty());
     assert_eq!(selection.len(), 2);
     assert_eq!(selection.iter().count(), 2);
-    assert_eq!(selection.allowed_methods(), vec!["GET".to_string(), "POST".to_string()]);
+    assert_eq!(
+        selection.allowed_methods(),
+        vec!["GET".to_string(), "POST".to_string()]
+    );
     assert_eq!(
         selection.resolve_entry("POST").map(|entry| entry.value),
         Some("create")
     );
-    assert_eq!(selection.resolve_match("POST").map(|matched| matched.entry.value), Some("create"));
+    assert_eq!(
+        selection
+            .resolve_match("POST")
+            .map(|matched| matched.entry.value),
+        Some("create")
+    );
     assert_eq!(selection.resolve("GET"), Some(&"list"));
 }
 
@@ -206,7 +286,9 @@ fn route_dispatch_registry_exposes_entry_contains_and_versioned_match_helpers() 
     assert!(registry.contains("GET", "/users/42"));
     assert!(!registry.contains("DELETE", "/users/42"));
     assert_eq!(
-        registry.resolve_entry("GET", "/users/42").map(|entry| entry.value),
+        registry
+            .resolve_entry("GET", "/users/42")
+            .map(|entry| entry.value),
         Some("fallback-show")
     );
 
@@ -275,7 +357,9 @@ fn route_dispatch_selection_stays_empty_when_only_other_versions_exist() {
 fn versioned_helper_resolvers_fall_back_when_header_parsers_reject_input() {
     let mut registry = RouteDispatchRegistry::new();
 
-    registry.register_static("GET", "/users", "fallback").unwrap();
+    registry
+        .register_static("GET", "/users", "fallback")
+        .unwrap();
     registry
         .register_header_versioned_route("GET", "1", "/users", "v1-users")
         .unwrap();
@@ -294,7 +378,9 @@ fn versioned_helper_resolvers_fall_back_when_header_parsers_reject_input() {
     assert_eq!(
         registry.dispatch_header_versioned("GET", "/users", Some("")),
         RouteDispatchOutcome::Matched(
-            registry.resolve_entry("GET", "/users").expect("fallback route exists")
+            registry
+                .resolve_entry("GET", "/users")
+                .expect("fallback route exists")
         )
     );
 }

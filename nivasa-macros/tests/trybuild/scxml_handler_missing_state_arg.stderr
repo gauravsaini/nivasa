@@ -1,0 +1,7 @@
+error: missing required `state` argument
+ --> tests/trybuild/scxml_handler_missing_state_arg.rs:3:1
+  |
+3 | #[scxml_handler(statechart = "request")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `scxml_handler` (in Nightly builds, run with -Z macro-backtrace for more info)

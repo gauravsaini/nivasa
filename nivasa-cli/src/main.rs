@@ -1216,12 +1216,14 @@ fn to_pascal_case(name: &str) -> String {
 mod tests {
     use super::{
         generate_controller, generate_filter, generate_guard, generate_interceptor,
-        generate_middleware, generate_module, generate_pipe, generate_resource, generate_service,
-        new_controller_template, new_create_dto_template, new_filter_template, new_guard_template,
-        new_interceptor_template, new_middleware_template, new_module_template, new_pipe_template,
-        new_project_app_module_rs, new_project_cargo_toml, new_project_main_rs,
-        new_service_template, new_update_dto_template, normalize_generator_name,
-        register_generated_item, scaffold_new_project, to_pascal_case,
+        generate_middleware, generate_module, generate_named_file, generate_pipe,
+        generate_resource, generate_service, generated_type_name, new_controller_template,
+        new_create_dto_template, new_filter_template, new_guard_template, new_interceptor_template,
+        new_middleware_template, new_module_template, new_pipe_template, new_project_app_module_rs,
+        new_project_cargo_toml, new_project_main_rs, new_service_template, new_update_dto_template,
+        normalize_generator_name, parse_array_items, parse_module_fields, register_generated_item,
+        relative_path_string, render_array_items, render_module_fields, resolve_target_file,
+        scaffold_new_project, to_pascal_case,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -1276,6 +1278,14 @@ mod tests {
     }
 
     #[test]
+    fn scaffold_new_project_rejects_blank_project_name() {
+        let root = temp_dir("new-project-blank");
+
+        let error = scaffold_new_project(&root, "   ").unwrap_err();
+        assert_eq!(error, "project name cannot be empty");
+    }
+
+    #[test]
     fn generate_module_creates_expected_file() {
         let root = temp_dir("generate-module");
         let file_path = generate_module(&root, "users").expect("module generation should succeed");
@@ -1294,6 +1304,63 @@ mod tests {
             "user_profile"
         );
         assert_eq!(to_pascal_case("user_profile"), "UserProfile");
+        assert_eq!(
+            normalize_generator_name("HTTP Server 2").unwrap(),
+            "http_server_2"
+        );
+        assert_eq!(
+            normalize_generator_name("!!!").unwrap_err(),
+            "name cannot be empty"
+        );
+    }
+
+    #[test]
+    fn cli_module_field_helpers_parse_nested_arrays_and_render_fields() {
+        let items =
+            parse_array_items("[UsersModule, feature::Factory::new([A, B]), { key: value }]")
+                .expect("nested array items should parse");
+        assert_eq!(
+            items,
+            vec![
+                "UsersModule".to_string(),
+                "feature::Factory::new([A, B])".to_string(),
+                "{ key: value }".to_string()
+            ]
+        );
+        assert!(parse_array_items("UsersModule")
+            .unwrap_err()
+            .contains("expected array value"));
+        assert_eq!(
+            render_array_items(&items),
+            "[\n        UsersModule,\n        feature::Factory::new([A, B]),\n        { key: value },\n    ]"
+        );
+        assert_eq!(render_module_fields(&[]), "");
+        assert!(
+            render_module_fields(&[("imports".to_string(), render_array_items(&items))])
+                .contains("imports: [")
+        );
+    }
+
+    #[test]
+    fn cli_relative_path_helper_handles_shared_roots_and_relative_inputs() {
+        let root = temp_dir("relative-paths");
+        let from = root.join("src");
+        let to = root.join("users/users_module.rs");
+        fs::create_dir_all(&from).unwrap();
+        fs::create_dir_all(to.parent().unwrap()).unwrap();
+        fs::write(&to, "").unwrap();
+
+        assert_eq!(
+            relative_path_string(&from, &to).unwrap(),
+            "../users/users_module.rs"
+        );
+
+        let relative = relative_path_string(
+            PathBuf::from("src").as_path(),
+            PathBuf::from("src/lib.rs").as_path(),
+        )
+        .expect("relative inputs should resolve through cwd");
+        assert!(relative.ends_with("lib.rs"));
     }
 
     #[test]
@@ -1320,6 +1387,25 @@ mod tests {
             fs::read_to_string(&file_path).unwrap(),
             new_service_template("users", "Users")
         );
+    }
+
+    #[test]
+    fn generators_reject_duplicate_output_files() {
+        let root = temp_dir("generate-duplicates");
+        generate_module(&root, "users").expect("first module generation should succeed");
+        assert!(generate_module(&root, "users")
+            .unwrap_err()
+            .contains("module file already exists"));
+
+        generate_controller(&root, "accounts").expect("first controller generation should succeed");
+        assert!(generate_controller(&root, "accounts")
+            .unwrap_err()
+            .contains("controller file already exists"));
+
+        generate_service(&root, "profiles").expect("first service generation should succeed");
+        assert!(generate_service(&root, "profiles")
+            .unwrap_err()
+            .contains("service file already exists"));
     }
 
     #[test]
@@ -1482,6 +1568,68 @@ mod tests {
             fs::read_to_string(resource_dir.join("dto/update_users_dto.rs")).unwrap(),
             new_update_dto_template("Users")
         );
+    }
+
+    #[test]
+    fn generic_generator_and_target_helpers_cover_edge_paths() {
+        let root = temp_dir("generic-generator");
+        let generated = generate_named_file(&root, "Audit Log", "probe", |normalized, pascal| {
+            format!("{normalized}:{pascal}")
+        })
+        .expect("generic generation should succeed");
+
+        assert_eq!(generated, root.join("audit_log/audit_log_probe.rs"));
+        assert_eq!(
+            fs::read_to_string(&generated).unwrap(),
+            "audit_log:AuditLog"
+        );
+        assert_eq!(
+            generate_named_file(&root, "Audit Log", "probe", |_, _| String::new()).unwrap_err(),
+            format!("probe file already exists: {}", generated.display())
+        );
+
+        let relative = resolve_target_file(
+            &root,
+            PathBuf::from("audit_log/audit_log_probe.rs").as_path(),
+        )
+        .expect("relative target should resolve from base dir");
+        assert_eq!(relative, generated);
+        let absolute = resolve_target_file(&root, &generated)
+            .expect("absolute target should be accepted directly");
+        assert_eq!(absolute, generated);
+        assert!(
+            resolve_target_file(&root, PathBuf::from("missing.rs").as_path())
+                .unwrap_err()
+                .contains("module file not found")
+        );
+
+        assert_eq!(
+            generated_type_name("audit log", "Guard").unwrap(),
+            "AuditLogGuard"
+        );
+        assert_eq!(
+            generated_type_name("!!!", "Guard").unwrap_err(),
+            "name cannot be empty"
+        );
+    }
+
+    #[test]
+    fn module_metadata_parser_reports_malformed_fields() {
+        assert_eq!(
+            parse_module_fields("@: []").unwrap_err(),
+            "failed to parse module metadata field name"
+        );
+        assert_eq!(
+            parse_module_fields("imports []").unwrap_err(),
+            "module metadata field `imports` missing `:`"
+        );
+
+        let parsed = parse_module_fields(
+            r#"imports: [UsersModule], providers: [Factory::new("a,b", { nested: true })]"#,
+        )
+        .expect("nested metadata fields should parse");
+        assert_eq!(parsed[0].0, "imports");
+        assert_eq!(parsed[1].0, "providers");
     }
 
     fn temp_dir(prefix: &str) -> PathBuf {

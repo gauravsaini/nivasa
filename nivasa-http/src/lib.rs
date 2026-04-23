@@ -117,6 +117,48 @@ use uuid::Uuid;
 /// Shared request/response handler type used by app-shell dispatch seams.
 pub type AppRouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
 
+/// Generated controller response metadata entry.
+pub type ControllerResponseMetadata<'a> = (&'a str, Option<u16>, Vec<(&'a str, &'a str)>);
+
+/// Captured client IP value for controller-side `#[ip]` extraction.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ClientIp(String);
+
+impl ClientIp {
+    /// Create a new client IP wrapper.
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    /// Borrow the captured IP text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume the wrapper into its string value.
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl From<&str> for ClientIp {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<String> for ClientIp {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+/// Runtime hook used by custom controller parameter extractors.
+pub trait ControllerParamExtractor<T> {
+    /// Extract a value from the request after SCXML route matching has run.
+    fn extract(&self, request: &NivasaRequest) -> Result<T, HttpException>;
+}
+
 static CONTROLLER_ROUTE_HANDLERS: OnceLock<RwLock<HashMap<String, AppRouteHandler>>> =
     OnceLock::new();
 
@@ -243,6 +285,134 @@ where
     }
 }
 
+/// Execute a controller-style action with all request headers.
+///
+/// This is the `#[headers]` runtime slice. It stays after route matching and
+/// does not introduce a lifecycle shortcut around the SCXML request pipeline.
+pub fn run_controller_action_with_headers<F, R>(
+    request: &NivasaRequest,
+    action: F,
+) -> NivasaResponse
+where
+    F: FnOnce(HeaderMap) -> R,
+    R: IntoResponse,
+{
+    match request.extract::<HeaderMap>() {
+        Ok(headers) => action(headers).into_response(),
+        Err(error) => HttpException::bad_request(error.to_string()).into_response(),
+    }
+}
+
+/// Execute a controller-style action with one typed request header.
+pub fn run_controller_action_with_header<T, F, R>(
+    request: &NivasaRequest,
+    name: impl AsRef<str>,
+    action: F,
+) -> NivasaResponse
+where
+    T: DeserializeOwned,
+    F: FnOnce(T) -> R,
+    R: IntoResponse,
+{
+    match request.header_typed::<T>(name) {
+        Ok(header) => action(header).into_response(),
+        Err(error) => HttpException::bad_request(error.to_string()).into_response(),
+    }
+}
+
+/// Execute a controller-style action with client IP extraction.
+///
+/// The helper prefers a typed [`ClientIp`] request extension, then common proxy
+/// headers (`x-forwarded-for`, `x-real-ip`, and `forwarded`).
+pub fn run_controller_action_with_ip<F, R>(request: &NivasaRequest, action: F) -> NivasaResponse
+where
+    F: FnOnce(String) -> R,
+    R: IntoResponse,
+{
+    match controller_client_ip(request) {
+        Some(ip) => action(ip).into_response(),
+        None => HttpException::bad_request("request client IP is missing").into_response(),
+    }
+}
+
+/// Execute a controller-style action with typed session data.
+///
+/// Session middleware can seed request extensions with the session payload; the
+/// controller helper reads that payload after SCXML route matching.
+pub fn run_controller_action_with_session<T, F, R>(
+    request: &NivasaRequest,
+    action: F,
+) -> NivasaResponse
+where
+    T: Clone + Send + Sync + 'static,
+    F: FnOnce(T) -> R,
+    R: IntoResponse,
+{
+    match request.extension::<T>().cloned() {
+        Some(session) => action(session).into_response(),
+        None => HttpException::bad_request(format!(
+            "request session data `{}` is missing",
+            std::any::type_name::<T>()
+        ))
+        .into_response(),
+    }
+}
+
+/// Execute a controller-style action with a custom parameter extractor.
+pub fn run_controller_action_with_custom_param<T, E, F, R>(
+    request: &NivasaRequest,
+    extractor: E,
+    action: F,
+) -> NivasaResponse
+where
+    E: ControllerParamExtractor<T>,
+    F: FnOnce(T) -> R,
+    R: IntoResponse,
+{
+    match extractor.extract(request) {
+        Ok(value) => action(value).into_response(),
+        Err(error) => error.into_response(),
+    }
+}
+
+/// Apply generated controller response metadata to a handler response.
+///
+/// This covers the runtime side of `#[http_code(...)]` and
+/// `#[header("key", "value")]` after the handler has run. It does not alter
+/// the SCXML lifecycle; callers use it inside the existing handler-execution
+/// stage before response finalization.
+pub fn apply_controller_response_metadata(
+    response: NivasaResponse,
+    handler: &str,
+    metadata: &[ControllerResponseMetadata<'_>],
+) -> NivasaResponse {
+    let Some((_, status_code, headers)) = metadata
+        .iter()
+        .find(|(metadata_handler, _, _)| *metadata_handler == handler)
+    else {
+        return response;
+    };
+
+    let mut response = if let Some(status_code) = status_code {
+        match http::StatusCode::from_u16(*status_code) {
+            Ok(status) => {
+                let mut inner = response.into_inner();
+                *inner.status_mut() = status;
+                NivasaResponse::from(inner)
+            }
+            Err(_) => response,
+        }
+    } else {
+        response
+    };
+
+    for (name, value) in headers {
+        response = response.with_header(*name, *value);
+    }
+
+    response
+}
+
 /// Execute a controller-style action with a single uploaded file.
 ///
 /// This is intentionally narrow: multipart parsing still happens in a focused
@@ -304,6 +474,49 @@ where
         Ok(files) => action(files).into_response(),
         Err(error) => HttpException::bad_request(error.to_string()).into_response(),
     }
+}
+
+fn controller_client_ip(request: &NivasaRequest) -> Option<String> {
+    request
+        .extension::<ClientIp>()
+        .map(|ip| ip.as_str().trim().to_string())
+        .filter(|ip| !ip.is_empty())
+        .or_else(|| header_first_csv_value(request, "x-forwarded-for"))
+        .or_else(|| header_trimmed_value(request, "x-real-ip"))
+        .or_else(|| forwarded_for_value(request))
+}
+
+fn header_trimmed_value(request: &NivasaRequest, name: &str) -> Option<String> {
+    request
+        .header(name)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn header_first_csv_value(request: &NivasaRequest, name: &str) -> Option<String> {
+    header_trimmed_value(request, name).and_then(|value| {
+        value
+            .split(',')
+            .map(str::trim)
+            .find(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+    })
+}
+
+fn forwarded_for_value(request: &NivasaRequest) -> Option<String> {
+    header_trimmed_value(request, "forwarded").and_then(|value| {
+        value.split(';').find_map(|part| {
+            let (name, value) = part.split_once('=')?;
+            if !name.trim().eq_ignore_ascii_case("for") {
+                return None;
+            }
+
+            let value = value.trim().trim_matches('"');
+            (!value.is_empty()).then(|| value.to_string())
+        })
+    })
 }
 
 /// Normalized guard contract for one controller handler.

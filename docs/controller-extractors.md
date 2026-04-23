@@ -2,7 +2,7 @@
 
 This page documents the controller parameter surface that the macros recognize today and separates it from what the runtime can actually extract at request time.
 
-The public request extractor for `HeaderMap` is now landed in `nivasa-http`, and the first controller-side runtime slices for `#[body]`, `#[header("name")]`, `#[res]`, and multipart `#[file]` / `#[files]` helpers are also landed. Those slices are intentionally narrow: `#[body]` covers request body extraction after route dispatch, `#[header("name")]` covers single-header lookup, `#[res]` covers mutable response construction, and `#[file]` / `#[files]` expose post-route multipart parsing helpers.
+The public request extractor for `HeaderMap` is now landed in `nivasa-http`, and controller-side runtime slices for `#[body]`, `#[header("name")]`, `#[headers]`, `#[ip]`, `#[session]`, `#[custom_param(...)]`, `#[res]`, and multipart `#[file]` / `#[files]` helpers are also landed. Those slices are intentionally narrow and run after route dispatch, so they do not bypass the SCXML request pipeline.
 
 ## Compile-Time Surface
 
@@ -21,7 +21,7 @@ The public request extractor for `HeaderMap` is now landed in `nivasa-http`, and
 - `#[files]`
 - `#[custom_param(MyExtractor)]`
 
-The macro records them as controller metadata, but it does not automatically execute an argument binder at runtime yet.
+The macro records them as controller metadata. Runtime helper functions cover the landed slices, while fully automatic argument binding remains a future convenience layer.
 
 The current compile-time guardrails are:
 
@@ -59,19 +59,16 @@ That gives the runtime support we have today for the following controller marker
 | `#[param("name")]` | Captured path parameters through `RoutePathCaptures` and `path_param_typed` |
 | `#[query]` | Full query parsing through `Query<T>` plus single-value helpers on `NivasaRequest` |
 | `#[header("name")]` | Single-header lookup through `header()` and typed lookup through `header_typed()` |
-| `#[headers]` | Full header-map extraction is available through `NivasaRequest::extract::<HeaderMap>()`, but controller-side binding is still partial |
+| `#[headers]` | Full header-map extraction through `run_controller_action_with_headers(...)` |
 | `#[req]` | Raw request access through `NivasaRequest` |
 | `#[res]` | Mutable controller response access through `ControllerResponse` and `NivasaResponseBuilder`; this is the first landed runtime slice and remains intentionally narrow |
+| `#[ip]` | Client-IP extraction through `run_controller_action_with_ip(...)` using a `ClientIp` extension or common proxy headers |
+| `#[session]` | Typed session payload extraction through `run_controller_action_with_session(...)` from request extensions |
 | `#[file]` | Single-file multipart helper via `run_controller_action_with_file(...)` after route dispatch |
 | `#[files]` | Multi-file multipart helper via `run_controller_action_with_files(...)` after route dispatch |
+| `#[custom_param(MyExtractor)]` | Custom extractor support through `ControllerParamExtractor<T>` and `run_controller_action_with_custom_param(...)` |
 
-The remaining markers are compile-time metadata only today:
-
-- `#[ip]`
-- `#[session]`
-- `#[custom_param(MyExtractor)]`
-
-For `#[custom_param(MyExtractor)]`, the macro records the extractor type name, but the runtime does not yet have automatic controller binding for that metadata.
+Fully automatic controller argument binding is still not shipped; route handlers call the focused runtime helpers explicitly.
 
 ## A Small Naming Note
 

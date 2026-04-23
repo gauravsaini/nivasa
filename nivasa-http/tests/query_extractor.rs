@@ -97,3 +97,33 @@ fn full_query_extraction_decodes_values_and_keeps_last_duplicate() {
         }
     );
 }
+
+#[test]
+fn query_extraction_preserves_json_scalar_values() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct ScalarFilters {
+        count: u32,
+        enabled: bool,
+        ratio: f64,
+        name: String,
+    }
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri("/users?count=3&enabled=true&ratio=1.5&name=%22Ada%22")
+        .body(Body::empty())
+        .expect("request must build");
+    let request = NivasaRequest::from_http(request);
+
+    let query = Query::<ScalarFilters>::from_request(&request).unwrap();
+
+    assert_eq!(
+        query.into_inner(),
+        ScalarFilters {
+            count: 3,
+            enabled: true,
+            ratio: 1.5,
+            name: "Ada".to_string(),
+        }
+    );
+}

@@ -1,8 +1,11 @@
 use nivasa_macros::{interceptor, subscribe_message, websocket_gateway};
 use trybuild::TestCases;
 
+#[allow(dead_code)]
 struct RoomGuard;
+#[allow(dead_code)]
 struct AuditInterceptor;
+#[allow(dead_code)]
 struct MetricsInterceptor;
 
 #[websocket_gateway("/ws")]
@@ -15,6 +18,16 @@ impl ChatGateway {
     fn on_join(&self, room: String) -> String {
         format!("joined:{room}")
     }
+}
+
+#[websocket_gateway("/direct-ws")]
+struct DirectAttrChatGateway;
+
+impl DirectAttrChatGateway {
+    #[subscribe_message("chat.direct")]
+    #[nivasa_macros::guard(RoomGuard)]
+    #[interceptor(AuditInterceptor)]
+    fn on_direct(&self) {}
 }
 
 #[test]
@@ -33,6 +46,16 @@ fn subscribe_message_macro_emits_handler_metadata() {
     );
     let gateway = ChatGateway;
     assert_eq!(gateway.on_join("general".to_string()), "joined:general");
+
+    assert_eq!(
+        DirectAttrChatGateway::__nivasa_subscribe_message_guard_metadata_for_on_direct(),
+        vec!["RoomGuard"],
+    );
+    assert_eq!(
+        DirectAttrChatGateway::__nivasa_subscribe_message_interceptor_metadata_for_on_direct(),
+        vec!["AuditInterceptor"],
+    );
+    DirectAttrChatGateway.on_direct();
 }
 
 #[allow(dead_code)]

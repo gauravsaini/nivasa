@@ -98,13 +98,16 @@ use nivasa_common::HttpException;
 use nivasa_core::di::{DependencyContainer, ProviderScope};
 use nivasa_guards::{ExecutionContext, Guard, GuardFuture, RolesGuard, ThrottlerGuard};
 use nivasa_http::{
-    resolve_controller_guard_execution, run_controller_action, run_controller_action_with_body,
+    apply_controller_response_metadata, resolve_controller_guard_execution, run_controller_action,
+    run_controller_action_with_body, run_controller_action_with_custom_param,
     run_controller_action_with_file, run_controller_action_with_files,
-    run_controller_action_with_param, run_controller_action_with_query,
-    run_controller_action_with_request,
+    run_controller_action_with_header, run_controller_action_with_headers,
+    run_controller_action_with_ip, run_controller_action_with_param,
+    run_controller_action_with_query, run_controller_action_with_request,
+    run_controller_action_with_session,
     upload::{FileInterceptor, FilesInterceptor, UploadedFile},
-    Body, ControllerResponse, FromRequest, GuardExecutionOutcome, Json, NivasaRequest,
-    NivasaResponse, Query, RequestPipeline,
+    Body, ClientIp, ControllerParamExtractor, ControllerResponse, FromRequest,
+    GuardExecutionOutcome, Json, NivasaRequest, NivasaResponse, Query, RequestPipeline,
 };
 use nivasa_macros::{controller, impl_controller};
 use nivasa_routing::{
@@ -428,6 +431,63 @@ impl QueryController {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TestSession {
+    user_id: u32,
+}
+
+struct TenantExtractor;
+
+impl ControllerParamExtractor<String> for TenantExtractor {
+    fn extract(&self, request: &NivasaRequest) -> Result<String, HttpException> {
+        request
+            .header("x-tenant")
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| HttpException::bad_request("request tenant is missing"))
+    }
+}
+
+#[controller("/context")]
+struct ContextController;
+
+#[impl_controller]
+impl ContextController {
+    #[nivasa_macros::get("/headers")]
+    fn headers(&self, headers: http::HeaderMap) -> NivasaResponse {
+        let trace_id = headers
+            .get("x-trace-id")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("missing");
+
+        NivasaResponse::json(serde_json::json!({ "traceId": trace_id }))
+            .with_header("x-controller-mode", "headers")
+    }
+
+    #[nivasa_macros::get("/header")]
+    fn header(&self, tenant: String) -> NivasaResponse {
+        NivasaResponse::json(serde_json::json!({ "tenant": tenant }))
+            .with_header("x-controller-mode", "header")
+    }
+
+    #[nivasa_macros::get("/ip")]
+    fn ip(&self, ip: String) -> NivasaResponse {
+        NivasaResponse::json(serde_json::json!({ "ip": ip })).with_header("x-controller-mode", "ip")
+    }
+
+    #[nivasa_macros::get("/session")]
+    fn session(&self, session: TestSession) -> NivasaResponse {
+        NivasaResponse::json(serde_json::json!({ "userId": session.user_id }))
+            .with_header("x-controller-mode", "session")
+    }
+
+    #[nivasa_macros::get("/custom")]
+    fn custom(&self, tenant: String) -> NivasaResponse {
+        NivasaResponse::json(serde_json::json!({ "tenant": tenant }))
+            .with_header("x-controller-mode", "custom")
+    }
+}
+
 #[controller("/uploads")]
 struct UploadController;
 
@@ -538,6 +598,26 @@ mod runtime_extraction {
             VersionedReportsController::__nivasa_controller_response_metadata(),
             vec![("summary", Some(204), vec![("x-controller-version", "v1")],)]
         );
+
+        let response = apply_controller_response_metadata(
+            NivasaResponse::text("summary"),
+            "summary",
+            &VersionedReportsController::__nivasa_controller_response_metadata(),
+        );
+        assert_eq!(response.status(), http::StatusCode::NO_CONTENT);
+        assert_eq!(
+            response.headers().get("x-controller-version").unwrap(),
+            "v1"
+        );
+        assert_eq!(response.body(), &Body::text("summary"));
+
+        let unchanged = apply_controller_response_metadata(
+            NivasaResponse::text("plain"),
+            "missing",
+            &VersionedReportsController::__nivasa_controller_response_metadata(),
+        );
+        assert_eq!(unchanged.status(), http::StatusCode::OK);
+        assert_eq!(unchanged.headers().get("x-controller-version"), None);
     }
 
     #[test]
@@ -1391,6 +1471,175 @@ mod params_and_queries {
             .as_str()
             .expect("message must be string")
             .starts_with("invalid query string: field `page`:"));
+    }
+}
+
+mod request_context_extractors {
+    use super::*;
+
+    #[test]
+    fn controller_headers_runtime_extracts_full_header_map_after_route_matching() {
+        let mut routes = RouteDispatchRegistry::new();
+        let controller = ContextController;
+        let route = ContextController::__nivasa_controller_routes()
+            .into_iter()
+            .find(|(_, path, _)| path == "/context/headers")
+            .expect("context controller must expose a headers route");
+
+        routes
+            .register_pattern(
+                RouteMethod::from(route.0),
+                route.1,
+                move |request: &NivasaRequest| {
+                    run_controller_action_with_headers(request, |headers| {
+                        controller.headers(headers)
+                    })
+                },
+            )
+            .expect("controller headers route must register");
+
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("/context/headers")
+            .header("x-trace-id", "trace-123")
+            .body(Body::empty())
+            .expect("request must build");
+        let request = NivasaRequest::from_http(request);
+        let mut pipeline = RequestPipeline::new(request);
+        pipeline.parse_request().unwrap();
+        pipeline.complete_middleware().unwrap();
+
+        let outcome = pipeline.match_route(&routes).unwrap();
+        assert!(matches!(outcome, RouteDispatchOutcome::Matched(_)));
+        assert_eq!(pipeline.snapshot().current_state, "GuardChain");
+
+        let response = match outcome {
+            RouteDispatchOutcome::Matched(entry) => (entry.value)(pipeline.request()),
+            _ => panic!("route must match"),
+        };
+
+        assert_eq!(response.status(), http::StatusCode::OK);
+        assert_eq!(
+            response.headers().get("x-controller-mode").unwrap(),
+            "headers"
+        );
+        assert_eq!(
+            response.body(),
+            &Body::json(serde_json::json!({ "traceId": "trace-123" }))
+        );
+    }
+
+    #[test]
+    fn controller_header_runtime_extracts_one_typed_header() {
+        let controller = ContextController;
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("/context/header")
+            .header("x-tenant", "acme")
+            .body(Body::empty())
+            .expect("request must build");
+        let request = NivasaRequest::from_http(request);
+
+        let response =
+            run_controller_action_with_header::<String, _, _>(&request, "x-tenant", |tenant| {
+                controller.header(tenant)
+            });
+
+        assert_eq!(response.status(), http::StatusCode::OK);
+        assert_eq!(
+            response.body(),
+            &Body::json(serde_json::json!({ "tenant": "acme" }))
+        );
+    }
+
+    #[test]
+    fn controller_ip_runtime_prefers_extension_then_forwarded_headers() {
+        let controller = ContextController;
+        let mut extension_request = NivasaRequest::new(Method::GET, "/context/ip", Body::empty());
+        extension_request.insert_extension(ClientIp::new("10.0.0.9"));
+
+        let extension_response =
+            run_controller_action_with_ip(&extension_request, |ip| controller.ip(ip));
+        assert_eq!(
+            extension_response.body(),
+            &Body::json(serde_json::json!({ "ip": "10.0.0.9" }))
+        );
+
+        let forwarded_request = Request::builder()
+            .method(Method::GET)
+            .uri("/context/ip")
+            .header("x-forwarded-for", "203.0.113.7, 10.0.0.1")
+            .body(Body::empty())
+            .expect("request must build");
+        let forwarded_request = NivasaRequest::from_http(forwarded_request);
+
+        let forwarded_response =
+            run_controller_action_with_ip(&forwarded_request, |ip| controller.ip(ip));
+        assert_eq!(
+            forwarded_response.body(),
+            &Body::json(serde_json::json!({ "ip": "203.0.113.7" }))
+        );
+    }
+
+    #[test]
+    fn controller_session_runtime_reads_typed_request_extension() {
+        let controller = ContextController;
+        let mut request = NivasaRequest::new(Method::GET, "/context/session", Body::empty());
+        request.insert_extension(TestSession { user_id: 42 });
+
+        let response =
+            run_controller_action_with_session::<TestSession, _, _>(&request, |session| {
+                controller.session(session)
+            });
+
+        assert_eq!(response.status(), http::StatusCode::OK);
+        assert_eq!(
+            response.body(),
+            &Body::json(serde_json::json!({ "userId": 42 }))
+        );
+    }
+
+    #[test]
+    fn controller_custom_param_runtime_uses_custom_extractor() {
+        let controller = ContextController;
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("/context/custom")
+            .header("x-tenant", "acme")
+            .body(Body::empty())
+            .expect("request must build");
+        let request = NivasaRequest::from_http(request);
+
+        let response =
+            run_controller_action_with_custom_param(&request, TenantExtractor, |tenant| {
+                controller.custom(tenant)
+            });
+
+        assert_eq!(response.status(), http::StatusCode::OK);
+        assert_eq!(
+            response.body(),
+            &Body::json(serde_json::json!({ "tenant": "acme" }))
+        );
+    }
+
+    #[test]
+    fn controller_context_extractors_map_missing_values_to_bad_request() {
+        let request = NivasaRequest::new(Method::GET, "/context/ip", Body::empty());
+        let ip_response =
+            run_controller_action_with_ip(&request, |_| NivasaResponse::text("unreachable"));
+        assert_eq!(ip_response.status(), http::StatusCode::BAD_REQUEST);
+
+        let session_response =
+            run_controller_action_with_session::<TestSession, _, _>(&request, |_| {
+                NivasaResponse::text("unreachable")
+            });
+        assert_eq!(session_response.status(), http::StatusCode::BAD_REQUEST);
+
+        let custom_response =
+            run_controller_action_with_custom_param(&request, TenantExtractor, |_| {
+                NivasaResponse::text("unreachable")
+            });
+        assert_eq!(custom_response.status(), http::StatusCode::BAD_REQUEST);
     }
 }
 

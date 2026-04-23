@@ -334,7 +334,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Validate no duplicate routes within a controller
 
 #### 2.1.4 — Parameter Extraction
-> ⚠️ **SCXML / controller boundary:** request pipeline now runs past route dispatch through controller execution stages. Landed controller runtime slices are `#[body]` request extraction, `#[req]` raw request access, `#[param("name")]` path-param extraction, `#[query]` full query DTO extraction, `#[query("name")]` single query-param extraction, `#[header("name")]` single-header extraction, `#[res]` response-builder access, and multipart `#[file]` / `#[files]` helpers. `#[headers]`, `#[ip]`, `#[session]`, and `#[custom_param(...)]` stay partial or pending.
+> ⚠️ **SCXML / controller boundary:** request pipeline now runs past route dispatch through controller execution stages. Landed controller runtime slices are `#[body]` request extraction, `#[req]` raw request access, `#[param("name")]` path-param extraction, `#[query]` full query DTO extraction, `#[query("name")]` single query-param extraction, `#[header("name")]` single-header extraction, `#[headers]` full header-map extraction, `#[ip]` client-IP extraction, typed `#[session]` extension extraction, `#[custom_param(...)]` custom extractor helpers, `#[res]` response-builder access, and multipart `#[file]` / `#[files]` helpers.
 
 - [x] Strip and record controller parameter extractor metadata in `#[impl_controller]`
 - [x] Implement `#[body]` extractor — deserialize JSON request body to typed DTO
@@ -370,8 +370,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement redirect response (301, 302, 307, 308)
 - [x] Implement `HttpStatus` enum for all standard status codes
 - [x] Implement `Result<T, HttpException>` return type handling
-- [x] Implement `#[http_code(201)]` to override default status code
-- [x] Implement `#[header("key", "value")]` to set response headers
+- [x] Implement `#[http_code(201)]` to override default status code, with `apply_controller_response_metadata(...)` covering the focused runtime helper path
+- [x] Implement `#[header("key", "value")]` to set response headers, with `apply_controller_response_metadata(...)` covering the focused runtime helper path
 
 #### 2.1.7 — API Versioning
 - [x] Support URI versioning: `/v1/users`, `/v2/users`
@@ -1042,7 +1042,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 10.1 — Testing
 - [ ] Achieve >95% code coverage across all crates
-  - latest full workspace `cargo llvm-cov --workspace --summary-only` is green but below target at ~86.75% line / ~86.74% region coverage; recent follow-up slices added macro schedule/controller/module/no-op wrapper coverage, websocket subscribe-message validation coverage, HTTP logger/throttling/GraphQL edge coverage, and umbrella app OpenAPI/startup/error-display coverage, but the `>95%` threshold remains open
+  - latest full workspace `cargo llvm-cov --workspace --summary-only` is green but below target at 89.88% line / 89.67% region coverage; recent coverage slices lifted CLI helpers, core lazy/dynamic/event-emitter/provider helpers, routing helpers, SCXML handler/schema/types edges, HTTP wrapper/response helpers, and OpenAPI metadata/path defaults; top remaining miss buckets are `nivasa-macros/src/controller.rs`, `nivasa-http/src/server.rs`, `nivasa-http/src/lib.rs`, `nivasa/src/application.rs`, core module registry/runtime, and macro helper files (`graphql.rs`, `injectable.rs`, `on_event.rs`, `schedule.rs`, `subscribe_message.rs`)
 - [x] Add in-process request lifecycle integration coverage (middleware → guard → interceptor → handler → Done)
 - [x] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
 - [x] Write integration tests: module composition (nested modules, imports/exports)

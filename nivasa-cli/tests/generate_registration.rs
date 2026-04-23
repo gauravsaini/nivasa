@@ -96,7 +96,8 @@ fn generate_commands_register_items_into_module_files() {
 fn generate_controller_removes_file_when_module_registration_fails() {
     let root = temp_dir("generate-register-fail");
     let invalid_module = root.join("bad_module.rs");
-    fs::write(&invalid_module, "pub struct NotAModule;\n").expect("invalid module file should exist");
+    fs::write(&invalid_module, "pub struct NotAModule;\n")
+        .expect("invalid module file should exist");
 
     let output = run_cli_in_dir(
         &root,

@@ -81,7 +81,10 @@ fn websocket_event_handles_return_zero_when_no_recipient_matches() {
     rooms.join("general", "client-1");
 
     assert_eq!(rooms.to("missing").emit("notice", "hello"), 0);
-    assert_eq!(rooms.events_for(&"client-1"), Vec::<(String, String)>::new());
+    assert_eq!(
+        rooms.events_for(&"client-1"),
+        Vec::<(String, String)>::new()
+    );
 }
 
 #[test]

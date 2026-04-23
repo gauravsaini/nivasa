@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use nivasa_core::di::DependencyContainer;
 use nivasa_core::lifecycle as app_lifecycle;
-use nivasa_core::module::lifecycle::NivasaModuleState;
+use nivasa_core::module::lifecycle::{NivasaModuleEvent, NivasaModuleState};
 use nivasa_core::module::{
     Module, ModuleLifecycleError, ModuleMetadata, ModuleRuntime, OnApplicationShutdown,
     OnModuleDestroy, OnModuleInit,
@@ -104,10 +104,13 @@ async fn module_runtime_happy_path_tracks_scxml_lifecycle() {
     let mut runtime = ModuleRuntime::new(module);
 
     assert_eq!(runtime.state(), NivasaModuleState::Unloaded);
+    assert_eq!(runtime.valid_events(), vec![NivasaModuleEvent::ModuleLoad]);
+    assert!(!runtime.is_terminal());
 
     let load_state = runtime.load().await.unwrap();
     assert_eq!(load_state, NivasaModuleState::Loaded);
     assert_eq!(runtime.state(), NivasaModuleState::Loaded);
+    assert_eq!(runtime.valid_events(), vec![NivasaModuleEvent::ModuleInit]);
 
     let initialized = runtime.initialize_with_hooks().await.unwrap();
     assert_eq!(initialized, NivasaModuleState::Initialized);
@@ -172,5 +175,8 @@ async fn application_shutdown_hook_shape_stays_consistent_across_public_paths() 
     <ShutdownMirror as OnApplicationShutdown>::on_application_shutdown(&hooks).await;
     <ShutdownMirror as app_lifecycle::OnApplicationShutdown>::on_application_shutdown(&hooks).await;
 
-    assert_eq!(&*events.lock().unwrap(), &["module.shutdown", "module.shutdown"]);
+    assert_eq!(
+        &*events.lock().unwrap(),
+        &["module.shutdown", "module.shutdown"]
+    );
 }

@@ -1,6 +1,8 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use nivasa_core::di::lifecycle::NivasaProviderState;
+use nivasa_core::di::provider::{FactoryProvider, LifecycleProvider, Provider, ValueProvider};
 use nivasa_core::di::{DependencyContainer, DiError, Lazy, ProviderScope};
 use nivasa_core::module::Module;
 use nivasa_macros::{injectable, module};
@@ -84,10 +86,53 @@ async fn test_missing_provider_returns_clear_error() {
 }
 
 #[tokio::test]
+async fn lifecycle_provider_tracks_success_and_failure_states() {
+    let container = DependencyContainer::new();
+    let value_provider: Arc<dyn Provider> = Arc::new(ValueProvider::new(42usize));
+    let lifecycle = LifecycleProvider::new(value_provider);
+
+    assert_eq!(lifecycle.state().await, NivasaProviderState::Registered);
+    assert_eq!(lifecycle.metadata().scope, ProviderScope::Singleton);
+
+    let built = lifecycle
+        .build(&container)
+        .await
+        .expect("value provider should build");
+    let built = built
+        .downcast::<usize>()
+        .expect("provider should return usize");
+    assert_eq!(*built, 42);
+    assert_eq!(lifecycle.state().await, NivasaProviderState::Resolved);
+
+    let failing_provider: Arc<dyn Provider> = Arc::new(FactoryProvider::new(
+        ProviderScope::Transient,
+        vec![],
+        |_| {
+            Box::pin(async { Err::<usize, _>(DiError::ConstructionFailed("usize", "boom".into())) })
+        },
+    ));
+    let failing_lifecycle = LifecycleProvider::new(failing_provider);
+
+    let err = failing_lifecycle
+        .build(&container)
+        .await
+        .expect_err("factory provider should fail");
+    assert!(matches!(err, DiError::ConstructionFailed("usize", _)));
+    assert_eq!(
+        failing_lifecycle.state().await,
+        NivasaProviderState::ResolutionFailed
+    );
+}
+
+#[tokio::test]
 async fn test_resolve_optional_returns_none_for_missing_and_some_for_registered_values() {
     let container = DependencyContainer::new();
 
-    assert!(container.resolve_optional::<ServiceA>().await.unwrap().is_none());
+    assert!(container
+        .resolve_optional::<ServiceA>()
+        .await
+        .unwrap()
+        .is_none());
 
     container.register_value(String::from("config")).await;
     container.initialize().await.unwrap();
@@ -166,6 +211,34 @@ async fn test_lazy_dependency_resolves_on_first_access() {
     let second = consumer.leaf.get().await.unwrap();
     assert_eq!(counter.load(Ordering::SeqCst), 1);
     assert!(Arc::ptr_eq(&first, &second));
+}
+
+#[tokio::test]
+async fn lazy_errors_do_not_poison_retry_and_clone_reuses_resolver() {
+    let counter = Arc::new(AtomicUsize::new(0));
+    let calls = Arc::clone(&counter);
+    let lazy = Lazy::new(move || {
+        let calls = Arc::clone(&calls);
+        async move {
+            let attempt = calls.fetch_add(1, Ordering::SeqCst);
+            if attempt == 0 {
+                Err(DiError::Registration("not ready".to_string()))
+            } else {
+                Ok(Arc::new(LazyLeaf { id: attempt }))
+            }
+        }
+    });
+    let cloned = lazy.clone();
+
+    assert!(lazy.get().await.is_err());
+    let first = lazy.get().await.unwrap();
+    let second = lazy.get().await.unwrap();
+    let cloned_value = cloned.get().await.unwrap();
+
+    assert_eq!(first.id, 1);
+    assert!(Arc::ptr_eq(&first, &second));
+    assert_eq!(cloned_value.id, 2);
+    assert_eq!(counter.load(Ordering::SeqCst), 3);
 }
 
 #[tokio::test]

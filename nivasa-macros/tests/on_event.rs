@@ -1,7 +1,9 @@
 use nivasa_macros::{interceptor, on_event, websocket_gateway};
 use trybuild::TestCases;
 
+#[allow(dead_code)]
 struct AuditInterceptor;
+#[allow(dead_code)]
 struct MetricsInterceptor;
 
 #[websocket_gateway("/events")]
@@ -16,7 +18,18 @@ impl EventGateway {
     }
 }
 
+#[allow(dead_code)]
 struct RoomGuard;
+
+#[websocket_gateway("/direct-events")]
+struct DirectAttrEventGateway;
+
+impl DirectAttrEventGateway {
+    #[on_event("user.direct")]
+    #[nivasa_macros::guard(RoomGuard)]
+    #[interceptor(AuditInterceptor)]
+    fn on_user_direct(&self) {}
+}
 
 #[test]
 fn on_event_macro_emits_handler_metadata() {
@@ -35,6 +48,16 @@ fn on_event_macro_emits_handler_metadata() {
 
     let gateway = EventGateway;
     assert_eq!(gateway.on_user_created("42".to_string()), "created:42");
+
+    assert_eq!(
+        DirectAttrEventGateway::__nivasa_on_event_guard_metadata_for_on_user_direct(),
+        vec!["RoomGuard"],
+    );
+    assert_eq!(
+        DirectAttrEventGateway::__nivasa_on_event_interceptor_metadata_for_on_user_direct(),
+        vec!["AuditInterceptor"],
+    );
+    DirectAttrEventGateway.on_user_direct();
 }
 
 #[allow(dead_code)]

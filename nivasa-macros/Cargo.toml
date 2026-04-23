@@ -23,6 +23,7 @@ nivasa-http = { version = "0.1.0", path = "../nivasa-http" }
 nivasa-filters = { version = "0.1.0", path = "../nivasa-filters" }
 nivasa-routing = { version = "0.1.0", path = "../nivasa-routing" }
 nivasa-pipes = { version = "0.1.0", path = "../nivasa-pipes" }
+nivasa-scheduling = { version = "0.1.0", path = "../nivasa-scheduling" }
 nivasa-validation = { version = "0.1.0", path = "../nivasa-validation" }
 async-trait = { workspace = true }
 serde_json = { workspace = true }

@@ -1,0 +1,7 @@
+error: missing required `statechart` argument
+ --> tests/trybuild/scxml_handler_missing_statechart_arg.rs:3:1
+  |
+3 | #[scxml_handler(state = "guard_chain")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `scxml_handler` (in Nightly builds, run with -Z macro-backtrace for more info)

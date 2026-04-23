@@ -1,8 +1,11 @@
 use nivasa_macros::{interceptor, mutation, query, resolver, subscription, websocket_gateway};
 use trybuild::TestCases;
 
+#[allow(dead_code)]
 struct QueryGuard;
+#[allow(dead_code)]
 struct AuditInterceptor;
+#[allow(dead_code)]
 struct MetricsInterceptor;
 
 #[websocket_gateway("/graphql")]
@@ -26,6 +29,15 @@ impl GraphqlGateway {
     fn user_created(&self, id: String) -> String {
         format!("subscribed:{id}")
     }
+}
+
+struct DirectAttrGraphqlGateway;
+
+impl DirectAttrGraphqlGateway {
+    #[resolver("directUsers")]
+    #[nivasa_macros::guard(QueryGuard)]
+    #[interceptor(AuditInterceptor)]
+    fn users(&self) {}
 }
 
 #[test]
@@ -63,6 +75,16 @@ fn graphql_macros_emit_handler_metadata() {
     );
     assert_eq!(gateway.create_user("delta".to_string()), "created:delta");
     assert_eq!(gateway.user_created("42".to_string()), "subscribed:42");
+
+    assert_eq!(
+        DirectAttrGraphqlGateway::__nivasa_graphql_resolver_guard_metadata_for_users(),
+        vec!["QueryGuard"],
+    );
+    assert_eq!(
+        DirectAttrGraphqlGateway::__nivasa_graphql_resolver_interceptor_metadata_for_users(),
+        vec!["AuditInterceptor"],
+    );
+    DirectAttrGraphqlGateway.users();
 }
 
 #[allow(dead_code)]

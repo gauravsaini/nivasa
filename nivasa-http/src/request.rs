@@ -5,7 +5,7 @@ use http::{
 };
 use nivasa_routing::RoutePathCaptures;
 use serde::de::DeserializeOwned;
-use std::fmt;
+use std::{fmt, net::IpAddr};
 use url::form_urlencoded;
 
 /// Errors raised when extracting values from a request.
@@ -21,6 +21,7 @@ pub enum RequestExtractError {
     InvalidQueryParameter { name: String, error: String },
     InvalidHeader { name: String, error: String },
     InvalidQuery(String),
+    MissingExtension { type_name: &'static str },
 }
 
 impl fmt::Display for RequestExtractError {
@@ -50,6 +51,9 @@ impl fmt::Display for RequestExtractError {
                 write!(f, "invalid header `{name}`: {error}")
             }
             RequestExtractError::InvalidQuery(err) => write!(f, "invalid query string: {err}"),
+            RequestExtractError::MissingExtension { type_name } => {
+                write!(f, "request is missing extension `{type_name}`")
+            }
         }
     }
 }
@@ -256,6 +260,32 @@ impl NivasaRequest {
         self.inner.body_mut()
     }
 
+    /// Borrow request extensions.
+    pub fn extensions(&self) -> &http::Extensions {
+        self.inner.extensions()
+    }
+
+    /// Borrow request extensions mutably.
+    pub fn extensions_mut(&mut self) -> &mut http::Extensions {
+        self.inner.extensions_mut()
+    }
+
+    /// Insert a typed request extension.
+    pub fn insert_extension<T>(&mut self, value: T) -> Option<T>
+    where
+        T: Clone + Send + Sync + 'static,
+    {
+        self.inner.extensions_mut().insert(value)
+    }
+
+    /// Borrow a typed request extension.
+    pub fn extension<T>(&self) -> Option<&T>
+    where
+        T: Send + Sync + 'static,
+    {
+        self.inner.extensions().get::<T>()
+    }
+
     /// Attach captured path parameters to this request.
     pub fn set_path_params(&mut self, path_params: RoutePathCaptures) {
         self.path_params = Some(path_params);
@@ -338,6 +368,17 @@ impl FromRequest for RoutePathCaptures {
 impl FromRequest for HeaderMap {
     fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
         Ok(request.headers().clone())
+    }
+}
+
+impl FromRequest for IpAddr {
+    fn from_request(request: &NivasaRequest) -> Result<Self, RequestExtractError> {
+        request
+            .extension::<IpAddr>()
+            .copied()
+            .ok_or(RequestExtractError::MissingExtension {
+                type_name: std::any::type_name::<IpAddr>(),
+            })
     }
 }
 

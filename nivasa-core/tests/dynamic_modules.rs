@@ -106,6 +106,19 @@ fn dynamic_module_tracks_metadata_and_extra_providers() {
 }
 
 #[test]
+fn dynamic_module_debug_clone_and_equality_track_pre_bootstrap_presence() {
+    let base = DynamicModule::new(ModuleMetadata::new())
+        .with_providers(vec![TypeId::of::<RootService>()])
+        .with_global(true);
+    let with_hook = base.clone().with_pre_bootstrap(|| Ok(()));
+    let cloned = with_hook.clone();
+
+    assert_eq!(with_hook, cloned);
+    assert_ne!(base, with_hook);
+    assert!(format!("{with_hook:?}").contains("has_pre_bootstrap: true"));
+}
+
+#[test]
 fn configurable_modules_can_build_root_and_feature_variants() {
     let root = ExampleDynamicModule::for_root(DynamicOptions {
         provider: TypeId::of::<RootService>(),
