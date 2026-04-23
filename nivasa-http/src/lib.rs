@@ -117,6 +117,9 @@ use uuid::Uuid;
 /// Shared request/response handler type used by app-shell dispatch seams.
 pub type AppRouteHandler = Arc<dyn Fn(&NivasaRequest) -> NivasaResponse + Send + Sync + 'static>;
 
+/// Generated controller response metadata entry.
+pub type ControllerResponseMetadata<'a> = (&'a str, Option<u16>, Vec<(&'a str, &'a str)>);
+
 /// Captured client IP value for controller-side `#[ip]` extraction.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ClientIp(String);
@@ -370,6 +373,44 @@ where
         Ok(value) => action(value).into_response(),
         Err(error) => error.into_response(),
     }
+}
+
+/// Apply generated controller response metadata to a handler response.
+///
+/// This covers the runtime side of `#[http_code(...)]` and
+/// `#[header("key", "value")]` after the handler has run. It does not alter
+/// the SCXML lifecycle; callers use it inside the existing handler-execution
+/// stage before response finalization.
+pub fn apply_controller_response_metadata(
+    response: NivasaResponse,
+    handler: &str,
+    metadata: &[ControllerResponseMetadata<'_>],
+) -> NivasaResponse {
+    let Some((_, status_code, headers)) = metadata
+        .iter()
+        .find(|(metadata_handler, _, _)| *metadata_handler == handler)
+    else {
+        return response;
+    };
+
+    let mut response = if let Some(status_code) = status_code {
+        match http::StatusCode::from_u16(*status_code) {
+            Ok(status) => {
+                let mut inner = response.into_inner();
+                *inner.status_mut() = status;
+                NivasaResponse::from(inner)
+            }
+            Err(_) => response,
+        }
+    } else {
+        response
+    };
+
+    for (name, value) in headers {
+        response = response.with_header(*name, *value);
+    }
+
+    response
 }
 
 /// Execute a controller-style action with a single uploaded file.

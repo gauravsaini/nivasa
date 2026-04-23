@@ -98,12 +98,13 @@ use nivasa_common::HttpException;
 use nivasa_core::di::{DependencyContainer, ProviderScope};
 use nivasa_guards::{ExecutionContext, Guard, GuardFuture, RolesGuard, ThrottlerGuard};
 use nivasa_http::{
-    resolve_controller_guard_execution, run_controller_action, run_controller_action_with_body,
-    run_controller_action_with_custom_param, run_controller_action_with_file,
-    run_controller_action_with_files, run_controller_action_with_header,
-    run_controller_action_with_headers, run_controller_action_with_ip,
-    run_controller_action_with_param, run_controller_action_with_query,
-    run_controller_action_with_request, run_controller_action_with_session,
+    apply_controller_response_metadata, resolve_controller_guard_execution, run_controller_action,
+    run_controller_action_with_body, run_controller_action_with_custom_param,
+    run_controller_action_with_file, run_controller_action_with_files,
+    run_controller_action_with_header, run_controller_action_with_headers,
+    run_controller_action_with_ip, run_controller_action_with_param,
+    run_controller_action_with_query, run_controller_action_with_request,
+    run_controller_action_with_session,
     upload::{FileInterceptor, FilesInterceptor, UploadedFile},
     Body, ClientIp, ControllerParamExtractor, ControllerResponse, FromRequest,
     GuardExecutionOutcome, Json, NivasaRequest, NivasaResponse, Query, RequestPipeline,
@@ -597,6 +598,26 @@ mod runtime_extraction {
             VersionedReportsController::__nivasa_controller_response_metadata(),
             vec![("summary", Some(204), vec![("x-controller-version", "v1")],)]
         );
+
+        let response = apply_controller_response_metadata(
+            NivasaResponse::text("summary"),
+            "summary",
+            &VersionedReportsController::__nivasa_controller_response_metadata(),
+        );
+        assert_eq!(response.status(), http::StatusCode::NO_CONTENT);
+        assert_eq!(
+            response.headers().get("x-controller-version").unwrap(),
+            "v1"
+        );
+        assert_eq!(response.body(), &Body::text("summary"));
+
+        let unchanged = apply_controller_response_metadata(
+            NivasaResponse::text("plain"),
+            "missing",
+            &VersionedReportsController::__nivasa_controller_response_metadata(),
+        );
+        assert_eq!(unchanged.status(), http::StatusCode::OK);
+        assert_eq!(unchanged.headers().get("x-controller-version"), None);
     }
 
     #[test]

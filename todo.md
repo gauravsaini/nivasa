@@ -370,8 +370,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Implement redirect response (301, 302, 307, 308)
 - [x] Implement `HttpStatus` enum for all standard status codes
 - [x] Implement `Result<T, HttpException>` return type handling
-- [x] Implement `#[http_code(201)]` to override default status code
-- [x] Implement `#[header("key", "value")]` to set response headers
+- [x] Implement `#[http_code(201)]` to override default status code, with `apply_controller_response_metadata(...)` covering the focused runtime helper path
+- [x] Implement `#[header("key", "value")]` to set response headers, with `apply_controller_response_metadata(...)` covering the focused runtime helper path
 
 #### 2.1.7 — API Versioning
 - [x] Support URI versioning: `/v1/users`, `/v2/users`

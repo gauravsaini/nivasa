@@ -19,22 +19,19 @@ The route-only guardrail matters because `#[impl_controller]` only records respo
 ## What The Macro Emits
 
 The controller macro records response metadata alongside the generated route metadata.
-The generated controller helpers expose the collected values so later runtime code can inspect them:
+The generated controller helpers expose the collected values so runtime code can inspect them:
 
 - `__nivasa_controller_response_metadata()` returns the handler name, optional status code, and collected headers.
+- `apply_controller_response_metadata(...)` applies the matching handler entry to a `NivasaResponse`.
+- `ControllerResponseMetadata<'_>` names the generated metadata tuple shape for helper consumers.
 
 Those entries are produced at compile time and reflect the route handlers that passed validation.
 
-## Current Limitations
+## Runtime Boundary
 
-The response metadata is compile-time only today.
-It is not yet automatically applied to `NivasaResponse` construction or to the request pipeline at runtime.
+Response metadata has a focused runtime helper today. Generated controller metadata can be applied after the handler returns and before response finalization without adding a new SCXML stage.
 
-That means:
-
-1. The metadata exists for later wiring into a response executor.
-1. Handlers still need to build their responses explicitly.
-1. The runtime does not yet use the metadata to override status codes or inject headers automatically.
+Full automatic invocation from generated controller metadata remains future work; current route handlers call the helper explicitly when they want the metadata-applied response.
 
 ## Request Versus Response Headers
 

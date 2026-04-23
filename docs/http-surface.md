@@ -21,6 +21,7 @@ The crate currently exposes these pieces:
 1. `Download` plus `NivasaResponse::download()` for byte-backed file attachment responses that set `Content-Disposition`.
 1. Controller-side multipart helpers for `#[file]` and `#[files]` that stay on controller side without taking over request lifecycle ownership.
 1. `ControllerResponse` plus `NivasaResponseBuilder` for the first `#[res]` runtime slice.
+1. `apply_controller_response_metadata(...)` for applying `#[http_code(...)]` and response-header metadata after handler execution.
 1. `RequestPipeline` for the SCXML request coordinator.
 1. `NivasaServer` as the transport shell entry point.
 1. Exception-filter runtime support via `use_global_filter(...)`, `#[use_filters(...)]`, `#[catch]`, `#[catch_all]`, and the built-in `HttpExceptionFilter`; see [`docs/exception-filters.md`](./exception-filters.md) for the shipped matching and fallback behavior.
@@ -33,12 +34,7 @@ The crate currently exposes these pieces:
 These pieces are still intentionally out of scope or only partially wired:
 
 1. Full controller invocation from generated metadata.
-1. Automatic runtime handling for the remaining controller markers beyond the first `#[res]` slice.
-1. Request body size limits.
-1. Request timeouts.
-1. TLS via `rustls`.
 1. `ErrorHandling` as the remaining SCXML future-stage caveat.
-1. App-level `VersioningOptions`.
 1. Filesystem-backed or streaming download responses, range handling, and other richer attachment behavior.
 
 ## Practical Notes
