@@ -115,6 +115,14 @@ fn builder_defaults_match_the_existing_config_surface() {
 }
 
 #[test]
+fn bootstrap_config_preserves_explicit_swagger_ui_slash() {
+    let bootstrap =
+        nivasa::AppBootstrapConfig::default().with_swagger_ui_path(" /docs/ui ");
+
+    assert_eq!(bootstrap.swagger_ui_path(), "/docs/ui");
+}
+
+#[test]
 fn crate_root_reexports_bootstrap_config_as_pure_data() {
     let server = ServerOptions::builder()
         .host("0.0.0.0")
@@ -1085,6 +1093,35 @@ async fn nest_application_listen_starts_http_server_from_registered_controller_h
     let client: Client<HttpConnector, Empty<Bytes>> =
         Client::builder(TokioExecutor::new()).build_http();
     let uri = format!("http://127.0.0.1:{port}/listen/health").parse()?;
+    let response = client.get(uri).await?;
+
+    assert_eq!(response.status().as_u16(), 200);
+    let body = response.into_body().collect().await?.to_bytes();
+    assert_eq!(body, Bytes::from_static(b"listen-ready"));
+
+    server_task.abort();
+    let _ = server_task.await;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn nest_application_listen_applies_global_prefix_to_registered_controller_handlers(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let app = nivasa::NestApplication::create(ListenModule);
+    let server_options = ServerOptions::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .global_prefix("api")
+        .build();
+
+    let server_task = tokio::spawn(async move { app.listen(server_options).await });
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, Empty<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let uri = format!("http://127.0.0.1:{port}/api/listen/health").parse()?;
     let response = client.get(uri).await?;
 
     assert_eq!(response.status().as_u16(), 200);
