@@ -172,3 +172,101 @@ fn files_interceptor_reports_missing_file_when_no_matching_field_exists() {
         }
     );
 }
+
+#[test]
+fn upload_error_display_covers_public_messages() {
+    let errors = [
+        UploadInterceptError::MissingMultipartBoundary,
+        UploadInterceptError::InvalidMultipart("bad boundary".into()),
+        UploadInterceptError::UnknownField {
+            name: "avatar".into(),
+        },
+        UploadInterceptError::MissingFile {
+            field: "avatar".into(),
+        },
+        UploadInterceptError::TooManyFiles {
+            field: "avatar".into(),
+            count: 2,
+        },
+        UploadInterceptError::FieldTooLarge {
+            field: "avatar".into(),
+            limit: 4,
+            actual: 9,
+        },
+        UploadInterceptError::StreamTooLarge {
+            limit: 8,
+            actual: 16,
+        },
+        UploadInterceptError::DisallowedMimeType {
+            mime_type: Some("text/plain".into()),
+        },
+        UploadInterceptError::DisallowedMimeType { mime_type: None },
+    ];
+
+    let rendered = errors.map(|error| error.to_string());
+
+    assert_eq!(rendered[0], "missing multipart boundary in content type");
+    assert_eq!(rendered[1], "invalid multipart payload: bad boundary");
+    assert_eq!(rendered[2], "multipart field `avatar` is not allowed");
+    assert_eq!(rendered[3], "missing uploaded file for field `avatar`");
+    assert_eq!(rendered[4], "expected one file for field `avatar`, found 2");
+    assert_eq!(
+        rendered[5],
+        "multipart field `avatar` exceeded size limit 4 bytes with 9 bytes"
+    );
+    assert_eq!(
+        rendered[6],
+        "multipart payload exceeded size limit 8 bytes with 16 bytes"
+    );
+    assert_eq!(
+        rendered[7],
+        "multipart MIME type `text/plain` is not allowed"
+    );
+    assert_eq!(
+        rendered[8],
+        "multipart file is missing an allowed MIME type"
+    );
+}
+
+#[test]
+fn file_interceptor_reports_malformed_multipart_edges() {
+    let content_type = "multipart/form-data; boundary=X-BOUNDARY";
+
+    let cases: &[(&[u8], &str)] = &[
+        (
+            b"--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"avatar\"; filename=\"a.png\"\r\n",
+            "multipart payload is missing a closing boundary",
+        ),
+        (
+            b"--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"avatar\"; filename=\"a.png\"\r\n--X-BOUNDARY--\r\n",
+            "missing header separator",
+        ),
+        (
+            b"--X-BOUNDARY\r\nContent-Disposition form-data; name=\"avatar\"; filename=\"a.png\"\r\n\r\nbody\r\n--X-BOUNDARY--\r\n",
+            "invalid header line",
+        ),
+        (
+            b"--X-BOUNDARY\r\nContent-Disposition: form-data; filename=\"a.png\"\r\n\r\nbody\r\n--X-BOUNDARY--\r\n",
+            "multipart field is missing a name",
+        ),
+    ];
+
+    for (body, expected) in cases {
+        let error = FileInterceptor::new("avatar")
+            .extract_from_bytes(content_type, body)
+            .expect_err("malformed multipart body should fail");
+
+        assert!(
+            error.to_string().contains(expected),
+            "expected `{expected}` in `{error}`"
+        );
+    }
+
+    let invalid_utf8 = b"--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"avatar\"; filename=\"a.png\"\xff\r\n\r\nbody\r\n--X-BOUNDARY--\r\n";
+    let error = FileInterceptor::new("avatar")
+        .extract_from_bytes(content_type, invalid_utf8)
+        .expect_err("invalid UTF-8 headers should fail");
+    assert!(error
+        .to_string()
+        .contains("multipart headers must be valid UTF-8"));
+}
