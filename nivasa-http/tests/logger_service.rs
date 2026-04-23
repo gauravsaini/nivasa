@@ -1,4 +1,4 @@
-use nivasa_core::module::ConfigurableModule;
+use nivasa_core::{di::provider::Injectable, module::ConfigurableModule, DependencyContainer};
 use nivasa_http::{LogContext, LoggerModule, LoggerOptions, LoggerService};
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
@@ -152,6 +152,39 @@ fn logger_service_rejects_invalid_directives() {
 }
 
 #[test]
+fn logger_service_rejects_invalid_default_directive() {
+    let service = LoggerService::new(LoggerOptions::new().with_default_level("target["));
+
+    let error = service
+        .env_filter()
+        .expect_err("invalid default directive should fail");
+
+    assert_eq!(error.to_string(), "invalid tracing directive: target[");
+}
+
+#[test]
+fn logger_service_drops_info_when_default_level_is_error() {
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let service = LoggerService::new(LoggerOptions::new().with_default_level("error"));
+
+    service
+        .with_default_subscriber(
+            {
+                let buffer = Arc::clone(&buffer);
+                move || BufferWriter {
+                    buffer: Arc::clone(&buffer),
+                }
+            },
+            || {
+                service.info(&LogContext::new(), "should not log");
+            },
+        )
+        .expect("subscriber should install");
+
+    assert!(buffer.lock().expect("buffer lock").is_empty());
+}
+
+#[test]
 fn logger_service_exposes_options_and_builds_env_filter() {
     let service = LoggerService::new(
         LoggerOptions::new()
@@ -164,4 +197,23 @@ fn logger_service_exposes_options_and_builds_env_filter() {
     assert!(options.is_global);
     assert!(matches!(options.format, nivasa_http::LoggerFormat::Json));
     assert!(service.env_filter().is_ok());
+}
+
+#[test]
+fn logger_module_markers_and_injectable_defaults_are_buildable() {
+    let module = LoggerModule::new();
+    let configurable_root = <LoggerModule as ConfigurableModule>::for_root(LoggerOptions::new());
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+
+    let service = runtime
+        .block_on(LoggerService::build(&DependencyContainer::new()))
+        .expect("logger service should build from DI");
+
+    assert_eq!(module, LoggerModule);
+    assert!(!configurable_root.metadata.is_global);
+    assert_eq!(LoggerService::dependencies(), Vec::new());
+    assert_eq!(service.options(), &LoggerOptions::new());
 }
