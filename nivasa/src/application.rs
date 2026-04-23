@@ -1455,6 +1455,13 @@ mod docs_tests {
 
         assert_eq!(options.strategy, VersioningStrategy::Header);
         assert_eq!(options.default_version.as_deref(), Some("v1"));
+
+        let blank = VersioningOptions::new(VersioningStrategy::Uri).with_default_version("   ");
+        assert_eq!(blank.default_version, None);
+
+        let defaulted = VersioningOptions::default();
+        assert_eq!(defaulted.strategy, VersioningStrategy::Uri);
+        assert_eq!(defaulted.default_version, None);
     }
 
     #[test]
@@ -1472,6 +1479,10 @@ mod docs_tests {
 
         assert_eq!(versioning.strategy, VersioningStrategy::MediaType);
         assert_eq!(versioning.default_version.as_deref(), Some("v3"));
+        let from_builder: VersioningOptions =
+            VersioningOptions::builder(VersioningStrategy::Header).into();
+        assert_eq!(from_builder.strategy, VersioningStrategy::Header);
+        assert_eq!(from_builder.default_version, None);
         assert_eq!(options.host, "0.0.0.0");
         assert_eq!(options.port, 8080);
         assert!(options.cors);
@@ -1581,6 +1592,17 @@ mod docs_tests {
 
         assert!(!options.cors);
         assert_eq!(options.global_prefix, None);
+
+        let direct = ServerOptions::new("localhost", 4000)
+            .enable_cors()
+            .with_global_prefix("   ")
+            .with_versioning(VersioningOptions::default());
+        assert!(direct.cors);
+        assert_eq!(direct.global_prefix, None);
+        assert_eq!(direct.versioning, Some(VersioningOptions::default()));
+
+        let from_builder: ServerOptions = ServerOptions::builder().host("0.0.0.0").into();
+        assert_eq!(from_builder.host, "0.0.0.0");
     }
 
     #[test]
