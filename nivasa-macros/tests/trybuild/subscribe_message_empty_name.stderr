@@ -1,0 +1,5 @@
+error: `#[subscribe_message]` expects a non-empty event name like `#[subscribe_message("event_name")]`
+ --> tests/trybuild/subscribe_message_empty_name.rs:6:25
+  |
+6 |     #[subscribe_message("")]
+  |                         ^^
