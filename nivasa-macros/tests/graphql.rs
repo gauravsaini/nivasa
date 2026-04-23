@@ -1,8 +1,11 @@
 use nivasa_macros::{interceptor, mutation, query, resolver, subscription, websocket_gateway};
 use trybuild::TestCases;
 
+#[allow(dead_code)]
 struct QueryGuard;
+#[allow(dead_code)]
 struct AuditInterceptor;
+#[allow(dead_code)]
 struct MetricsInterceptor;
 
 #[websocket_gateway("/graphql")]

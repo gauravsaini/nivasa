@@ -1,8 +1,11 @@
 use nivasa_macros::{interceptor, subscribe_message, websocket_gateway};
 use trybuild::TestCases;
 
+#[allow(dead_code)]
 struct RoomGuard;
+#[allow(dead_code)]
 struct AuditInterceptor;
+#[allow(dead_code)]
 struct MetricsInterceptor;
 
 #[websocket_gateway("/ws")]

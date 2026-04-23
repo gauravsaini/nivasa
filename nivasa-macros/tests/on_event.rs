@@ -1,7 +1,9 @@
 use nivasa_macros::{interceptor, on_event, websocket_gateway};
 use trybuild::TestCases;
 
+#[allow(dead_code)]
 struct AuditInterceptor;
+#[allow(dead_code)]
 struct MetricsInterceptor;
 
 #[websocket_gateway("/events")]
@@ -16,6 +18,7 @@ impl EventGateway {
     }
 }
 
+#[allow(dead_code)]
 struct RoomGuard;
 
 #[test]
