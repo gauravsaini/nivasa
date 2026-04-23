@@ -135,6 +135,11 @@ fn http_status_classification_boundaries_exclude_other_ranges() {
 }
 
 #[test]
+fn http_status_informational_helper_accepts_1xx() {
+    assert!(HttpStatus::Continue.is_informational());
+}
+
+#[test]
 fn http_exception_uses_unknown_fallback_for_unrecognized_status() {
     let err = HttpException::new(599, "proxy exploded");
 
