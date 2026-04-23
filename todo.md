@@ -334,7 +334,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Validate no duplicate routes within a controller
 
 #### 2.1.4 — Parameter Extraction
-> ⚠️ **SCXML / controller boundary:** request pipeline now runs past route dispatch through controller execution stages. Landed controller runtime slices are `#[body]` request extraction, `#[req]` raw request access, `#[param("name")]` path-param extraction, `#[query]` full query DTO extraction, `#[query("name")]` single query-param extraction, `#[header("name")]` single-header extraction, `#[res]` response-builder access, and multipart `#[file]` / `#[files]` helpers. `#[headers]`, `#[ip]`, `#[session]`, and `#[custom_param(...)]` stay partial or pending.
+> ⚠️ **SCXML / controller boundary:** request pipeline now runs past route dispatch through controller execution stages. Landed controller runtime slices are `#[body]` request extraction, `#[req]` raw request access, `#[param("name")]` path-param extraction, `#[query]` full query DTO extraction, `#[query("name")]` single query-param extraction, `#[header("name")]` single-header extraction, `#[headers]` full header-map extraction, `#[ip]` client-IP extraction, typed `#[session]` extension extraction, `#[custom_param(...)]` custom extractor helpers, `#[res]` response-builder access, and multipart `#[file]` / `#[files]` helpers.
 
 - [x] Strip and record controller parameter extractor metadata in `#[impl_controller]`
 - [x] Implement `#[body]` extractor — deserialize JSON request body to typed DTO

@@ -47,6 +47,6 @@ These pieces are still intentionally out of scope or only partially wired:
 1. Keep lifecycle decisions in the SCXML pipeline.
 1. Keep response helpers small and composable so later runtime wiring can build on them, and treat buffered streaming as a wrapper-layer response helper rather than transport-level streaming.
 1. For middleware composition details, see [`docs/middleware.md`](./middleware.md) and the proof tests in [`nivasa-http/tests/middleware_foundation.rs`](../nivasa-http/tests/middleware_foundation.rs), [`nivasa-http/tests/logger_middleware.rs`](../nivasa-http/tests/logger_middleware.rs), and [`nivasa-http/tests/tower_middleware.rs`](../nivasa-http/tests/tower_middleware.rs).
-1. Treat `HeaderMap` extraction as a public request API today, but keep controller-side `#[headers]`, `#[ip]`, `#[session]`, and `#[custom_param(...)]` binding marked partial until their runtime coverage lands. The first `#[res]` slice is intentionally narrow and does not imply the rest of controller execution has landed.
+1. Treat controller-side `#[headers]`, `#[ip]`, `#[session]`, and `#[custom_param(...)]` as focused helper-based runtime slices today; fully automatic argument binding is still future work.
 1. Treat controller-side `#[file]` and `#[files]` support as post-route multipart helpers, not as a new request-pipeline stage.
 1. Use the attachment helper for simple byte downloads, but do not treat it as a full download subsystem yet; it is still byte-backed rather than stream- or filesystem-backed.
