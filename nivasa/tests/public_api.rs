@@ -116,8 +116,7 @@ fn builder_defaults_match_the_existing_config_surface() {
 
 #[test]
 fn bootstrap_config_preserves_explicit_swagger_ui_slash() {
-    let bootstrap =
-        nivasa::AppBootstrapConfig::default().with_swagger_ui_path(" /docs/ui ");
+    let bootstrap = nivasa::AppBootstrapConfig::default().with_swagger_ui_path(" /docs/ui ");
 
     assert_eq!(bootstrap.swagger_ui_path(), "/docs/ui");
 }
@@ -1132,6 +1131,30 @@ async fn nest_application_listen_applies_global_prefix_to_registered_controller_
     let _ = server_task.await;
 
     Ok(())
+}
+
+#[tokio::test]
+async fn nest_application_listen_surfaces_transport_bind_errors() {
+    let app = nivasa::NestApplication::create(ListenModule);
+    let error = app
+        .listen(
+            ServerOptions::builder()
+                .host("256.256.256.256")
+                .port(0)
+                .build(),
+        )
+        .await
+        .expect_err("invalid host should fail before serving");
+
+    match error {
+        AppBuildError::Listen(inner) => {
+            assert!(!inner.to_string().trim().is_empty());
+            assert!(AppBuildError::from(inner)
+                .to_string()
+                .starts_with("listen error: "));
+        }
+        other => panic!("unexpected error: {other}"),
+    }
 }
 
 #[test]
