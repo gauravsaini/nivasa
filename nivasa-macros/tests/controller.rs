@@ -5,6 +5,8 @@ fn controller_macro_validation() {
     let t = TestCases::new();
     t.pass("tests/trybuild/controller_pass.rs");
     t.pass("tests/trybuild/controller_version.rs");
+    t.pass("tests/trybuild/controller_route_trim_pass.rs");
+    t.pass("tests/trybuild/controller_literal_version_pass.rs");
     t.pass("tests/trybuild/controller_impl_pass.rs");
     t.pass("tests/trybuild/controller_guard_pass.rs");
     t.pass("tests/trybuild/controller_guard_multi_pass.rs");
@@ -27,6 +29,7 @@ fn controller_macro_validation() {
     t.pass("tests/trybuild/controller_method_pipe_chaining_pass.rs");
     t.pass("tests/trybuild/controller_controller_pipe_chaining_pass.rs");
     t.pass("tests/trybuild/controller_response_metadata_pass.rs");
+    t.pass("tests/trybuild/controller_dispatch_registration_pass.rs");
     t.compile_fail("tests/trybuild/controller_parameter_extractors_headers_no_route.rs");
     t.compile_fail("tests/trybuild/controller_parameter_extractors_body_namevalue_invalid.rs");
     t.compile_fail("tests/trybuild/controller_invalid_key.rs");
@@ -36,6 +39,16 @@ fn controller_macro_validation() {
     t.compile_fail("tests/trybuild/controller_trailing_args_invalid.rs");
     t.compile_fail("tests/trybuild/controller_duplicate_throttle.rs");
     t.compile_fail("tests/trybuild/controller_duplicate_skip_throttle.rs");
+    t.compile_fail("tests/trybuild/controller_guard_empty.rs");
+    t.compile_fail("tests/trybuild/controller_roles_empty.rs");
+    t.compile_fail("tests/trybuild/controller_interceptor_empty.rs");
+    t.compile_fail("tests/trybuild/controller_use_filters_empty.rs");
+    t.compile_fail("tests/trybuild/controller_set_metadata_missing_key.rs");
+    t.compile_fail("tests/trybuild/controller_set_metadata_missing_value.rs");
+    t.compile_fail("tests/trybuild/controller_set_metadata_empty_value.rs");
+    t.compile_fail("tests/trybuild/controller_throttle_missing_limit.rs");
+    t.compile_fail("tests/trybuild/controller_throttle_missing_ttl.rs");
+    t.compile_fail("tests/trybuild/controller_skip_throttle_invalid.rs");
     t.compile_fail("tests/trybuild/controller_parameter_extractors_invalid.rs");
     t.compile_fail("tests/trybuild/controller_custom_param_invalid.rs");
     t.compile_fail("tests/trybuild/controller_parameter_extractors_flag_invalid.rs");

@@ -1,0 +1,5 @@
+error: `#[throttle]` requires a `limit` entry
+ --> tests/trybuild/controller_throttle_missing_limit.rs:4:1
+  |
+4 | #[nivasa_macros::throttle(ttl = 30)]
+  | ^

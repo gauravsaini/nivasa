@@ -2314,6 +2314,240 @@ mod tests {
     use http::header::AUTHORIZATION;
 
     #[test]
+    fn cors_options_cover_allowlist_and_reflection_edges() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ACCESS_CONTROL_REQUEST_METHOD,
+            HeaderValue::from_static("PATCH"),
+        );
+        headers.insert(
+            ACCESS_CONTROL_REQUEST_HEADERS,
+            HeaderValue::from_static("authorization, content-type"),
+        );
+
+        let allowlist = CorsOptions::permissive()
+            .allow_origins(["https://app.example"])
+            .allow_methods([Method::GET, Method::POST])
+            .allow_headers(["authorization", "content-type"])
+            .allow_credentials(true);
+
+        assert_eq!(
+            allowlist
+                .allow_origin_header_value(Some("https://app.example"))
+                .and_then(|value| value.to_str().ok().map(str::to_owned)),
+            Some("https://app.example".to_string())
+        );
+        assert_eq!(
+            allowlist
+                .allow_origin_header_value(Some("https://evil.example"))
+                .and_then(|value| value.to_str().ok().map(str::to_owned)),
+            None::<String>
+        );
+        assert_eq!(
+            allowlist
+                .allow_methods_header_value(&headers)
+                .and_then(|value| value.to_str().ok().map(str::to_owned)),
+            Some("GET, POST".to_string())
+        );
+        assert_eq!(
+            allowlist
+                .allow_headers_header_value(&headers)
+                .and_then(|value| value.to_str().ok().map(str::to_owned)),
+            Some("authorization, content-type".to_string())
+        );
+        assert_eq!(
+            allowlist
+                .allow_credentials_header_value()
+                .and_then(|value| value.to_str().ok().map(str::to_owned)),
+            Some("true".to_string())
+        );
+
+        let reflective = CorsOptions::permissive().allow_credentials(true);
+        assert_eq!(
+            reflective
+                .allow_origin_header_value(Some("https://client.example"))
+                .and_then(|value| value.to_str().ok().map(str::to_owned)),
+            Some("https://client.example".to_string())
+        );
+        assert_eq!(
+            reflective
+                .allow_origin_header_value(None)
+                .and_then(|value| value.to_str().ok().map(str::to_owned)),
+            None::<String>
+        );
+
+        let wildcard = CorsOptions::permissive();
+        assert_eq!(
+            wildcard
+                .allow_origin_header_value(None)
+                .and_then(|value| value.to_str().ok().map(str::to_owned)),
+            Some("*".to_string())
+        );
+        assert_eq!(
+            wildcard
+                .allow_methods_header_value(&headers)
+                .and_then(|value| value.to_str().ok().map(str::to_owned)),
+            Some("PATCH, OPTIONS".to_string())
+        );
+        assert_eq!(
+            wildcard
+                .allow_headers_header_value(&headers)
+                .and_then(|value| value.to_str().ok().map(str::to_owned)),
+            Some("authorization, content-type".to_string())
+        );
+    }
+
+    #[test]
+    fn request_body_helpers_cover_json_and_error_paths() {
+        let mut json_text =
+            NivasaRequest::new(Method::POST, "/users", Body::text("{\"name\":\"Ada\"}"));
+        json_text.set_header(CONTENT_TYPE.as_str(), "application/json; charset=utf-8");
+        assert!(request_body_looks_json(&json_text));
+        assert_eq!(
+            request_body_to_pipe_value(&json_text).unwrap(),
+            json!({ "name": "Ada" })
+        );
+
+        let mut json_bytes = NivasaRequest::new(
+            Method::POST,
+            "/users",
+            Body::bytes(br#"{"enabled":true}"#.to_vec()),
+        );
+        json_bytes.set_header(CONTENT_TYPE.as_str(), "application/vnd.api+json");
+        assert!(request_body_looks_json(&json_bytes));
+        assert_eq!(
+            request_body_to_pipe_value(&json_bytes).unwrap(),
+            json!({ "enabled": true })
+        );
+
+        let plain_text = NivasaRequest::new(Method::POST, "/users", Body::text("hello"));
+        assert!(!request_body_looks_json(&plain_text));
+        assert_eq!(
+            request_body_to_pipe_value(&plain_text).unwrap(),
+            Value::String("hello".to_string())
+        );
+
+        let mut invalid_json = NivasaRequest::new(Method::POST, "/users", Body::text("{nope"));
+        invalid_json.set_header(CONTENT_TYPE.as_str(), "application/json");
+        let invalid_json_error = request_body_to_pipe_value(&invalid_json).unwrap_err();
+        assert_eq!(
+            invalid_json_error.status_code,
+            StatusCode::BAD_REQUEST.as_u16()
+        );
+        assert!(invalid_json_error
+            .message
+            .contains("global pipe could not parse request body as JSON"));
+
+        let invalid_utf8 =
+            NivasaRequest::new(Method::POST, "/users", Body::bytes(vec![0x80, 0x81, 0x82]));
+        let invalid_utf8_error = request_body_to_pipe_value(&invalid_utf8).unwrap_err();
+        assert_eq!(
+            invalid_utf8_error.status_code,
+            StatusCode::BAD_REQUEST.as_u16()
+        );
+        assert!(invalid_utf8_error
+            .message
+            .contains("global pipe requires a UTF-8 request body"));
+
+        assert_eq!(pipe_value_to_body(Value::Null), Body::Empty);
+        assert_eq!(
+            pipe_value_to_body(Value::String("trimmed".to_string())),
+            Body::Text("trimmed".to_string())
+        );
+        assert_eq!(
+            pipe_value_to_body(json!({ "ok": true })),
+            Body::Json(json!({ "ok": true }))
+        );
+    }
+
+    #[test]
+    fn request_identity_and_module_helpers_cover_trimmed_and_versioned_paths() {
+        let mut request = NivasaRequest::new(Method::GET, "/users", Body::empty());
+        request.set_header(AUTHORIZATION.as_str(), " Bearer header.payload.signature ");
+        request.set_header(REQUEST_ID_HEADER, " req-123 ");
+        request.set_header(USER_ID_HEADER, " user-7 ");
+        request.set_header(MODULE_NAME_HEADER, " UsersModule ");
+
+        assert_eq!(
+            request_header_value(&request, AUTHORIZATION.as_str()),
+            Some("Bearer header.payload.signature".to_string())
+        );
+        assert_eq!(
+            request_header_value(&request, REQUEST_ID_HEADER),
+            Some("req-123".to_string())
+        );
+
+        let seeded = seed_request_identity(
+            NivasaRequest::new(Method::GET, "/seeded", Body::empty()),
+            "seed-42",
+        );
+        assert_eq!(
+            seeded
+                .header(REQUEST_ID_HEADER)
+                .and_then(|value| value.to_str().ok().map(str::to_owned)),
+            Some("seed-42".to_string())
+        );
+
+        let mut blank_headers = HeaderMap::new();
+        blank_headers.insert(REQUEST_ID_HEADER, HeaderValue::from_static("   "));
+        let generated_request_id = request_id_from_headers(&blank_headers);
+        assert!(!generated_request_id.trim().is_empty());
+        assert_ne!(generated_request_id, "   ");
+
+        let mut routes = RouteDispatchRegistry::new();
+        routes
+            .register(
+                RouteMethod::Get,
+                RoutePattern::parse("/users".to_string()).unwrap(),
+                RouteHandlerBinding::new(|_| NivasaResponse::new(StatusCode::OK, Body::empty()))
+                    .with_module_name("FallbackUsersModule"),
+            )
+            .unwrap();
+        routes
+            .register_versioned(
+                RouteMethod::Get,
+                RoutePattern::parse("/users".to_string()).unwrap(),
+                Some("v2".to_string()),
+                RouteHandlerBinding::new(|_| NivasaResponse::new(StatusCode::OK, Body::empty()))
+                    .with_module_name("UsersV2Module"),
+            )
+            .unwrap();
+        routes
+            .register_versioned(
+                RouteMethod::Get,
+                RoutePattern::parse("/users".to_string()).unwrap(),
+                Some("v3".to_string()),
+                RouteHandlerBinding::new(|_| NivasaResponse::new(StatusCode::OK, Body::empty()))
+                    .with_module_name("UsersV3Module"),
+            )
+            .unwrap();
+
+        let mut header_versioned_request = NivasaRequest::new(Method::GET, "/users", Body::empty());
+        header_versioned_request.set_header("X-API-Version", " 2 ");
+        assert_eq!(
+            module_name_for_request(&header_versioned_request, &routes),
+            Some("UsersV2Module".to_string())
+        );
+
+        let mut accept_versioned_request = NivasaRequest::new(Method::GET, "/users", Body::empty());
+        accept_versioned_request
+            .set_header(http::header::ACCEPT.as_str(), "application/vnd.app.v3+json");
+        assert_eq!(
+            module_name_for_request(&accept_versioned_request, &routes),
+            Some("UsersV3Module".to_string())
+        );
+
+        let unversioned_request = NivasaRequest::new(Method::GET, "/users", Body::empty());
+        assert_eq!(
+            module_name_for_request(&unversioned_request, &routes),
+            Some("FallbackUsersModule".to_string())
+        );
+
+        assert_eq!(short_type_name("demo::users::UsersModule"), "UsersModule");
+        assert_eq!(short_type_name("UsersModule"), "UsersModule");
+    }
+
+    #[test]
     fn request_context_from_request_seeds_request_metadata_and_authorization() {
         let mut request = NivasaRequest::new(Method::POST, "/users/42", Body::text("payload"));
         request.set_header(AUTHORIZATION.as_str(), "Bearer header.payload.signature");

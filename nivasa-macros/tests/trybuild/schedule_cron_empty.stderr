@@ -1,0 +1,5 @@
+error: `#[cron]` expects a non-empty cron expression like `#[cron("0 */5 * * * *")]`
+ --> tests/trybuild/schedule_cron_empty.rs:6:12
+  |
+6 |     #[cron("")]
+  |            ^^

@@ -4,7 +4,13 @@ use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use hyper_util::rt::TokioExecutor;
 use nivasa_http::{Body, NivasaResponse, NivasaServer};
 use nivasa_routing::RouteMethod;
-use std::{error::Error, net::TcpListener as StdTcpListener, sync::atomic::{AtomicBool, Ordering}, sync::Arc, time::Duration};
+use std::{
+    error::Error,
+    net::TcpListener as StdTcpListener,
+    sync::atomic::{AtomicBool, Ordering},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -183,8 +189,7 @@ async fn server_returns_bad_request_for_truncated_request_body() -> Result<(), B
 }
 
 #[tokio::test]
-async fn server_generates_request_id_for_early_invalid_body_errors() -> Result<(), Box<dyn Error>>
-{
+async fn server_generates_request_id_for_early_invalid_body_errors() -> Result<(), Box<dyn Error>> {
     let port = free_port();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let handler_called = Arc::new(AtomicBool::new(false));

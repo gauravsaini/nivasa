@@ -305,7 +305,10 @@ fn request_helpers_cover_body_header_query_and_path_error_branches() {
         .insert("x-binary", HeaderValue::from_bytes(b"\xff").unwrap());
     let request = NivasaRequest::from_http(request);
 
-    assert_eq!(request.extract::<Body>().unwrap(), Body::bytes(vec![0xff, 0xfe]));
+    assert_eq!(
+        request.extract::<Body>().unwrap(),
+        Body::bytes(vec![0xff, 0xfe])
+    );
     assert_eq!(request.extract::<Vec<u8>>().unwrap(), vec![0xff, 0xfe]);
 
     let string_err = request.extract::<String>().unwrap_err();
@@ -354,7 +357,10 @@ fn request_helpers_cover_body_header_query_and_path_error_branches() {
         RouteDispatchOutcome::Matched(_)
     ));
 
-    let path_err = pipeline.request().path_param_typed::<u32>("id").unwrap_err();
+    let path_err = pipeline
+        .request()
+        .path_param_typed::<u32>("id")
+        .unwrap_err();
     assert!(matches!(
         path_err,
         RequestExtractError::InvalidPathParameter { .. }
@@ -387,7 +393,10 @@ fn request_helpers_cover_json_html_and_empty_body_variants() {
     let html_request =
         NivasaRequest::new(Method::POST, "/users", Body::html(r#"{"name":"Grace"}"#));
     assert_eq!(
-        html_request.extract::<Json<CreateUser>>().unwrap().into_inner(),
+        html_request
+            .extract::<Json<CreateUser>>()
+            .unwrap()
+            .into_inner(),
         CreateUser {
             name: "Grace".to_string(),
         }

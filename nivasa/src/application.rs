@@ -1314,8 +1314,10 @@ pub type AppRouteHandler = nivasa_http::AppRouteHandler;
 #[cfg(test)]
 mod docs_tests {
     use super::*;
+    use nivasa_core::DiError;
     use nivasa_http::{NextMiddleware, NivasaRequest, NivasaResponse};
     use nivasa_routing::RouteMethod;
+    use std::io;
 
     #[test]
     fn default_server_options_are_sane() {
@@ -1436,5 +1438,50 @@ mod docs_tests {
             .expect("route registration should succeed");
 
         let _server = builder.build();
+    }
+
+    #[test]
+    fn helper_normalization_covers_empty_root_and_uppercase_edges() {
+        assert_eq!(normalize_path_prefix("   ".to_string()), "");
+        assert_eq!(normalize_path_prefix("/".to_string()), "/");
+        assert_eq!(normalize_route_path("   "), "/");
+        assert_eq!(normalize_route_path("/users/"), "/users");
+        assert_eq!(normalize_version_token(" /V42/ "), "v42");
+    }
+
+    #[test]
+    fn controller_lookup_path_handles_missing_root_and_non_matching_prefixes() {
+        assert_eq!(controller_lookup_path(None, "users"), "/users");
+        assert_eq!(controller_lookup_path(Some("/"), "/users"), "/users");
+        assert_eq!(controller_lookup_path(Some("/api"), "/api"), "/");
+        assert_eq!(
+            controller_lookup_path(Some("/api"), "/other/users"),
+            "/other/users"
+        );
+    }
+
+    #[test]
+    fn server_options_builder_can_disable_cors_explicitly() {
+        let options = ServerOptions::builder()
+            .enable_cors()
+            .cors(false)
+            .global_prefix("   ")
+            .build();
+
+        assert!(!options.cors);
+        assert_eq!(options.global_prefix, None);
+    }
+
+    #[test]
+    fn app_build_error_wraps_io_and_di_errors() {
+        let listen_error =
+            AppBuildError::from(io::Error::new(io::ErrorKind::AddrNotAvailable, "nope"));
+        let di_error = AppBuildError::from(DiError::ProviderNotFound("DemoService"));
+
+        assert_eq!(listen_error.to_string(), "listen error: nope");
+        assert_eq!(
+            di_error.to_string(),
+            "Provider not found for type: DemoService"
+        );
     }
 }

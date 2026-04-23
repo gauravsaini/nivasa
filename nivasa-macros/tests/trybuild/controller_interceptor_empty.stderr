@@ -1,0 +1,15 @@
+error: `#[interceptor]` requires at least one interceptor type
+ --> tests/trybuild/controller_interceptor_empty.rs:3:1
+  |
+3 | #[interceptor()]
+  | ^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `interceptor` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused import: `controller`
+ --> tests/trybuild/controller_interceptor_empty.rs:1:21
+  |
+1 | use nivasa_macros::{controller, interceptor};
+  |                     ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default

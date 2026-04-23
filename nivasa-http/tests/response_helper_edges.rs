@@ -18,7 +18,10 @@ fn controller_response_ignores_invalid_headers_and_keeps_json_contract() {
     assert_eq!(response.headers().get("x-valid").unwrap(), "ok");
     assert!(response.headers().get("bad header").is_none());
     assert!(response.headers().get("x-bad-value").is_none());
-    assert_eq!(response.headers().get(CONTENT_TYPE).unwrap(), "application/json");
+    assert_eq!(
+        response.headers().get(CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&response.body().as_bytes()).unwrap(),
         serde_json::json!({ "ok": true })

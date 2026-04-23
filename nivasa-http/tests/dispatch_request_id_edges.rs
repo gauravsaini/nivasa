@@ -50,9 +50,7 @@ async fn test_client_preserves_request_id_and_allow_header_for_method_not_allowe
 #[tokio::test]
 async fn test_client_generates_request_id_for_blank_method_not_allowed_requests() {
     let server = NivasaServer::builder()
-        .route(RouteMethod::Get, "/known", |_| {
-            NivasaResponse::text("get")
-        })
+        .route(RouteMethod::Get, "/known", |_| NivasaResponse::text("get"))
         .expect("get route must register")
         .build();
 
