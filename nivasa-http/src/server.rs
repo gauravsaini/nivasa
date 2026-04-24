@@ -2312,6 +2312,60 @@ fn shutdown_future(
 mod tests {
     use super::*;
     use http::header::AUTHORIZATION;
+    use nivasa_filters::{
+        ArgumentsHost, ExceptionFilter, ExceptionFilterFuture, ExceptionFilterMetadata,
+    };
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    #[derive(Clone)]
+    struct TestFilter {
+        label: &'static str,
+        specific: bool,
+        catch_all: bool,
+        panic_sync: bool,
+        panic_async: bool,
+    }
+
+    impl ExceptionFilter<HttpException, NivasaResponse> for TestFilter {
+        fn catch<'a>(
+            &'a self,
+            exception: HttpException,
+            _host: ArgumentsHost,
+        ) -> ExceptionFilterFuture<'a, NivasaResponse> {
+            if self.panic_sync {
+                panic!("sync filter panic");
+            }
+
+            let label = self.label;
+            let panic_async = self.panic_async;
+            Box::pin(async move {
+                if panic_async {
+                    panic!("async filter panic");
+                }
+
+                NivasaResponse::new(
+                    StatusCode::from_u16(exception.status_code)
+                        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                    Body::text(label),
+                )
+                .with_header("x-filter-label", label)
+            })
+        }
+    }
+
+    impl ExceptionFilterMetadata for TestFilter {
+        fn exception_type(&self) -> Option<&'static str> {
+            self.specific
+                .then_some(std::any::type_name::<HttpException>())
+        }
+
+        fn is_catch_all(&self) -> bool {
+            self.catch_all
+        }
+    }
 
     #[test]
     fn cors_options_cover_allowlist_and_reflection_edges() {
@@ -2712,5 +2766,210 @@ mod tests {
                 .and_then(|value| value.as_str()),
             Some("UsersModule")
         );
+    }
+
+    #[tokio::test]
+    async fn exception_filter_selection_prefers_specific_binding_and_latest_catch_all() {
+        let request = NivasaRequest::new(Method::GET, "/filters", Body::empty());
+        let exact = handle_http_exception(
+            HttpException::bad_request("bad"),
+            &[
+                GlobalFilterBinding::new(TestFilter {
+                    label: "early-catch-all",
+                    specific: false,
+                    catch_all: true,
+                    panic_sync: false,
+                    panic_async: false,
+                }),
+                GlobalFilterBinding::new(TestFilter {
+                    label: "exact",
+                    specific: true,
+                    catch_all: false,
+                    panic_sync: false,
+                    panic_async: false,
+                }),
+                GlobalFilterBinding::new(TestFilter {
+                    label: "late-catch-all",
+                    specific: false,
+                    catch_all: true,
+                    panic_sync: false,
+                    panic_async: false,
+                }),
+            ],
+            &[],
+            &[],
+            &request,
+        )
+        .await;
+        assert_eq!(exact.headers().get("x-filter-label").unwrap(), "exact");
+        assert_eq!(exact.body().as_bytes(), b"exact");
+
+        let latest_catch_all = handle_http_exception(
+            HttpException::bad_request("bad"),
+            &[
+                GlobalFilterBinding::new(TestFilter {
+                    label: "first",
+                    specific: false,
+                    catch_all: true,
+                    panic_sync: false,
+                    panic_async: false,
+                }),
+                GlobalFilterBinding::new(TestFilter {
+                    label: "second",
+                    specific: false,
+                    catch_all: true,
+                    panic_sync: false,
+                    panic_async: false,
+                }),
+            ],
+            &[],
+            &[],
+            &request,
+        )
+        .await;
+        assert_eq!(
+            latest_catch_all.headers().get("x-filter-label").unwrap(),
+            "second"
+        );
+        assert_eq!(latest_catch_all.body().as_bytes(), b"second");
+    }
+
+    #[tokio::test]
+    async fn exception_filter_panics_fall_back_to_internal_error_shape() {
+        let request = NivasaRequest::new(Method::GET, "/filters", Body::empty());
+
+        for filter in [
+            TestFilter {
+                label: "panic-sync",
+                specific: true,
+                catch_all: false,
+                panic_sync: true,
+                panic_async: false,
+            },
+            TestFilter {
+                label: "panic-async",
+                specific: true,
+                catch_all: false,
+                panic_sync: false,
+                panic_async: true,
+            },
+        ] {
+            let response = handle_http_exception(
+                HttpException::bad_request("bad"),
+                &[GlobalFilterBinding::new(filter)],
+                &[],
+                &[],
+                &request,
+            )
+            .await;
+
+            assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            let body: serde_json::Value =
+                serde_json::from_slice(&response.body().as_bytes()).unwrap();
+            assert_eq!(
+                body,
+                json!({
+                    "statusCode": 500,
+                    "message": "request handler failed",
+                    "error": "Internal Server Error"
+                })
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_middleware_sequence_preserves_forwarded_request_before_short_circuit() {
+        let request = NivasaRequest::new(Method::GET, "/users/42", Body::empty());
+        let call_count = Arc::new(AtomicUsize::new(0));
+
+        let mut middlewares = Vec::new();
+        middlewares.push(Arc::new({
+            let call_count = Arc::clone(&call_count);
+            move |mut request: NivasaRequest, next: NextMiddleware| {
+                let call_count = Arc::clone(&call_count);
+                async move {
+                    call_count.fetch_add(1, Ordering::SeqCst);
+                    request.set_header("x-first", "done");
+                    next.run(request).await
+                }
+            }
+        }) as MiddlewareLayer);
+        middlewares.push(
+            Arc::new(|request: NivasaRequest, _next: NextMiddleware| async move {
+                assert_eq!(
+                    request
+                        .header("x-first")
+                        .and_then(|value| value.to_str().ok()),
+                    Some("done")
+                );
+                NivasaResponse::text("halted")
+            }) as MiddlewareLayer,
+        );
+
+        match execute_middleware_sequence(middlewares, request).await {
+            MiddlewareExecution::Forwarded(_) => panic!("middleware should short-circuit"),
+            MiddlewareExecution::ShortCircuited { request, response } => {
+                assert_eq!(
+                    request
+                        .header("x-first")
+                        .and_then(|value| value.to_str().ok()),
+                    Some("done")
+                );
+                assert_eq!(response.body().as_bytes(), b"halted");
+            }
+        }
+
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+
+        match execute_middleware_sequence(
+            Vec::new(),
+            NivasaRequest::new(Method::GET, "/passthrough", Body::empty()),
+        )
+        .await
+        {
+            MiddlewareExecution::Forwarded(request) => {
+                assert_eq!(request.path(), "/passthrough");
+            }
+            MiddlewareExecution::ShortCircuited { .. } => {
+                panic!("empty middleware sequence should forward request")
+            }
+        }
+    }
+
+    #[test]
+    fn matching_route_middlewares_and_builder_respect_exclusions() {
+        let builder =
+            NivasaServer::builder()
+                .apply(|request: NivasaRequest, next: NextMiddleware| async move {
+                    next.run(request).await
+                })
+                .exclude("/users/skip")
+                .unwrap()
+                .for_routes("/users/:id")
+                .unwrap();
+
+        assert_eq!(builder.route_middlewares.len(), 1);
+
+        let matched = matching_route_middlewares("/users/42", &builder.route_middlewares);
+        assert_eq!(matched.len(), 1);
+
+        let excluded = matching_route_middlewares("/users/skip", &builder.route_middlewares);
+        assert!(excluded.is_empty());
+    }
+
+    #[test]
+    fn request_and_response_finalizers_skip_optional_headers_when_absent() {
+        let response = with_request_id(NivasaResponse::text("ok"), None);
+        assert!(response.headers().get(REQUEST_ID_HEADER).is_none());
+
+        let request = attach_module_name(
+            NivasaRequest::new(Method::GET, "/users", Body::empty()),
+            None,
+        );
+        assert!(request.header(MODULE_NAME_HEADER).is_none());
+
+        let hyper = build_cors_preflight_response(&HeaderMap::new(), None, None);
+        assert_eq!(hyper.status(), StatusCode::NO_CONTENT);
+        assert!(hyper.headers().is_empty());
     }
 }

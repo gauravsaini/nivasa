@@ -1,0 +1,5 @@
+error: invalid module guard marker
+ --> tests/trybuild/module_doc_guard_invalid.rs:3:1
+  |
+3 | /// __NIVASA_GUARD__ , ,
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
