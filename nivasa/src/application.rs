@@ -1576,10 +1576,16 @@ mod docs_tests {
         assert_eq!(controller_lookup_path(None, "users"), "/users");
         assert_eq!(controller_lookup_path(Some("/"), "/users"), "/users");
         assert_eq!(controller_lookup_path(Some("/api"), "/api"), "/");
+        assert_eq!(controller_lookup_path(Some("/api"), "/api/users"), "/users");
+        assert_eq!(
+            controller_lookup_path(Some("/api"), "/api/users/nested"),
+            "/users/nested"
+        );
         assert_eq!(
             controller_lookup_path(Some("/api"), "/other/users"),
             "/other/users"
         );
+        assert_eq!(controller_lookup_path(Some("/api"), "/apiusers"), "/apiusers");
     }
 
     #[test]

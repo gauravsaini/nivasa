@@ -1178,6 +1178,44 @@ async fn nest_application_listen_surfaces_transport_bind_errors() {
     }
 }
 
+#[tokio::test]
+async fn nest_application_listen_keeps_preflight_when_server_options_override_bootstrap() {
+    let configure_calls = Arc::new(AtomicUsize::new(0));
+    let module = PreflightModule {
+        configure_calls: Arc::clone(&configure_calls),
+    };
+
+    let error = nivasa::NestApplication::create(module)
+        .with_preflight(|_module, bootstrap| {
+            assert_eq!(bootstrap.global_prefix(), Some("/api"));
+            assert_eq!(bootstrap.listen_address(), "127.0.0.1:0");
+            assert_eq!(bootstrap.server.host, "127.0.0.1");
+            assert_eq!(bootstrap.server.port, 0);
+
+            Err(AppBuildError::PreflightValidation {
+                message: "listen-preflight-stop".to_string(),
+            })
+        })
+        .listen(
+            ServerOptions::builder()
+                .host("127.0.0.1")
+                .port(0)
+                .global_prefix("api")
+                .build(),
+        )
+        .await
+        .expect_err("preflight should still stop listen before configure");
+
+    match error {
+        AppBuildError::PreflightValidation { message } => {
+            assert_eq!(message, "listen-preflight-stop");
+        }
+        other => panic!("unexpected error: {other}"),
+    }
+
+    assert_eq!(configure_calls.load(Ordering::SeqCst), 0);
+}
+
 #[test]
 fn bootstrap_config_can_forward_global_interceptors_into_the_server_builder() {
     struct DemoInterceptor;
