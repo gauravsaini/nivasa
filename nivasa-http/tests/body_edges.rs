@@ -60,3 +60,17 @@ fn body_conversions_cover_wrapper_slice_and_shared_bytes_edges() {
         b"shared bytes"
     );
 }
+
+#[test]
+fn body_from_public_conversions_preserve_payload_and_emptiness() {
+    assert_eq!(Body::from("borrowed text").into_bytes(), b"borrowed text");
+    assert_eq!(Body::from(vec![4_u8, 5, 6]).into_bytes(), vec![4, 5, 6]);
+    assert_eq!(
+        Body::from(serde_json::json!({"answer": 42})).into_bytes(),
+        br#"{"answer":42}"#
+    );
+
+    assert!(!Body::from("borrowed text").is_empty());
+    assert!(!Body::from(vec![4_u8, 5, 6]).is_empty());
+    assert!(!Body::from(serde_json::json!({"answer": 42})).is_empty());
+}
