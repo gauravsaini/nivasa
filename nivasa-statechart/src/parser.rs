@@ -268,8 +268,10 @@ impl ScxmlDocument {
                 states.insert(id.clone(), state);
                 if !is_empty {
                     parent_stack.push(id.clone());
+                    *current_state_id = Some(id);
+                } else {
+                    *current_state_id = parent_stack.last().cloned();
                 }
-                *current_state_id = Some(id);
             }
             "parallel" => {
                 let id =
@@ -301,8 +303,10 @@ impl ScxmlDocument {
                 states.insert(id.clone(), state);
                 if !is_empty {
                     parent_stack.push(id.clone());
+                    *current_state_id = Some(id);
+                } else {
+                    *current_state_id = parent_stack.last().cloned();
                 }
-                *current_state_id = Some(id);
             }
             "final" => {
                 let id = get_attr(e, "id")?.unwrap_or_else(|| format!("__final_{}", states.len()));
