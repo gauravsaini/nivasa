@@ -115,3 +115,51 @@ fn generate_controller_removes_file_when_module_registration_fails() {
     assert!(stderr.contains("target file missing #[module(...)] attribute"));
     assert!(!root.join("users/users_controller.rs").exists());
 }
+
+#[test]
+fn generate_module_removes_file_when_parent_registration_fails() {
+    let root = temp_dir("generate-module-register-fail");
+    let invalid_parent = root.join("bad_parent.rs");
+    fs::write(&invalid_parent, "pub struct NotAModule;\n")
+        .expect("invalid parent file should exist");
+
+    let output = run_cli_in_dir(
+        &root,
+        &[
+            "generate",
+            "module",
+            "users",
+            "--parent-module-file",
+            "bad_parent.rs",
+        ],
+    );
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
+    assert!(stderr.contains("target file missing #[module(...)] attribute"));
+    assert!(!root.join("users/users_module.rs").exists());
+}
+
+#[test]
+fn generate_service_removes_file_when_module_registration_fails() {
+    let root = temp_dir("generate-service-register-fail");
+    let invalid_module = root.join("bad_module.rs");
+    fs::write(&invalid_module, "pub struct NotAModule;\n")
+        .expect("invalid module file should exist");
+
+    let output = run_cli_in_dir(
+        &root,
+        &[
+            "generate",
+            "service",
+            "users",
+            "--module-file",
+            "bad_module.rs",
+        ],
+    );
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
+    assert!(stderr.contains("target file missing #[module(...)] attribute"));
+    assert!(!root.join("users/users_service.rs").exists());
+}

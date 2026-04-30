@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
@@ -33,6 +34,18 @@ fn run_cli_in_dir(dir: &std::path::Path, args: &[&str]) -> std::process::Output 
         .args(args)
         .output()
         .expect("nivasa command should run")
+}
+
+fn fake_rustc_dir(prefix: &str, script_body: &[u8]) -> PathBuf {
+    let dir = temp_dir(prefix);
+    let script = dir.join("rustc");
+    fs::write(&script, script_body).expect("fake rustc should be writable");
+    let mut permissions = fs::metadata(&script)
+        .expect("fake rustc metadata should exist")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&script, permissions).expect("fake rustc should be executable");
+    dir
 }
 
 fn spawn_inspect_server(responses: Vec<&'static str>) -> (u16, thread::JoinHandle<()>) {
@@ -157,6 +170,40 @@ fn nivasa_info_reports_missing_rustc_as_error() {
 }
 
 #[test]
+fn nivasa_info_reports_unsuccessful_rustc_exit() {
+    let path = fake_rustc_dir(
+        "bad-rustc-exit",
+        b"#!/bin/sh\nexit 9\n",
+    );
+    let output = Command::new(binary())
+        .arg("info")
+        .env("PATH", &path)
+        .output()
+        .expect("nivasa info should run");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
+    assert!(stderr.contains("rustc --version exited unsuccessfully"));
+}
+
+#[test]
+fn nivasa_info_reports_non_utf8_rustc_output() {
+    let path = fake_rustc_dir(
+        "bad-rustc-utf8",
+        b"#!/bin/sh\nprintf '\\377'\n",
+    );
+    let output = Command::new(binary())
+        .arg("info")
+        .env("PATH", &path)
+        .output()
+        .expect("nivasa info should run");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
+    assert!(stderr.contains("rustc --version returned non-utf8 output"));
+}
+
+#[test]
 fn nivasa_statechart_validate_rejects_all_and_file() {
     let root = temp_dir("validate-all");
     let file = root.join("demo.scxml");
@@ -178,6 +225,30 @@ fn nivasa_statechart_validate_rejects_all_and_file() {
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
     assert!(stderr.contains("use either `--all` or a single file path, not both"));
+}
+
+#[test]
+fn nivasa_statechart_validate_specific_file_succeeds() {
+    let root = temp_dir("validate-one");
+    let file = root.join("demo.scxml");
+    fs::write(
+        &file,
+        r#"<?xml version="1.0"?>
+<scxml version="1.0" name="Demo" initial="idle" xmlns="http://www.w3.org/2005/07/scxml">
+  <state id="idle"/>
+</scxml>"#,
+    )
+    .expect("temp scxml should be writable");
+
+    let output = Command::new(binary())
+        .args(["statechart", "validate"])
+        .arg(&file)
+        .output()
+        .expect("nivasa validate should run");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("demo.scxml: valid"));
 }
 
 #[test]
