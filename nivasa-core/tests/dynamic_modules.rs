@@ -12,12 +12,16 @@ struct RootService;
 struct FeatureService;
 struct FeatureServiceTwo;
 struct ConsumerService;
+struct ReExportedService;
 struct RootDynamicModuleMarker;
 struct FeatureDynamicModuleMarker;
 struct FeatureDynamicModuleMarkerTwo;
+struct DynamicReExportModuleMarker;
+struct InvalidDynamicModuleMarker;
 struct DynamicConsumerModule;
 struct DynamicImportingConsumerModule;
 struct DynamicImportingConsumerModuleTwo;
+struct DynamicReExportConsumerModule;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DynamicOptions {
@@ -80,6 +84,22 @@ impl Module for DynamicImportingConsumerModuleTwo {
     fn metadata(&self) -> ModuleMetadata {
         ModuleMetadata::new()
             .with_imports(vec![TypeId::of::<FeatureDynamicModuleMarkerTwo>()])
+            .with_providers(vec![TypeId::of::<ConsumerService>()])
+    }
+
+    async fn configure(
+        &self,
+        _container: &nivasa_core::di::DependencyContainer,
+    ) -> Result<(), nivasa_core::di::error::DiError> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Module for DynamicReExportConsumerModule {
+    fn metadata(&self) -> ModuleMetadata {
+        ModuleMetadata::new()
+            .with_imports(vec![TypeId::of::<DynamicReExportModuleMarker>()])
             .with_providers(vec![TypeId::of::<ConsumerService>()])
     }
 
@@ -241,6 +261,29 @@ fn register_dynamic_module_exposes_root_exports_to_other_consumers_when_global()
 }
 
 #[test]
+fn register_dynamic_module_replacement_updates_exported_surface() {
+    let mut registry = ModuleRegistry::new();
+    assert!(registry.register_dynamic::<RootDynamicModuleMarker>(
+        ExampleDynamicModule::for_root(DynamicOptions {
+            provider: TypeId::of::<RootService>(),
+            is_global: true,
+        }),
+    ));
+    assert!(!registry.register_dynamic::<RootDynamicModuleMarker>(
+        ExampleDynamicModule::for_root(DynamicOptions {
+            provider: TypeId::of::<FeatureService>(),
+            is_global: true,
+        }),
+    ));
+    registry.register(&DynamicConsumerModule);
+
+    let visible = registry.visible_exports::<DynamicConsumerModule>().unwrap();
+
+    assert!(visible.contains(&TypeId::of::<FeatureService>()));
+    assert!(!visible.contains(&TypeId::of::<RootService>()));
+}
+
+#[test]
 fn register_dynamic_feature_module_requires_explicit_imports() {
     let mut registry = ModuleRegistry::new();
     registry.register_dynamic::<FeatureDynamicModuleMarker>(ExampleDynamicModule::for_feature(
@@ -290,4 +333,49 @@ fn for_feature_dynamic_modules_stay_isolated_per_importing_module() {
         .unwrap();
     assert!(second_visible.contains(&TypeId::of::<FeatureServiceTwo>()));
     assert!(!second_visible.contains(&TypeId::of::<FeatureService>()));
+}
+
+#[test]
+fn dynamic_module_can_reexport_imported_provider_surface() {
+    let mut registry = ModuleRegistry::new();
+    registry.register_dynamic::<FeatureDynamicModuleMarker>(ExampleDynamicModule::for_feature(
+        DynamicOptions {
+            provider: TypeId::of::<ReExportedService>(),
+            is_global: false,
+        },
+    ));
+    assert!(registry.register_dynamic::<DynamicReExportModuleMarker>(
+        DynamicModule::new(
+            ModuleMetadata::new()
+                .with_imports(vec![TypeId::of::<FeatureDynamicModuleMarker>()])
+                .with_exports(vec![TypeId::of::<ReExportedService>()]),
+        ),
+    ));
+    registry.register(&DynamicReExportConsumerModule);
+
+    let visible = registry
+        .visible_exports::<DynamicReExportConsumerModule>()
+        .unwrap();
+
+    assert!(visible.contains(&TypeId::of::<ReExportedService>()));
+}
+
+#[test]
+fn dynamic_module_invalid_reexport_still_fails_registry_validation() {
+    let mut registry = ModuleRegistry::new();
+    assert!(registry.register_dynamic::<InvalidDynamicModuleMarker>(
+        DynamicModule::new(ModuleMetadata::new().with_exports(vec![TypeId::of::<RootService>()])),
+    ));
+
+    let err = registry
+        .exported_surface_for(TypeId::of::<InvalidDynamicModuleMarker>())
+        .unwrap_err();
+
+    assert!(matches!(
+        err,
+        nivasa_core::module::ModuleRegistryError::InvalidExport {
+            exported,
+            ..
+        } if exported == TypeId::of::<RootService>()
+    ));
 }
