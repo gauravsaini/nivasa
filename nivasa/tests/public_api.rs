@@ -308,6 +308,27 @@ async fn nest_application_sync_build_and_close_work_inside_current_thread_runtim
     assert_eq!(shutdown_calls.load(Ordering::SeqCst), 1);
 }
 
+#[tokio::test]
+async fn nest_application_sync_build_and_close_work_inside_multi_thread_runtime() {
+    let shutdown_calls = Arc::new(AtomicUsize::new(0));
+    let module = ShutdownModule {
+        shutdown_calls: Arc::clone(&shutdown_calls),
+    };
+
+    let app = nivasa::NestApplication::create(module)
+        .build()
+        .expect("build should complete inside a multi-thread runtime");
+
+    assert_eq!(app.app_module().metadata(), ModuleMetadata::default());
+    assert!(app.controller_registrations().is_empty());
+    assert!(app.routes().is_empty());
+
+    app.close()
+        .expect("close should complete inside a multi-thread runtime");
+
+    assert_eq!(shutdown_calls.load(Ordering::SeqCst), 1);
+}
+
 #[cfg(feature = "config")]
 #[test]
 fn nest_application_preflight_can_validate_required_config_keys() {
