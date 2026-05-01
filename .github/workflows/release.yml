@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Run cargo publish --dry-run instead of publishing"
+        description: "Run release verification without publishing"
         required: true
         default: "true"
         type: choice
@@ -20,8 +20,60 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release-gate:
+    name: Release gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cargo Check
+        run: cargo check --workspace --all-targets
+
+      - name: Cargo Test
+        run: cargo test --workspace --all-targets
+
+      - name: Cargo Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Cargo Format
+        run: cargo fmt --all --check
+
+      - name: Cargo Doc
+        run: cargo doc --workspace --no-deps
+
+      - name: Verify generated SCXML artifacts
+        run: cargo test -p nivasa-statechart --test generated_statecharts
+
+      - name: Validate SCXML
+        run: cargo run -p nivasa-cli -- statechart validate --all
+
+      - name: Check SCXML parity
+        run: cargo run -p nivasa-cli -- statechart parity
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Coverage ratchet (line >= 91%)
+        run: |
+          # Ratchet gate: current honest workspace line coverage is 91.14%.
+          # Raise this floor toward the 95% target as coverage lands; do not lower it.
+          cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --fail-under-lines 91
+
+      - name: Run benchmark smoke gate
+        run: BENCHMARK_HELLO_WORLD_MAX_UPPER_US=5000 bash benches/check_hello_world_budget.sh
+
   dry-run:
-    name: Publish dry-run
+    name: Release dry-run
+    needs: release-gate
     if: ${{ inputs.dry_run == 'true' }}
     runs-on: ubuntu-latest
     steps:
@@ -52,6 +104,7 @@ jobs:
 
   publish:
     name: Publish crates.io
+    needs: release-gate
     if: ${{ inputs.dry_run == 'false' }}
     runs-on: ubuntu-latest
     environment: crates-io-publish
