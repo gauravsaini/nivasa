@@ -95,8 +95,11 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Generate Coverage
-        run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --no-report
+      - name: Coverage ratchet (line >= 91%)
+        run: |
+          # Ratchet gate: current honest workspace line coverage is 91.14%.
+          # Raise this floor toward the 95% target as coverage lands; do not lower it.
+          cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --fail-under-lines 91
 
   mutants:
     runs-on: ubuntu-latest
