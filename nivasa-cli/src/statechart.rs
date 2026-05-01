@@ -237,7 +237,13 @@ pub fn resolve_statechart_path(root: &Path, file: &str) -> Result<PathBuf, Strin
 }
 
 pub fn statecharts_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../statecharts")
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_statecharts = manifest_dir.join("../statecharts");
+    if workspace_statecharts.is_dir() {
+        workspace_statecharts
+    } else {
+        manifest_dir.join("statecharts")
+    }
 }
 
 pub fn repo_root() -> PathBuf {

@@ -1585,7 +1585,10 @@ mod docs_tests {
             controller_lookup_path(Some("/api"), "/other/users"),
             "/other/users"
         );
-        assert_eq!(controller_lookup_path(Some("/api"), "/apiusers"), "/apiusers");
+        assert_eq!(
+            controller_lookup_path(Some("/api"), "/apiusers"),
+            "/apiusers"
+        );
     }
 
     #[test]

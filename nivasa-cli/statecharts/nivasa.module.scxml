@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nivasa Module Lifecycle Statechart
+  
+  Each module in Nivasa gets its own StatechartEngine<ModuleStatechart>.
+  This template defines the lifecycle every module goes through.
+  
+  States: Unloaded → Loading → Loaded → Initialized → Active → Destroying → Destroyed
+  
+  W3C SCXML 1.0 compliant.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       name="NivasaModule"
+       initial="unloaded"
+       datamodel="rust">
+
+  <state id="unloaded">
+    <transition event="module.load" target="loading"/>
+  </state>
+
+  <!-- Loading: resolve imports, register providers, resolve DI graph -->
+  <state id="loading" initial="resolving_imports">
+
+    <state id="resolving_imports">
+      <onentry>
+        <log expr="'Resolving imported modules'"/>
+      </onentry>
+      <transition event="imports.resolved" target="registering_providers"/>
+      <transition event="error.import.missing" target="load_failed"/>
+    </state>
+
+    <state id="registering_providers">
+      <onentry>
+        <log expr="'Registering providers in module DI container'"/>
+      </onentry>
+      <transition event="providers.registered" target="resolving_dependencies"/>
+    </state>
+
+    <state id="resolving_dependencies">
+      <onentry>
+        <log expr="'Resolving DI dependency graph'"/>
+      </onentry>
+      <transition event="dependencies.resolved" target="loaded"/>
+      <transition event="error.di.circular" target="load_failed"/>
+      <transition event="error.di.missing_provider" target="load_failed"/>
+    </state>
+  </state>
+
+  <state id="loaded">
+    <transition event="module.init" target="initialized"/>
+  </state>
+
+  <state id="initialized">
+    <onentry>
+      <!-- This is where OnModuleInit hooks fire -->
+      <log expr="'Module initialized — firing OnModuleInit hooks'"/>
+    </onentry>
+    <transition event="module.activate" target="active"/>
+  </state>
+
+  <state id="active">
+    <!-- Module is fully operational and serving requests -->
+    <transition event="module.destroy" target="destroying"/>
+  </state>
+
+  <state id="destroying">
+    <onentry>
+      <!-- This is where OnModuleDestroy hooks fire -->
+      <log expr="'Module destroying — firing OnModuleDestroy hooks'"/>
+    </onentry>
+    <transition event="destroy.complete" target="destroyed"/>
+  </state>
+
+  <state id="load_failed">
+    <onentry>
+      <log expr="'Module load failed'"/>
+    </onentry>
+    <transition event="module.abort" target="failed"/>
+  </state>
+
+  <final id="destroyed"/>
+  <final id="failed"/>
+
+</scxml>

@@ -286,7 +286,9 @@ fn route_dispatch_registry_helper_apis_cover_collection_and_none_paths() {
     assert!(registry.is_empty());
     assert_eq!(registry.len(), 0);
     assert_eq!(registry.iter().count(), 0);
-    assert!(registry.resolve_versioned("GET", "/users", Some("1")).is_none());
+    assert!(registry
+        .resolve_versioned("GET", "/users", Some("1"))
+        .is_none());
     assert!(registry.resolve_entry("GET", "/users").is_none());
 
     registry
@@ -299,7 +301,9 @@ fn route_dispatch_registry_helper_apis_cover_collection_and_none_paths() {
     assert!(!registry.is_empty());
     assert_eq!(registry.len(), 2);
     assert_eq!(registry.iter().count(), 2);
-    assert!(registry.resolve_versioned("DELETE", "/users", Some("1")).is_none());
+    assert!(registry
+        .resolve_versioned("DELETE", "/users", Some("1"))
+        .is_none());
     assert!(registry.resolve_entry("DELETE", "/users").is_none());
 
     let matched = registry

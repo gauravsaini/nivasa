@@ -171,10 +171,7 @@ fn nivasa_info_reports_missing_rustc_as_error() {
 
 #[test]
 fn nivasa_info_reports_unsuccessful_rustc_exit() {
-    let path = fake_rustc_dir(
-        "bad-rustc-exit",
-        b"#!/bin/sh\nexit 9\n",
-    );
+    let path = fake_rustc_dir("bad-rustc-exit", b"#!/bin/sh\nexit 9\n");
     let output = Command::new(binary())
         .arg("info")
         .env("PATH", &path)
@@ -188,10 +185,7 @@ fn nivasa_info_reports_unsuccessful_rustc_exit() {
 
 #[test]
 fn nivasa_info_reports_non_utf8_rustc_output() {
-    let path = fake_rustc_dir(
-        "bad-rustc-utf8",
-        b"#!/bin/sh\nprintf '\\377'\n",
-    );
+    let path = fake_rustc_dir("bad-rustc-utf8", b"#!/bin/sh\nprintf '\\377'\n");
     let output = Command::new(binary())
         .arg("info")
         .env("PATH", &path)

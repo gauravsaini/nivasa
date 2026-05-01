@@ -37,6 +37,9 @@ jobs:
       - name: Verify generated SCXML artifacts
         run: cargo test -p nivasa-statechart --test generated_statecharts
 
+      - name: Check packaged SCXML mirrors
+        run: scripts/check-statechart-mirrors.sh
+
       - name: Validate SCXML
         run: cargo run -p nivasa-cli -- statechart validate --all
 

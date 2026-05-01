@@ -26,13 +26,19 @@ struct GeneratedChart {
 fn main() {
     let manifest_dir =
         PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("missing CARGO_MANIFEST_DIR"));
-    let statecharts_dir = manifest_dir.join("../statecharts");
+    let statecharts_dir = statecharts_dir(&manifest_dir);
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("missing OUT_DIR"));
 
     println!("cargo:rerun-if-changed={}", statecharts_dir.display());
 
     let mut sources = collect_scxml_sources(&statecharts_dir);
     sources.sort();
+    if sources.is_empty() {
+        panic!(
+            "no SCXML files found in {}; packaged crates must include crate-local statecharts",
+            statecharts_dir.display()
+        );
+    }
 
     let mut generated = Vec::new();
     for source_path in sources {
@@ -88,6 +94,15 @@ fn main() {
     }
 
     write_registry(&out_dir, &generated);
+}
+
+fn statecharts_dir(manifest_dir: &Path) -> PathBuf {
+    let workspace_statecharts = manifest_dir.join("../statecharts");
+    if workspace_statecharts.is_dir() {
+        workspace_statecharts
+    } else {
+        manifest_dir.join("statecharts")
+    }
 }
 
 fn collect_scxml_sources(dir: &Path) -> Vec<PathBuf> {

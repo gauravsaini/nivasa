@@ -263,18 +263,22 @@ fn register_dynamic_module_exposes_root_exports_to_other_consumers_when_global()
 #[test]
 fn register_dynamic_module_replacement_updates_exported_surface() {
     let mut registry = ModuleRegistry::new();
-    assert!(registry.register_dynamic::<RootDynamicModuleMarker>(
-        ExampleDynamicModule::for_root(DynamicOptions {
-            provider: TypeId::of::<RootService>(),
-            is_global: true,
-        }),
-    ));
-    assert!(!registry.register_dynamic::<RootDynamicModuleMarker>(
-        ExampleDynamicModule::for_root(DynamicOptions {
-            provider: TypeId::of::<FeatureService>(),
-            is_global: true,
-        }),
-    ));
+    assert!(
+        registry.register_dynamic::<RootDynamicModuleMarker>(ExampleDynamicModule::for_root(
+            DynamicOptions {
+                provider: TypeId::of::<RootService>(),
+                is_global: true,
+            }
+        ),)
+    );
+    assert!(
+        !registry.register_dynamic::<RootDynamicModuleMarker>(ExampleDynamicModule::for_root(
+            DynamicOptions {
+                provider: TypeId::of::<FeatureService>(),
+                is_global: true,
+            }
+        ),)
+    );
     registry.register(&DynamicConsumerModule);
 
     let visible = registry.visible_exports::<DynamicConsumerModule>().unwrap();
@@ -344,13 +348,13 @@ fn dynamic_module_can_reexport_imported_provider_surface() {
             is_global: false,
         },
     ));
-    assert!(registry.register_dynamic::<DynamicReExportModuleMarker>(
-        DynamicModule::new(
+    assert!(
+        registry.register_dynamic::<DynamicReExportModuleMarker>(DynamicModule::new(
             ModuleMetadata::new()
                 .with_imports(vec![TypeId::of::<FeatureDynamicModuleMarker>()])
                 .with_exports(vec![TypeId::of::<ReExportedService>()]),
-        ),
-    ));
+        ),)
+    );
     registry.register(&DynamicReExportConsumerModule);
 
     let visible = registry
@@ -363,9 +367,11 @@ fn dynamic_module_can_reexport_imported_provider_surface() {
 #[test]
 fn dynamic_module_invalid_reexport_still_fails_registry_validation() {
     let mut registry = ModuleRegistry::new();
-    assert!(registry.register_dynamic::<InvalidDynamicModuleMarker>(
-        DynamicModule::new(ModuleMetadata::new().with_exports(vec![TypeId::of::<RootService>()])),
-    ));
+    assert!(
+        registry.register_dynamic::<InvalidDynamicModuleMarker>(DynamicModule::new(
+            ModuleMetadata::new().with_exports(vec![TypeId::of::<RootService>()])
+        ),)
+    );
 
     let err = registry
         .exported_surface_for(TypeId::of::<InvalidDynamicModuleMarker>())

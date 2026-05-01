@@ -12,10 +12,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const DEFAULT_APP_STATECHART: &str = include_str!("../../statecharts/nivasa.application.scxml");
-const DEFAULT_MODULE_STATECHART: &str = include_str!("../../statecharts/nivasa.module.scxml");
-const DEFAULT_PROVIDER_STATECHART: &str = include_str!("../../statecharts/nivasa.provider.scxml");
-const DEFAULT_REQUEST_STATECHART: &str = include_str!("../../statecharts/nivasa.request.scxml");
+const DEFAULT_APP_STATECHART: &str = include_str!("../statecharts/nivasa.application.scxml");
+const DEFAULT_MODULE_STATECHART: &str = include_str!("../statecharts/nivasa.module.scxml");
+const DEFAULT_PROVIDER_STATECHART: &str = include_str!("../statecharts/nivasa.provider.scxml");
+const DEFAULT_REQUEST_STATECHART: &str = include_str!("../statecharts/nivasa.request.scxml");
 
 #[derive(Parser)]
 #[command(name = "nivasa", about = "CLI tool for the Nivasa framework")]

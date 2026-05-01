@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nivasa HTTP Request Pipeline Statechart
+  
+  This is the MOST CRITICAL statechart — it formally defines the entire
+  HTTP request lifecycle. A StatechartEngine<RequestStatechart> is created
+  per incoming request.
+  
+  States: Received → MiddlewareChain → RouteMatching → GuardChain → 
+          InterceptorPre → PipeTransform → HandlerExecution → 
+          InterceptorPost → ErrorHandling → SendingResponse → Done
+  
+  Every pipeline stage is a state. Short-circuits (guard denied, validation 
+  error) are transitions to ErrorHandling — not ad-hoc if/else.
+  
+  W3C SCXML 1.0 compliant.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       name="NivasaRequest"
+       initial="received"
+       datamodel="rust">
+
+  <state id="received">
+    <onentry>
+      <log expr="'HTTP request received — parsing'"/>
+    </onentry>
+    <transition event="request.parsed" target="middleware_chain"/>
+    <transition event="error.parse" target="error_handling"/>
+  </state>
+
+  <state id="middleware_chain">
+    <onentry>
+      <log expr="'Executing middleware chain (global → module → route)'"/>
+    </onentry>
+    <transition event="middleware.complete" target="route_matching"/>
+    <transition event="error.middleware" target="error_handling"/>
+  </state>
+
+  <state id="route_matching">
+    <onentry>
+      <log expr="'Matching request to route registry'"/>
+    </onentry>
+    <transition event="route.matched" target="guard_chain"/>
+    <transition event="route.not_found" target="error_handling"/>
+    <transition event="route.method_not_allowed" target="error_handling"/>
+  </state>
+
+  <state id="guard_chain">
+    <onentry>
+      <log expr="'Executing guards (controller-level → handler-level)'"/>
+    </onentry>
+    <transition event="guards.passed" target="interceptor_pre"/>
+    <transition event="guard.denied" target="error_handling"/>
+    <transition event="error.guard" target="error_handling"/>
+  </state>
+
+  <state id="interceptor_pre">
+    <onentry>
+      <log expr="'Executing interceptors (pre-handler phase)'"/>
+    </onentry>
+    <transition event="interceptors.pre.complete" target="pipe_transform"/>
+    <transition event="error.interceptor" target="error_handling"/>
+  </state>
+
+  <state id="pipe_transform">
+    <onentry>
+      <log expr="'Running pipes on handler parameters'"/>
+    </onentry>
+    <transition event="pipes.complete" target="handler_execution"/>
+    <transition event="error.validation" target="error_handling"/>
+    <transition event="error.pipe" target="error_handling"/>
+  </state>
+
+  <state id="handler_execution">
+    <onentry>
+      <log expr="'Invoking controller handler method'"/>
+    </onentry>
+    <transition event="handler.complete" target="interceptor_post"/>
+    <transition event="error.interceptor" target="error_handling"/>
+    <transition event="error.handler" target="error_handling"/>
+  </state>
+
+  <state id="interceptor_post">
+    <onentry>
+      <log expr="'Executing interceptors (post-handler phase)'"/>
+    </onentry>
+    <transition event="interceptors.post.complete" target="sending_response"/>
+    <transition event="error.interceptor_post" target="error_handling"/>
+  </state>
+
+  <state id="error_handling">
+    <onentry>
+      <log expr="'Matching error to exception filter chain (handler → controller → global)'"/>
+    </onentry>
+    <transition event="filter.handled" target="sending_response"/>
+    <transition event="error.filter.unhandled" target="sending_response"/>
+  </state>
+
+  <state id="sending_response">
+    <onentry>
+      <log expr="'Serializing and sending HTTP response'"/>
+    </onentry>
+    <transition event="response.sent" target="done"/>
+    <transition event="error.send" target="done"/>
+  </state>
+
+  <final id="done"/>
+
+</scxml>

@@ -38,11 +38,16 @@ currently covers:
 The publish helper also supports a dry-run pass:
 
 ```sh
-scripts/release-publish.sh --dry-run
+scripts/publish-crates.sh --dry-run
 ```
 
-It runs `cargo publish --locked --package <crate> --dry-run` for every
-publishable crate in the generated order above.
+It runs the SCXML preflight and then lists packaged files with
+`cargo package --locked --package <crate> --list` for every publishable crate in
+the generated order above. File-list mode is intentional for the first workspace
+release because Cargo package verification resolves internal dependencies from
+crates.io before those crates exist there. The release workflow's full
+check/test/clippy/fmt/docs/coverage/benchmark/SCXML gates remain the source of
+verification before publishing.
 
 The first release run should be dry-run only. Fix package metadata, package
 contents, and dependency/version issues before enabling real publish.
@@ -54,12 +59,14 @@ required `dry_run` input:
 
 - `dry_run: "true"` runs the dry-run job.
 - `dry_run: "false"` runs the crates.io publish job.
-- both jobs run SCXML validation and parity checks before publishing steps.
+- release gates run check, test, clippy, fmt, docs, coverage, benchmark smoke,
+  SCXML validation, generated-code parity, and packaged SCXML mirror checks.
+- dry-run/publish jobs re-run SCXML validation, parity, and package mirror
+  checks immediately before package verification or publishing.
 - the real publish job uses the `crates-io-publish` environment and
   `CARGO_REGISTRY_TOKEN` from repository secrets.
-- the workflow currently expects `scripts/publish-crates.sh`; this checkout
-  provides `scripts/release-publish.sh` instead, so wire the workflow to the
-  checked-in helper before relying on workflow-driven publishing.
+- `scripts/release-publish.sh` remains as a compatibility wrapper around
+  `scripts/publish-crates.sh`.
 
 ## Manual Publish
 
@@ -67,9 +74,14 @@ If workflow publishing is unavailable, use the checked-in helper manually from a
 clean, verified release commit:
 
 - run `scripts/release-crate-order.sh --packages` and confirm the order above
-- run `scripts/release-publish.sh --dry-run`
-- run `scripts/release-publish.sh --execute --wait <seconds>` only after the
+- run `scripts/publish-crates.sh --dry-run`
+- run `scripts/publish-crates.sh --execute --wait <seconds>` only after the
   dry-run succeeds and release approval is recorded
+- after the first release, `scripts/publish-crates.sh --dry-run --verify` can be
+  used for a registry-aware Cargo package verification pass
+- `--execute` uses Cargo's `--no-verify` by default for first-release
+  compatibility; use `--execute --verify` only once internal dependencies are
+  already resolvable from the registry
 - wait for each crate version to appear in the crates.io index before publishing
   downstream crates
 
