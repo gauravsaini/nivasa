@@ -156,7 +156,20 @@ print_order() {
 
 print_command() {
   printf 'command:'
-  printf ' %q' "$@"
+  local redact_next=false
+  local arg
+  for arg in "$@"; do
+    if [ "$redact_next" = true ]; then
+      printf ' %q' '<redacted>'
+      redact_next=false
+      continue
+    fi
+
+    printf ' %q' "$arg"
+    if [ "$arg" = "--token" ]; then
+      redact_next=true
+    fi
+  done
   printf '\n'
 }
 
