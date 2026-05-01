@@ -13,7 +13,7 @@ Welcome to the **Nivasa** project!
 
 ## Core Architecture
 
-- [Request Lifecycle](./request-lifecycle.md) - the SCXML-gated request flow and transition gate.
+- [Request Lifecycle](./docs/request-lifecycle.md) - the SCXML-gated request flow and transition gate.
 - [Server Core](./server-core.md) - transport shell, bootstrap boundary, and current TLS/runtime limits.
 - [DI Container](./di-container.md) - provider registration, scopes, lazy deps, and resolution behavior.
 - [Module System](./module-system.md) - module metadata, imports/exports, globals, dynamic modules, and lifecycle shape.
