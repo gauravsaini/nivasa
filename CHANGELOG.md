@@ -8,14 +8,35 @@ when releases are cut.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-05-01
+
+Initial public release of Nivasa, a NestJS-inspired Rust web framework with
+SCXML-backed lifecycle enforcement across application, module, provider, and
+request flows.
+
 ### Added
 
-- SCXML-backed request, module, provider, and application lifecycle enforcement.
-- Config loading and lookup surface via `ConfigModule`, `ConfigOptions`, and `ConfigService`.
+- Workspace crates for the umbrella API, core DI/module runtime, statecharts,
+  macros, HTTP, routing, guards, interceptors, pipes, filters, validation,
+  configuration, WebSocket, GraphQL, scheduling, common types, and CLI tooling.
+- SCXML-backed request, module, provider, and application lifecycle enforcement
+  with parser, validator, build-time code generation, runtime transition gate,
+  tracer hooks, and parity checks.
+- Dependency injection and module composition with provider scopes, lazy and
+  optional dependencies, dynamic/global modules, imports/exports, lifecycle
+  hooks, and testing helpers.
+- Controller, routing, extractor, response metadata, API versioning, middleware,
+  guard, interceptor, pipe, exception-filter, and HTTP server surfaces.
+- Config loading and lookup surface via `ConfigModule`, `ConfigOptions`, and
+  `ConfigService`.
+- WebSocket gateway, room/broadcast helper, OpenAPI/Swagger, GraphQL, event
+  emitter, scheduling, health-check, logging, and validation surfaces.
 - CLI statechart commands for validation, parity, visualization, diffing, and inspection.
 - CLI project scaffolding and generator commands for modules, controllers, services, guards, interceptors, pipes, filters, middleware, and resources.
 - Example applications for hello-world, config-env, testing, auth-jwt, crud-rest-api, and websocket-chat.
-- Documentation pages for configuration, DI container behavior, examples, and framework comparisons.
+- Documentation pages for getting started, first steps, core architecture, HTTP
+  surfaces, runtime hooks, realtime/docs features, testing, migration, framework
+  comparisons, and publishing order.
 
 ### Changed
 
@@ -37,3 +58,10 @@ when releases are cut.
 ### Tests
 
 - Expanded integration coverage for SCXML compliance, HTTP request flow, OpenAPI, WebSocket, config, and CLI surfaces.
+- Added release-prep gates for workspace check/test/clippy/fmt/docs, SCXML
+  validation/parity, package mirror checks, coverage, and benchmark smoke tests.
+
+### Known Gaps
+
+- This is a `0.1.0` release: public APIs remain early, final API review and
+  fuller rustdoc examples are still tracked as release-prep follow-ups.
