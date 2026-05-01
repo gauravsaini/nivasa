@@ -183,3 +183,26 @@ impl From<serde_json::Value> for Body {
         Self::json(value)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Body;
+
+    #[test]
+    fn content_type_matches_body_variant() {
+        let cases = [
+            (Body::empty(), None),
+            (Body::text("plain"), Some("text/plain; charset=utf-8")),
+            (Body::html("<p>html</p>"), Some("text/html; charset=utf-8")),
+            (
+                Body::json(serde_json::json!({ "ok": true })),
+                Some("application/json"),
+            ),
+            (Body::bytes([1_u8, 2, 3]), Some("application/octet-stream")),
+        ];
+
+        for (body, expected) in cases {
+            assert_eq!(body.content_type(), expected);
+        }
+    }
+}

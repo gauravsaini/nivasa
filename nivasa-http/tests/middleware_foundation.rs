@@ -79,6 +79,32 @@ impl NivasaMiddleware for ModuleScopedMiddleware {
     }
 }
 
+#[derive(Clone)]
+struct BlockingModuleMiddleware;
+
+#[async_trait]
+impl NivasaMiddleware for BlockingModuleMiddleware {
+    async fn use_(&self, _req: NivasaRequest, _next: NextMiddleware) -> NivasaResponse {
+        NivasaResponse::new(
+            StatusCode::CONFLICT,
+            Body::text("blocked by module middleware"),
+        )
+    }
+}
+
+#[derive(Clone)]
+struct BlockingRouteMiddleware;
+
+#[async_trait]
+impl NivasaMiddleware for BlockingRouteMiddleware {
+    async fn use_(&self, _req: NivasaRequest, _next: NextMiddleware) -> NivasaResponse {
+        NivasaResponse::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            Body::text("blocked by route middleware"),
+        )
+    }
+}
+
 struct ErroringGuard;
 
 impl Guard for ErroringGuard {
@@ -673,6 +699,155 @@ async fn server_short_circuits_when_middleware_does_not_delegate(
 
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body.as_ref(), b"blocked by middleware");
+    assert!(!called.load(Ordering::SeqCst));
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_short_circuits_when_global_module_middleware_does_not_delegate(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let called = Arc::new(AtomicBool::new(false));
+    let seen = Arc::clone(&called);
+
+    let server = NivasaServer::builder()
+        .module_middleware(BlockingModuleMiddleware)
+        .route(RouteMethod::Get, "/module-blocked", move |_| {
+            seen.store(true, Ordering::SeqCst);
+            NivasaResponse::text("handler")
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("http://127.0.0.1:{port}/module-blocked"))
+        .body(Full::new(Bytes::new()))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let response_id = response
+        .headers()
+        .get("x-request-id")
+        .expect("request id should exist on module short-circuit responses")
+        .to_str()
+        .expect("request id should be valid ascii")
+        .to_owned();
+    let body = response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    Uuid::parse_str(&response_id).expect("seeded request id should be a UUID");
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body.as_ref(), b"blocked by module middleware");
+    assert!(!called.load(Ordering::SeqCst));
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_short_circuits_when_route_module_middleware_does_not_delegate(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let called = Arc::new(AtomicBool::new(false));
+    let seen = Arc::clone(&called);
+
+    let server = NivasaServer::builder()
+        .route_with_module_middlewares(
+            RouteMethod::Get,
+            "/route-module-blocked",
+            vec![BlockingModuleMiddleware],
+            move |_| {
+                seen.store(true, Ordering::SeqCst);
+                NivasaResponse::text("handler")
+            },
+        )?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("http://127.0.0.1:{port}/route-module-blocked"))
+        .body(Full::new(Bytes::new()))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let response_id = response
+        .headers()
+        .get("x-request-id")
+        .expect("request id should exist on route-module short-circuit responses")
+        .to_str()
+        .expect("request id should be valid ascii")
+        .to_owned();
+    let body = response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    Uuid::parse_str(&response_id).expect("seeded request id should be a UUID");
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body.as_ref(), b"blocked by module middleware");
+    assert!(!called.load(Ordering::SeqCst));
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_short_circuits_when_route_specific_middleware_does_not_delegate(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let port = free_port();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let called = Arc::new(AtomicBool::new(false));
+    let seen = Arc::clone(&called);
+
+    let server = NivasaServer::builder()
+        .apply(BlockingRouteMiddleware)
+        .for_routes("/route-blocked")?
+        .route(RouteMethod::Get, "/route-blocked", move |_| {
+            seen.store(true, Ordering::SeqCst);
+            NivasaResponse::text("handler")
+        })?
+        .shutdown_signal(shutdown_rx)
+        .build();
+
+    let server_task = tokio::spawn(async move { server.listen("127.0.0.1", port).await });
+    wait_for_server(port).await;
+
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("http://127.0.0.1:{port}/route-blocked"))
+        .body(Full::new(Bytes::new()))?;
+
+    let response = client.request(request).await?;
+    let status = response.status();
+    let response_id = response
+        .headers()
+        .get("x-request-id")
+        .expect("request id should exist on route short-circuit responses")
+        .to_str()
+        .expect("request id should be valid ascii")
+        .to_owned();
+    let body = response.into_body().collect().await?.to_bytes();
+
+    let _ = shutdown_tx.send(());
+    drop(client);
+    server_task.await??;
+
+    Uuid::parse_str(&response_id).expect("seeded request id should be a UUID");
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body.as_ref(), b"blocked by route middleware");
     assert!(!called.load(Ordering::SeqCst));
     Ok(())
 }

@@ -1576,10 +1576,16 @@ mod docs_tests {
         assert_eq!(controller_lookup_path(None, "users"), "/users");
         assert_eq!(controller_lookup_path(Some("/"), "/users"), "/users");
         assert_eq!(controller_lookup_path(Some("/api"), "/api"), "/");
+        assert_eq!(controller_lookup_path(Some("/api"), "/api/users"), "/users");
+        assert_eq!(
+            controller_lookup_path(Some("/api"), "/api/users/nested"),
+            "/users/nested"
+        );
         assert_eq!(
             controller_lookup_path(Some("/api"), "/other/users"),
             "/other/users"
         );
+        assert_eq!(controller_lookup_path(Some("/api"), "/apiusers"), "/apiusers");
     }
 
     #[test]
@@ -1673,5 +1679,57 @@ mod docs_tests {
         assert_eq!(format_listen_address("::1", 3000), "[::1]:3000");
         assert_eq!(format_listen_address("[::1]", 3000), "[::1]:3000");
         assert!(startup_banner().contains(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn resolve_routes_preserves_throttle_metadata_and_rejects_duplicates() {
+        struct DemoController;
+
+        let bootstrap =
+            AppBootstrapConfig::from(ServerOptions::builder().global_prefix("api").build());
+        let registration = ModuleControllerRegistration::new(
+            std::any::TypeId::of::<DemoController>(),
+            vec![
+                nivasa_core::module::ControllerRouteRegistration::new("GET", "/health", "health")
+                    .with_throttle(5, 30),
+                nivasa_core::module::ControllerRouteRegistration::new("POST", "/", "create")
+                    .skip_throttle(),
+            ],
+            Vec::new(),
+        );
+
+        let routes = resolve_routes(&bootstrap, &[registration]).expect("routes should resolve");
+
+        assert_eq!(routes.len(), 2);
+        assert_eq!(routes[0].path, "/api/health");
+        assert_eq!(
+            routes[0]
+                .throttle
+                .as_ref()
+                .map(|throttle| (throttle.limit, throttle.ttl_secs)),
+            Some((5, 30))
+        );
+        assert!(!routes[0].skip_throttle);
+        assert_eq!(routes[1].path, "/api");
+        assert!(routes[1].skip_throttle);
+        assert_eq!(routes[1].throttle, None);
+
+        let duplicate = ModuleControllerRegistration::new(
+            std::any::TypeId::of::<DemoController>(),
+            vec![
+                nivasa_core::module::ControllerRouteRegistration::new("GET", "health", "first"),
+                nivasa_core::module::ControllerRouteRegistration::new("GET", "/health", "second"),
+            ],
+            Vec::new(),
+        );
+
+        let error = resolve_routes(&bootstrap, &[duplicate]).expect_err("duplicate should fail");
+        match error {
+            AppBuildError::DuplicateRoute { method, path } => {
+                assert_eq!(method, "GET");
+                assert_eq!(path, "/api/health");
+            }
+            other => panic!("unexpected error: {other}"),
+        }
     }
 }

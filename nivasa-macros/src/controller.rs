@@ -3050,3 +3050,203 @@ pub fn impl_controller(attr: TokenStream, item: TokenStream) -> TokenStream {
         Err(err) => err.to_compile_error().into(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    fn doc_attr(marker: &str) -> Attribute {
+        let marker = LitStr::new(marker, proc_macro2::Span::call_site());
+        parse_quote!(#[doc = #marker])
+    }
+
+    fn impl_error(input: ItemImpl) -> String {
+        expand_impl_controller(input).unwrap_err().to_string()
+    }
+
+    #[test]
+    fn controller_doc_markers_reject_invalid_payloads() {
+        assert_eq!(
+            parse_guard_binding(&doc_attr("nivasa-guard: , ,"))
+                .unwrap_err()
+                .to_string(),
+            "invalid controller guard marker"
+        );
+        assert_eq!(
+            parse_roles_binding(&doc_attr("nivasa-roles: , ,"))
+                .unwrap_err()
+                .to_string(),
+            "invalid controller roles marker"
+        );
+        assert_eq!(
+            parse_interceptor_binding(&doc_attr("nivasa-interceptor: , ,"))
+                .unwrap_err()
+                .to_string(),
+            "invalid controller interceptor marker"
+        );
+        assert_eq!(
+            parse_filter_binding(&doc_attr("nivasa-filter: , ,"))
+                .unwrap_err()
+                .to_string(),
+            "invalid controller filter marker"
+        );
+        assert_eq!(
+            parse_pipe_binding(&doc_attr("nivasa-pipe: , ,"))
+                .unwrap_err()
+                .to_string(),
+            "invalid controller pipe marker"
+        );
+        assert_eq!(
+            parse_set_metadata_binding(&doc_attr("nivasa-set-metadata: not-a-pair"))
+                .unwrap_err()
+                .to_string(),
+            "invalid controller metadata marker"
+        );
+        assert_eq!(
+            parse_throttle_binding(&doc_attr("nivasa-throttle: nope"))
+                .unwrap_err()
+                .to_string(),
+            "invalid controller throttle marker"
+        );
+        assert_eq!(
+            parse_response_binding(&doc_attr("nivasa-response: header x-test"))
+                .unwrap_err()
+                .to_string(),
+            "invalid controller response header marker"
+        );
+        assert_eq!(
+            parse_route_binding(&doc_attr("nivasa-route: GET"))
+                .unwrap_err()
+                .to_string(),
+            "invalid controller route marker"
+        );
+    }
+
+    #[test]
+    fn controller_impl_rejects_duplicate_method_metadata_attributes() {
+        assert_eq!(
+            impl_error(parse_quote! {
+                impl UsersController {
+                    #[api_operation(summary = "one")]
+                    #[api_operation(summary = "two")]
+                    #[get("/users")]
+                    fn list(&self) {}
+                }
+            }),
+            "a controller method can only use one `#[api_operation]` attribute"
+        );
+        assert_eq!(
+            impl_error(parse_quote! {
+                impl UsersController {
+                    #[api_body(type = CreateUser)]
+                    #[api_body(type = UpdateUser)]
+                    #[post("/users")]
+                    fn create(&self) {}
+                }
+            }),
+            "a controller method can only use one `#[api_body]` attribute"
+        );
+        assert_eq!(
+            impl_error(parse_quote! {
+                impl UsersController {
+                    #[api_bearer_auth]
+                    #[api_bearer_auth]
+                    #[get("/users")]
+                    fn secured(&self) {}
+                }
+            }),
+            "a controller method can only use one `#[api_bearer_auth]` attribute"
+        );
+        assert_eq!(
+            impl_error(parse_quote! {
+                impl UsersController {
+                    #[health_check]
+                    #[health_check]
+                    #[get("/health")]
+                    fn health(&self) {}
+                }
+            }),
+            "a controller method can only use one `#[health_check]` attribute"
+        );
+        assert_eq!(
+            impl_error(parse_quote! {
+                impl UsersController {
+                    #[throttle(limit = 1, ttl = 10)]
+                    #[throttle(limit = 2, ttl = 20)]
+                    #[get("/limited")]
+                    fn limited(&self) {}
+                }
+            }),
+            "a controller method can only use one `#[throttle]` attribute"
+        );
+        assert_eq!(
+            impl_error(parse_quote! {
+                impl UsersController {
+                    #[skip_throttle]
+                    #[skip_throttle]
+                    #[get("/free")]
+                    fn free(&self) {}
+                }
+            }),
+            "a controller method can only use one `#[skip_throttle]` attribute"
+        );
+    }
+
+    #[test]
+    fn controller_impl_rejects_duplicate_routes_and_http_metadata_shape() {
+        assert_eq!(
+            impl_error(parse_quote! {
+                impl UsersController {
+                    #[get("/users")]
+                    fn list(&self) {}
+
+                    #[get("/users")]
+                    fn duplicate(&self) {}
+                }
+            }),
+            "duplicate controller route `GET` `/users`"
+        );
+        assert_eq!(
+            impl_error(parse_quote! {
+                impl UsersController {
+                    #[get("/users")]
+                    #[post("/users")]
+                    fn list(&self) {}
+                }
+            }),
+            "a controller method can only use one HTTP method attribute"
+        );
+        assert_eq!(
+            impl_error(parse_quote! {
+                impl UsersController {
+                    #[pipe(TrimPipe)]
+                    #[pipe(ParsePipe)]
+                    #[get("/users")]
+                    fn list(&self) {}
+                }
+            }),
+            "a controller method can only use one `#[pipe]` attribute"
+        );
+        assert_eq!(
+            impl_error(parse_quote! {
+                impl UsersController {
+                    #[http_code(201)]
+                    #[http_code(202)]
+                    #[get("/users")]
+                    fn create(&self) {}
+                }
+            }),
+            "a controller method can only use one `#[http_code]` attribute"
+        );
+        assert_eq!(
+            impl_error(parse_quote! {
+                impl UsersController {
+                    #[guard(AuthGuard)]
+                    fn missing_route(&self) {}
+                }
+            }),
+            "controller metadata requires an HTTP method attribute"
+        );
+    }
+}

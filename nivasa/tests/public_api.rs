@@ -308,6 +308,27 @@ async fn nest_application_sync_build_and_close_work_inside_current_thread_runtim
     assert_eq!(shutdown_calls.load(Ordering::SeqCst), 1);
 }
 
+#[tokio::test]
+async fn nest_application_sync_build_and_close_work_inside_multi_thread_runtime() {
+    let shutdown_calls = Arc::new(AtomicUsize::new(0));
+    let module = ShutdownModule {
+        shutdown_calls: Arc::clone(&shutdown_calls),
+    };
+
+    let app = nivasa::NestApplication::create(module)
+        .build()
+        .expect("build should complete inside a multi-thread runtime");
+
+    assert_eq!(app.app_module().metadata(), ModuleMetadata::default());
+    assert!(app.controller_registrations().is_empty());
+    assert!(app.routes().is_empty());
+
+    app.close()
+        .expect("close should complete inside a multi-thread runtime");
+
+    assert_eq!(shutdown_calls.load(Ordering::SeqCst), 1);
+}
+
 #[cfg(feature = "config")]
 #[test]
 fn nest_application_preflight_can_validate_required_config_keys() {
@@ -1155,6 +1176,44 @@ async fn nest_application_listen_surfaces_transport_bind_errors() {
         }
         other => panic!("unexpected error: {other}"),
     }
+}
+
+#[tokio::test]
+async fn nest_application_listen_keeps_preflight_when_server_options_override_bootstrap() {
+    let configure_calls = Arc::new(AtomicUsize::new(0));
+    let module = PreflightModule {
+        configure_calls: Arc::clone(&configure_calls),
+    };
+
+    let error = nivasa::NestApplication::create(module)
+        .with_preflight(|_module, bootstrap| {
+            assert_eq!(bootstrap.global_prefix(), Some("/api"));
+            assert_eq!(bootstrap.listen_address(), "127.0.0.1:0");
+            assert_eq!(bootstrap.server.host, "127.0.0.1");
+            assert_eq!(bootstrap.server.port, 0);
+
+            Err(AppBuildError::PreflightValidation {
+                message: "listen-preflight-stop".to_string(),
+            })
+        })
+        .listen(
+            ServerOptions::builder()
+                .host("127.0.0.1")
+                .port(0)
+                .global_prefix("api")
+                .build(),
+        )
+        .await
+        .expect_err("preflight should still stop listen before configure");
+
+    match error {
+        AppBuildError::PreflightValidation { message } => {
+            assert_eq!(message, "listen-preflight-stop");
+        }
+        other => panic!("unexpected error: {other}"),
+    }
+
+    assert_eq!(configure_calls.load(Ordering::SeqCst), 0);
 }
 
 #[test]

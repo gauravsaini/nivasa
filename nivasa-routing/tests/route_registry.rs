@@ -232,6 +232,16 @@ fn route_registry_helper_apis_expose_entries_and_contains() {
 }
 
 #[test]
+fn controller_metadata_blank_versions_stay_unversioned() {
+    let metadata = ControllerMetadata::new("/users").with_version("   ");
+
+    assert_eq!(metadata.path(), "/users");
+    assert_eq!(metadata.version(), None);
+    assert_eq!(metadata.versioned_path(), "/users");
+    assert_eq!(metadata.versioned_route_path("/list"), "/users/list");
+}
+
+#[test]
 fn route_dispatch_selection_helper_apis_cover_empty_and_populated_selections() {
     let mut registry = RouteDispatchRegistry::new();
 
@@ -267,6 +277,38 @@ fn route_dispatch_selection_helper_apis_cover_empty_and_populated_selections() {
         Some("create")
     );
     assert_eq!(selection.resolve("GET"), Some(&"list"));
+}
+
+#[test]
+fn route_dispatch_registry_helper_apis_cover_collection_and_none_paths() {
+    let mut registry = RouteDispatchRegistry::new();
+
+    assert!(registry.is_empty());
+    assert_eq!(registry.len(), 0);
+    assert_eq!(registry.iter().count(), 0);
+    assert!(registry.resolve_versioned("GET", "/users", Some("1")).is_none());
+    assert!(registry.resolve_entry("GET", "/users").is_none());
+
+    registry
+        .register_header_versioned_route("GET", "1", "/users/:id", "v1-show")
+        .unwrap();
+    registry
+        .register_static("POST", "/users", "create")
+        .unwrap();
+
+    assert!(!registry.is_empty());
+    assert_eq!(registry.len(), 2);
+    assert_eq!(registry.iter().count(), 2);
+    assert!(registry.resolve_versioned("DELETE", "/users", Some("1")).is_none());
+    assert!(registry.resolve_entry("DELETE", "/users").is_none());
+
+    let matched = registry
+        .resolve_header_match("GET", "/users/42", Some("1"))
+        .unwrap();
+    let entry = matched.entry;
+    let captures = entry.captures("/users/42").unwrap();
+    assert_eq!(captures.get("id"), Some("42"));
+    assert!(entry.captures("/users").is_none());
 }
 
 #[test]
@@ -327,6 +369,45 @@ fn route_pattern_strict_constructor_rejects_optional_segments() {
         RouteRegistryError::UnsupportedPatternSegment {
             path: "/users/:id?".to_string(),
             segment: ":id?".to_string()
+        }
+    );
+}
+
+#[test]
+fn route_pattern_parse_rejects_invalid_optional_and_empty_parameter_segments() {
+    let err = RoutePattern::parse("/users/:id?/posts").unwrap_err();
+    assert_eq!(
+        err,
+        RouteRegistryError::UnsupportedPatternSegment {
+            path: "/users/:id?/posts".to_string(),
+            segment: ":id?".to_string()
+        }
+    );
+
+    let err = RoutePattern::parse("/users/name?").unwrap_err();
+    assert_eq!(
+        err,
+        RouteRegistryError::UnsupportedPatternSegment {
+            path: "/users/name?".to_string(),
+            segment: "name?".to_string()
+        }
+    );
+
+    let err = RoutePattern::parse("/users/:?").unwrap_err();
+    assert_eq!(
+        err,
+        RouteRegistryError::UnsupportedPatternSegment {
+            path: "/users/:?".to_string(),
+            segment: ":?".to_string()
+        }
+    );
+
+    let err = RoutePattern::parse("/users/:").unwrap_err();
+    assert_eq!(
+        err,
+        RouteRegistryError::UnsupportedPatternSegment {
+            path: "/users/:".to_string(),
+            segment: ":".to_string()
         }
     );
 }
