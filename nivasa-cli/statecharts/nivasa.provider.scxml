@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nivasa DI Provider Lifecycle Statechart
+  
+  Tracks the lifecycle of each provider registered in the DI container.
+  
+  States: Unregistered → Registered → Resolving → Constructing → Resolved → Disposing → Disposed
+  
+  W3C SCXML 1.0 compliant.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       name="NivasaProvider"
+       initial="unregistered"
+       datamodel="rust">
+
+  <state id="unregistered">
+    <transition event="provider.register" target="registered"/>
+  </state>
+
+  <state id="registered">
+    <transition event="provider.resolve" target="resolving"/>
+  </state>
+
+  <state id="resolving">
+    <onentry>
+      <log expr="'Resolving provider dependencies'"/>
+    </onentry>
+    <transition event="dependencies.ready" target="constructing"/>
+    <transition event="error.dependency.missing" target="resolution_failed"/>
+    <transition event="error.dependency.circular" target="resolution_failed"/>
+  </state>
+
+  <state id="constructing">
+    <onentry>
+      <log expr="'Constructing provider instance'"/>
+    </onentry>
+    <transition event="provider.constructed" target="resolved"/>
+    <transition event="error.construction" target="resolution_failed"/>
+  </state>
+
+  <state id="resolved">
+    <!-- Provider instance is available for injection -->
+    <transition event="provider.dispose" target="disposing"/>
+  </state>
+
+  <state id="disposing">
+    <onentry>
+      <log expr="'Disposing provider — calling OnDispose hook'"/>
+    </onentry>
+    <transition event="provider.disposed" target="disposed"/>
+  </state>
+
+  <state id="resolution_failed">
+    <onentry>
+      <log expr="'Provider resolution failed'"/>
+    </onentry>
+    <transition event="provider.abort" target="failed"/>
+  </state>
+
+  <final id="disposed"/>
+  <final id="failed"/>
+
+</scxml>

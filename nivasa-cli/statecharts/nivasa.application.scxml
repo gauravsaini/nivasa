@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nivasa Application Lifecycle Statechart
+  
+  This is the TOP-LEVEL statechart that governs the entire Nivasa application.
+  Every application instance creates one StatechartEngine<ApplicationStatechart>.
+  
+  States: Created → Bootstrapping → Running → ShuttingDown → Terminated
+  
+  W3C SCXML 1.0 compliant.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       name="NivasaApplication"
+       initial="created"
+       datamodel="rust">
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       STATE: Created
+       The application instance has been created but not yet bootstrapped.
+       ═══════════════════════════════════════════════════════════════ -->
+  <state id="created">
+    <onentry>
+      <log expr="'NivasaApplication instance created'"/>
+    </onentry>
+    <transition event="app.bootstrap" target="bootstrapping"/>
+  </state>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       STATE: Bootstrapping (compound)
+       The application is initializing: resolving modules, registering 
+       routes, applying global configuration.
+       ═══════════════════════════════════════════════════════════════ -->
+  <state id="bootstrapping" initial="resolving_modules">
+
+    <state id="resolving_modules">
+      <onentry>
+        <log expr="'Resolving module dependency graph'"/>
+      </onentry>
+      <transition event="modules.resolved" target="initializing_modules"/>
+      <transition event="error.module.circular_dependency" target="bootstrap_failed"/>
+    </state>
+
+    <state id="initializing_modules">
+      <onentry>
+        <log expr="'Initializing modules (topological order)'"/>
+      </onentry>
+      <transition event="modules.initialized" target="registering_routes"/>
+      <transition event="error.module.init_failed" target="bootstrap_failed"/>
+    </state>
+
+    <state id="registering_routes">
+      <onentry>
+        <log expr="'Scanning controllers and registering routes'"/>
+      </onentry>
+      <transition event="routes.registered" target="applying_global_config"/>
+      <transition event="error.route.conflict" target="bootstrap_failed"/>
+    </state>
+
+    <state id="applying_global_config">
+      <onentry>
+        <log expr="'Applying global prefix, pipes, guards, filters, interceptors'"/>
+      </onentry>
+      <transition event="config.applied" target="bootstrap_complete"/>
+    </state>
+
+    <state id="bootstrap_complete">
+      <transition event="app.start" target="running"/>
+    </state>
+
+    <state id="bootstrap_failed">
+      <onentry>
+        <log expr="'Bootstrap failed — see error details'"/>
+      </onentry>
+      <transition event="app.abort" target="terminated"/>
+    </state>
+  </state>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       STATE: Running (compound)
+       The server is accepting connections and processing requests.
+       ═══════════════════════════════════════════════════════════════ -->
+  <state id="running" initial="listening">
+    <onentry>
+      <log expr="'Application is running'"/>
+    </onentry>
+
+    <state id="listening">
+      <!-- The server is accepting and processing HTTP requests.
+           Each request spawns its own request pipeline statechart. -->
+      <transition event="app.shutdown" target="draining"/>
+    </state>
+
+    <state id="draining">
+      <onentry>
+        <log expr="'Draining — stop accepting connections, finish in-flight requests'"/>
+      </onentry>
+      <transition event="app.drain_complete" target="shutting_down"/>
+    </state>
+
+    <onexit>
+      <log expr="'Exiting running state'"/>
+    </onexit>
+  </state>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       STATE: ShuttingDown (compound)
+       Destroying modules in reverse order, closing connections.
+       ═══════════════════════════════════════════════════════════════ -->
+  <state id="shutting_down" initial="destroying_modules">
+
+    <state id="destroying_modules">
+      <onentry>
+        <log expr="'Destroying modules in reverse initialization order'"/>
+      </onentry>
+      <transition event="modules.destroyed" target="cleanup"/>
+    </state>
+
+    <state id="cleanup">
+      <onentry>
+        <log expr="'Closing connections, flushing logs'"/>
+      </onentry>
+      <transition event="cleanup.done" target="shutdown_complete"/>
+    </state>
+
+    <final id="shutdown_complete"/>
+  </state>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FINAL STATE: Terminated
+       The application has fully shut down.
+       ═══════════════════════════════════════════════════════════════ -->
+  <final id="terminated"/>
+
+</scxml>

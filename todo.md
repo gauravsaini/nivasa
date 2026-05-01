@@ -1042,7 +1042,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 10.1 — Testing
 - [ ] Achieve >95% code coverage across all crates
-  - latest full workspace `cargo llvm-cov --workspace --summary-only` is green but below target at 89.88% line / 89.67% region coverage; recent coverage slices lifted CLI helpers, core lazy/dynamic/event-emitter/provider helpers, routing helpers, SCXML handler/schema/types edges, HTTP wrapper/response helpers, and OpenAPI metadata/path defaults; top remaining miss buckets are `nivasa-macros/src/controller.rs`, `nivasa-http/src/server.rs`, `nivasa-http/src/lib.rs`, `nivasa/src/application.rs`, core module registry/runtime, and macro helper files (`graphql.rs`, `injectable.rs`, `on_event.rs`, `schedule.rs`, `subscribe_message.rs`)
+  - CI and release workflows now enforce the current honest ratchet at 91% line coverage with `cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --fail-under-lines 91`; continue raising this toward the >95% target as coverage lands
+- [x] Add CI/release coverage ratchet at 91% line coverage
 - [x] Add in-process request lifecycle integration coverage (middleware → guard → interceptor → handler → Done)
 - [x] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
 - [x] Write integration tests: module composition (nested modules, imports/exports)
@@ -1075,25 +1076,27 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
   - recent docs wave covered the major public surfaces in `nivasa-core`, `nivasa-http`, `nivasa-macros`, `nivasa-statechart`, `nivasa-common`, `nivasa-routing`, `nivasa-validation`, `nivasa-websocket`, `nivasa-filters`, `nivasa-interceptors`, `nivasa-pipes`, and `nivasa-guards`; the remaining gaps are now mostly low-level internals such as `nivasa-http/src/upload.rs` and a few DI helper/error surfaces
 - [x] Write `CHANGELOG.md` following Keep a Changelog format
 - [x] Write `CONTRIBUTING.md` with contribution guidelines
+- [x] Add release workflow with release gate, dry-run, and crates.io publish jobs
+- [x] Add release publishing helper scripts (`scripts/release-crate-order.sh`, `scripts/publish-crates.sh`, `scripts/release-publish.sh`)
 - [x] Set up crate publishing order (dependencies first):
   1. [ ] Publish `nivasa-common`
-  2. [ ] Publish `nivasa-statechart`
-  3. [ ] Publish `nivasa-core`
-  4. [ ] Publish `nivasa-validation`
-  5. [ ] Publish `nivasa-routing`
-  6. [ ] Publish `nivasa-guards`
-  7. [ ] Publish `nivasa-interceptors`
-  8. [ ] Publish `nivasa-filters`
-  9. [ ] Publish `nivasa-websocket`
-  10. [ ] Publish `nivasa-config`
-  11. [ ] Publish `nivasa-pipes`
-  12. [ ] Publish `nivasa-graphql`
-  13. [ ] Publish `nivasa-scheduling`
+  2. [ ] Publish `nivasa-filters`
+  3. [ ] Publish `nivasa-guards`
+  4. [ ] Publish `nivasa-interceptors`
+  5. [ ] Publish `nivasa-macros`
+  6. [ ] Publish `nivasa-routing`
+  7. [ ] Publish `nivasa-statechart`
+  8. [ ] Publish `nivasa-core`
+  9. [ ] Publish `nivasa-config`
+  10. [ ] Publish `nivasa-graphql`
+  11. [ ] Publish `nivasa-scheduling`
+  12. [ ] Publish `nivasa-validation`
+  13. [ ] Publish `nivasa-pipes`
   14. [ ] Publish `nivasa-http`
-  15. [ ] Publish `nivasa-macros`
+  15. [ ] Publish `nivasa-websocket`
   16. [ ] Publish `nivasa` (umbrella crate)
   17. [ ] Publish `nivasa-cli`
-- [ ] Create GitHub release with tag `v0.1.0` and changelog
+- [ ] Create GitHub release/tag `v0.1.0` using committed `CHANGELOG.md`
 - [ ] Announce v0.1.0 release (Reddit r/rust, Hacker News, Twitter/X)
 
 ---

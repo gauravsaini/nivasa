@@ -6,6 +6,8 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 nivasa-common = { version = "0.1.0", path = "../nivasa-common" }
@@ -19,7 +21,7 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
-nivasa-macros = { version = "0.1.0", path = "../nivasa-macros" }
+nivasa-macros = { path = "../nivasa-macros" }
 
 [build-dependencies]
 nivasa-statechart = { version = "0.1.0", path = "../nivasa-statechart" }

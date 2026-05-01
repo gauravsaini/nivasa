@@ -6,10 +6,10 @@ use std::time::Duration;
 
 use nivasa_macros::{
     all, body, catch, catch_all, connected_socket, controller, cron, custom_param, delete, file,
-    files, get, guard, head, header, headers, http_code, impl_controller, injectable,
-    interceptor, interval, ip, message_body, middleware, module, mutation, on_event, options,
-    param, patch, pipe, post, put, query, req, res, resolver, roles, scxml_handler, session,
-    set_metadata, skip_throttle, subscribe_message, subscription, throttle, timeout, use_filters,
+    files, get, guard, head, header, headers, http_code, impl_controller, injectable, interceptor,
+    interval, ip, message_body, middleware, module, mutation, on_event, options, param, patch,
+    pipe, post, put, query, req, res, resolver, roles, scxml_handler, session, set_metadata,
+    skip_throttle, subscribe_message, subscription, throttle, timeout, use_filters,
     websocket_gateway, ConfigSchema as DeriveConfigSchema, Dto, PartialDto,
 };
 use nivasa_scheduling::SchedulePattern;
@@ -89,7 +89,9 @@ impl SurfaceController {
     #[post("/publish")]
     fn publish(
         &self,
-        #[pipe(TrimPipe)] #[message_body("payload")] payload: String,
+        #[pipe(TrimPipe)]
+        #[message_body("payload")]
+        payload: String,
         #[message_body] raw: String,
         #[connected_socket] socket: String,
     ) {
@@ -201,7 +203,11 @@ fn umbrella_controller_surface_exposes_metadata() {
             ("DELETE", "/surface/archive".to_string(), "archive"),
             ("PATCH", "/surface/rename".to_string(), "rename"),
             ("HEAD", "/surface/health".to_string(), "health"),
-            ("OPTIONS", "/surface/capabilities".to_string(), "capabilities"),
+            (
+                "OPTIONS",
+                "/surface/capabilities".to_string(),
+                "capabilities"
+            ),
             ("ALL", "/surface/anything".to_string(), "anything"),
             ("POST", "/surface/publish".to_string(), "publish"),
         ],
