@@ -115,6 +115,18 @@ jobs:
     runs-on: ubuntu-latest
     environment: crates-io-publish
     steps:
+      - name: Validate publish ref
+        run: |
+          set -euo pipefail
+          case "${GITHUB_REF}" in
+            refs/tags/v*)
+              ;;
+            *)
+              echo "::error::Real publishing requires running this workflow from a version tag matching refs/tags/v*. Current ref: ${GITHUB_REF}."
+              exit 1
+              ;;
+          esac
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -143,4 +155,4 @@ jobs:
             echo "::error::scripts/publish-crates.sh is required for crates.io publishing."
             exit 1
           fi
-          scripts/publish-crates.sh
+          scripts/publish-crates.sh --execute --wait 60
