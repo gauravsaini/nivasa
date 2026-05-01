@@ -1,7 +1,7 @@
 # Nivasa
 
 <p align="center">
-  <img src="logo.png" alt="Nivasa Logo" width="200" />
+  <img src="logo.svg" alt="Nivasa Logo" width="200" />
 </p>
 
 Welcome to the **Nivasa** project!
