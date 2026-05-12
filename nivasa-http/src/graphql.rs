@@ -397,3 +397,165 @@ fn escape_html(value: &str) -> String {
         })
         .collect()
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── escape_html ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn escape_html_ampersand() {
+        assert_eq!(escape_html("a&b"), "a&amp;b");
+    }
+
+    #[test]
+    fn escape_html_less_than() {
+        assert_eq!(escape_html("a<b"), "a&lt;b");
+    }
+
+    #[test]
+    fn escape_html_greater_than() {
+        assert_eq!(escape_html("a>b"), "a&gt;b");
+    }
+
+    #[test]
+    fn escape_html_double_quote() {
+        assert_eq!(escape_html("a\"b"), "a&quot;b");
+    }
+
+    #[test]
+    fn escape_html_single_quote() {
+        assert_eq!(escape_html("a'b"), "a&#39;b");
+    }
+
+    #[test]
+    fn escape_html_no_special_chars() {
+        assert_eq!(escape_html("hello world"), "hello world");
+    }
+
+    #[test]
+    fn escape_html_all_five_special_chars() {
+        let input = "&<>\"'";
+        let output = escape_html(input);
+        assert!(output.contains("&amp;"), "missing &amp;: {output}");
+        assert!(output.contains("&lt;"), "missing &lt;: {output}");
+        assert!(output.contains("&gt;"), "missing &gt;: {output}");
+        assert!(output.contains("&quot;"), "missing &quot;: {output}");
+        assert!(output.contains("&#39;"), "missing &#39;: {output}");
+    }
+
+    // ── GraphQLError ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn graphql_error_new_sets_message() {
+        let err = GraphQLError::new("something went wrong");
+        assert_eq!(err.message, "something went wrong");
+        assert!(err.extensions.is_none());
+    }
+
+    // ── GraphQLResponse ───────────────────────────────────────────────────────
+
+    #[test]
+    fn graphql_response_data_sets_data_field() {
+        let resp = GraphQLResponse::data(serde_json::json!({ "user": "alice" }));
+        assert!(resp.data.is_some());
+        assert!(resp.errors.is_empty());
+    }
+
+    #[test]
+    fn graphql_response_error_sets_errors_field() {
+        let resp = GraphQLResponse::error("not found");
+        assert!(resp.data.is_none());
+        assert_eq!(resp.errors.len(), 1);
+        assert_eq!(resp.errors[0].message, "not found");
+    }
+
+    #[test]
+    fn graphql_response_into_json_data_path() {
+        let resp = GraphQLResponse::data(serde_json::json!(42));
+        let json = resp.into_json();
+        assert!(json.get("data").is_some());
+        assert!(json.get("errors").is_none());
+    }
+
+    #[test]
+    fn graphql_response_into_json_error_path() {
+        let resp = GraphQLResponse::error("boom");
+        let json = resp.into_json();
+        assert!(json.get("data").is_none());
+        let errors = json.get("errors").expect("errors key must exist");
+        assert!(errors.is_array());
+    }
+
+    // ── GraphQLRequest deserialization ────────────────────────────────────────
+
+    #[test]
+    fn graphql_request_deserializes_minimal() {
+        let json = r#"{"query":"{ __typename }"}"#;
+        let req: GraphQLRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.query, "{ __typename }");
+        assert!(req.operation_name.is_none());
+    }
+
+    #[test]
+    fn graphql_request_deserializes_with_operation_name() {
+        let json = r#"{"query":"query Q { __typename }","operationName":"Q"}"#;
+        let req: GraphQLRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.operation_name.as_deref(), Some("Q"));
+    }
+
+    // ── graphql_playground_html ───────────────────────────────────────────────
+
+    #[test]
+    fn playground_html_contains_title_and_endpoint() {
+        let html = graphql_playground_html("My API", "/api/graphql");
+        assert!(html.contains("My API"), "title missing from playground HTML");
+        assert!(html.contains("/api/graphql"), "endpoint missing from playground HTML");
+    }
+
+    #[test]
+    fn playground_html_escapes_special_chars_in_title() {
+        let html = graphql_playground_html("API <>&\"", "/graphql");
+        assert!(html.contains("&amp;"), "& must be escaped: {html}");
+        assert!(html.contains("&lt;"), "< must be escaped");
+        assert!(html.contains("&gt;"), "> must be escaped");
+    }
+
+    #[test]
+    fn playground_html_is_valid_doctype() {
+        let html = graphql_playground_html("T", "/g");
+        assert!(html.starts_with("<!doctype html>"), "must start with doctype");
+    }
+
+    // ── GraphQLModule builders ─────────────────────────────────────────────────
+
+    #[test]
+    fn graphql_module_endpoint_path_builder() {
+        let module = GraphQLModule::new(|_req| GraphQLResponse::error("stub"))
+            .endpoint_path("/api/graphql");
+        assert_eq!(module.endpoint_path, "/api/graphql");
+    }
+
+    #[test]
+    fn graphql_module_playground_path_builder() {
+        let module = GraphQLModule::new(|_req| GraphQLResponse::error("stub"))
+            .playground_path("/playground");
+        assert_eq!(module.playground_path, "/playground");
+    }
+
+    #[test]
+    fn graphql_module_title_builder() {
+        let module =
+            GraphQLModule::new(|_req| GraphQLResponse::error("stub")).title("My GraphQL");
+        assert_eq!(module.title, "My GraphQL");
+    }
+
+    #[test]
+    fn graphql_module_default_paths_are_graphql() {
+        let module = GraphQLModule::new(|_req| GraphQLResponse::error("stub"));
+        assert_eq!(module.endpoint_path, "/graphql");
+        assert_eq!(module.playground_path, "/graphql");
+    }
+}

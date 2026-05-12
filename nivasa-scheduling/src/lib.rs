@@ -530,3 +530,275 @@ impl Injectable for ScheduleModule {
 fn duration_to_chrono(duration: std::time::Duration) -> Option<ChronoDuration> {
     ChronoDuration::from_std(duration).ok()
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration as StdDuration;
+
+    // ── SchedulePattern constructors ───────────────────────────────────────────
+
+    #[test]
+    fn schedule_pattern_cron_stores_expression() {
+        let pattern = SchedulePattern::cron("0 * * * * *");
+        match pattern {
+            SchedulePattern::Cron { expression } => assert_eq!(expression, "0 * * * * *"),
+            _ => panic!("expected Cron variant"),
+        }
+    }
+
+    #[test]
+    fn schedule_pattern_interval_stores_duration() {
+        let dur = StdDuration::from_secs(30);
+        let pattern = SchedulePattern::interval(dur);
+        match pattern {
+            SchedulePattern::Interval { every } => assert_eq!(every, dur),
+            _ => panic!("expected Interval variant"),
+        }
+    }
+
+    #[test]
+    fn schedule_pattern_timeout_stores_delay() {
+        let dur = StdDuration::from_secs(5);
+        let pattern = SchedulePattern::timeout(dur);
+        match pattern {
+            SchedulePattern::Timeout { delay } => assert_eq!(delay, dur),
+            _ => panic!("expected Timeout variant"),
+        }
+    }
+
+    // ── CronSchedule ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn cron_schedule_parse_valid_expression() {
+        let cs = CronSchedule::parse("0 * * * * *").unwrap();
+        assert_eq!(cs.expression(), "0 * * * * *");
+    }
+
+    #[test]
+    fn cron_schedule_parse_invalid_expression_returns_error() {
+        let result = CronSchedule::parse("not a cron expression!");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ScheduleError::InvalidCronExpression { expression, .. } => {
+                assert!(expression.contains("not a cron"));
+            }
+            e => panic!("unexpected error variant: {e:?}"),
+        }
+    }
+
+    #[test]
+    fn cron_schedule_next_after_returns_future_time() {
+        let cs = CronSchedule::parse("0 * * * * *").unwrap();
+        let now = Utc::now();
+        let next = cs.next_after(now);
+        assert!(next.is_some(), "must have a next fire time");
+        assert!(next.unwrap() > now, "next fire must be in the future");
+    }
+
+    // ── ScheduleError Display ─────────────────────────────────────────────────
+
+    #[test]
+    fn schedule_error_invalid_cron_expression_display() {
+        let err = ScheduleError::InvalidCronExpression {
+            expression: "bad".to_string(),
+            message: "parse failed".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("bad"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn schedule_error_no_upcoming_fire_time_display() {
+        let err = ScheduleError::NoUpcomingFireTime {
+            expression: "* * * * * *".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("upcoming"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn schedule_error_job_not_found_display() {
+        let id = uuid::Uuid::new_v4();
+        let err = ScheduleError::JobNotFound { job_id: id };
+        let msg = err.to_string();
+        assert!(msg.contains(&id.to_string()), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn schedule_error_job_failed_display() {
+        let err = ScheduleError::JobFailed {
+            job_name: "my-job".to_string(),
+            message: "timeout".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("my-job"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn schedule_error_invalid_interval_duration_display() {
+        let err = ScheduleError::InvalidIntervalDuration { every_ms: 0 };
+        let msg = err.to_string();
+        assert!(msg.contains("0ms"), "unexpected: {msg}");
+    }
+
+    // ── ScheduleModule ─────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn schedule_module_register_interval_fires_on_tick() {
+        let scheduler = ScheduleModule::new();
+        let now = Utc::now();
+        let fired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let fired_clone = fired.clone();
+
+        let _id = scheduler
+            .register_interval_at(
+                "test-job",
+                StdDuration::from_secs(1),
+                now,
+                move || {
+                    let f = fired_clone.clone();
+                    async move {
+                        f.store(true, std::sync::atomic::Ordering::SeqCst);
+                        Ok(())
+                    }
+                },
+            )
+            .await
+            .unwrap();
+
+        // tick 2 seconds into the future so the 1-second interval fires
+        let future_now = now + chrono::Duration::seconds(2);
+        scheduler.tick_at(future_now).await.unwrap();
+        assert!(fired.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn schedule_module_register_timeout_fires_once() {
+        let scheduler = ScheduleModule::new();
+        let now = Utc::now();
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let counter_clone = counter.clone();
+
+        let _id = scheduler
+            .register_timeout_at(
+                "once-job",
+                StdDuration::from_secs(1),
+                now,
+                move || {
+                    let c = counter_clone.clone();
+                    async move {
+                        c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        Ok(())
+                    }
+                },
+            )
+            .await
+            .unwrap();
+
+        let future_now = now + chrono::Duration::seconds(2);
+        scheduler.tick_at(future_now).await.unwrap();
+        // fire again — timeout should have been removed
+        scheduler.tick_at(future_now).await.unwrap();
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn schedule_module_remove_job_stops_firing() {
+        let scheduler = ScheduleModule::new();
+        let now = Utc::now();
+
+        let id = scheduler
+            .register_interval_at(
+                "removable",
+                StdDuration::from_secs(1),
+                now,
+                || async { Ok(()) },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(scheduler.job_count().await, 1);
+        let removed = scheduler.remove_job(id).await;
+        assert!(removed);
+        assert_eq!(scheduler.job_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn schedule_module_job_returns_info() {
+        let scheduler = ScheduleModule::new();
+        let now = Utc::now();
+
+        let id = scheduler
+            .register_interval_at(
+                "info-job",
+                StdDuration::from_secs(60),
+                now,
+                || async { Ok(()) },
+            )
+            .await
+            .unwrap();
+
+        let info = scheduler.job(id).await.unwrap();
+        assert_eq!(info.name, "info-job");
+        assert!(info.next_fire_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn schedule_module_next_fire_at() {
+        let scheduler = ScheduleModule::new();
+        let now = Utc::now();
+
+        let id = scheduler
+            .register_interval_at(
+                "fire-at-job",
+                StdDuration::from_secs(30),
+                now,
+                || async { Ok(()) },
+            )
+            .await
+            .unwrap();
+
+        let next = scheduler.next_fire_at(id).await;
+        assert!(next.is_some());
+        assert!(next.unwrap() > now);
+    }
+
+    #[tokio::test]
+    async fn schedule_module_invalid_interval_returns_error() {
+        let scheduler = ScheduleModule::new();
+        let now = Utc::now();
+        let result = scheduler
+            .register_interval_at(
+                "zero-interval",
+                StdDuration::ZERO,
+                now,
+                || async { Ok(()) },
+            )
+            .await;
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ScheduleError::InvalidIntervalDuration { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn schedule_module_jobs_returns_all() {
+        let scheduler = ScheduleModule::new();
+        let now = Utc::now();
+
+        scheduler
+            .register_interval_at("job-a", StdDuration::from_secs(10), now, || async { Ok(()) })
+            .await
+            .unwrap();
+        scheduler
+            .register_interval_at("job-b", StdDuration::from_secs(20), now, || async { Ok(()) })
+            .await
+            .unwrap();
+
+        let jobs = scheduler.jobs().await;
+        assert_eq!(jobs.len(), 2);
+    }
+}

@@ -464,3 +464,316 @@ where
             })
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::Method;
+    use serde::Deserialize;
+
+    fn make_req(method: Method, uri: &str, body: Body) -> NivasaRequest {
+        NivasaRequest::new(method, uri, body)
+    }
+
+    // ── RequestExtractError Display ───────────────────────────────────────────
+
+    #[test]
+    fn display_missing_body() {
+        let msg = RequestExtractError::MissingBody.to_string();
+        assert!(msg.contains("body"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn display_missing_path_parameters() {
+        let msg = RequestExtractError::MissingPathParameters.to_string();
+        assert!(msg.contains("path"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn display_missing_path_parameter() {
+        let msg = RequestExtractError::MissingPathParameter {
+            name: "id".to_string(),
+        }
+        .to_string();
+        assert!(msg.contains("id"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn display_missing_query_parameter() {
+        let msg = RequestExtractError::MissingQueryParameter {
+            name: "limit".to_string(),
+        }
+        .to_string();
+        assert!(msg.contains("limit"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn display_missing_header() {
+        let msg = RequestExtractError::MissingHeader {
+            name: "x-token".to_string(),
+        }
+        .to_string();
+        assert!(msg.contains("x-token"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn display_invalid_body() {
+        let msg = RequestExtractError::InvalidBody("bad json".to_string()).to_string();
+        assert!(msg.contains("bad json"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn display_invalid_path_parameter() {
+        let msg = RequestExtractError::InvalidPathParameter {
+            name: "id".to_string(),
+            error: "not a number".to_string(),
+        }
+        .to_string();
+        assert!(msg.contains("id"), "unexpected: {msg}");
+        assert!(msg.contains("not a number"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn display_invalid_query_parameter() {
+        let msg = RequestExtractError::InvalidQueryParameter {
+            name: "page".to_string(),
+            error: "NaN".to_string(),
+        }
+        .to_string();
+        assert!(msg.contains("page"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn display_invalid_header() {
+        let msg = RequestExtractError::InvalidHeader {
+            name: "x-count".to_string(),
+            error: "not int".to_string(),
+        }
+        .to_string();
+        assert!(msg.contains("x-count"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn display_invalid_query() {
+        let msg = RequestExtractError::InvalidQuery("decode error".to_string()).to_string();
+        assert!(msg.contains("decode error"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn display_missing_extension() {
+        let msg = RequestExtractError::MissingExtension {
+            type_name: "MySession",
+        }
+        .to_string();
+        assert!(msg.contains("MySession"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn request_extract_error_is_std_error() {
+        let err: Box<dyn std::error::Error> = Box::new(RequestExtractError::MissingBody);
+        assert!(!err.to_string().is_empty());
+    }
+
+    // ── header_typed ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn header_typed_returns_missing_header_when_absent() {
+        let req = make_req(Method::GET, "/", Body::empty());
+        let result = req.header_typed::<u32>("x-custom");
+        assert!(matches!(
+            result,
+            Err(RequestExtractError::MissingHeader { .. })
+        ));
+    }
+
+    #[test]
+    fn header_typed_returns_invalid_header_when_not_parseable() {
+        let mut req = make_req(Method::GET, "/", Body::empty());
+        req.set_header("x-count", "not-a-number");
+        let result = req.header_typed::<u64>("x-count");
+        assert!(matches!(
+            result,
+            Err(RequestExtractError::InvalidHeader { .. })
+        ));
+    }
+
+    #[test]
+    fn header_typed_returns_value_when_parseable() {
+        let mut req = make_req(Method::GET, "/", Body::empty());
+        req.set_header("x-count", "42");
+        let result = req.header_typed::<u64>("x-count");
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    // ── path_param_typed ──────────────────────────────────────────────────────
+
+    #[test]
+    fn path_param_typed_returns_missing_when_no_path_params() {
+        let req = make_req(Method::GET, "/users/42", Body::empty());
+        let result = req.path_param_typed::<u32>("id");
+        assert!(matches!(
+            result,
+            Err(RequestExtractError::MissingPathParameter { .. })
+        ));
+    }
+
+    #[test]
+    fn path_param_typed_returns_invalid_when_wrong_type() {
+        use nivasa_routing::RoutePattern;
+        let captures = RoutePattern::parse("/users/:id")
+            .unwrap()
+            .captures("/users/not-a-number")
+            .unwrap();
+        let mut req = make_req(Method::GET, "/users/not-a-number", Body::empty());
+        req.set_path_params(captures);
+        let result = req.path_param_typed::<u32>("id");
+        assert!(matches!(
+            result,
+            Err(RequestExtractError::InvalidPathParameter { .. })
+        ));
+    }
+
+    #[test]
+    fn path_param_typed_returns_value_on_success() {
+        use nivasa_routing::RoutePattern;
+        let captures = RoutePattern::parse("/users/:id")
+            .unwrap()
+            .captures("/users/99")
+            .unwrap();
+        let mut req = make_req(Method::GET, "/users/99", Body::empty());
+        req.set_path_params(captures);
+        let result = req.path_param_typed::<u32>("id");
+        assert_eq!(result.unwrap(), 99);
+    }
+
+    // ── FromRequest impls ─────────────────────────────────────────────────────
+
+    #[test]
+    fn from_request_header_map_clones_headers() {
+        let mut req = make_req(Method::GET, "/", Body::empty());
+        req.set_header("x-foo", "bar");
+        let map = HeaderMap::from_request(&req).unwrap();
+        assert!(map.get("x-foo").is_some());
+    }
+
+    #[test]
+    fn from_request_route_path_captures_missing_returns_error() {
+        let req = make_req(Method::GET, "/", Body::empty());
+        let result = RoutePathCaptures::from_request(&req);
+        assert!(matches!(result, Err(RequestExtractError::MissingPathParameters)));
+    }
+    #[test]
+    fn from_request_body_clones_body() {
+        let req = make_req(Method::POST, "/", Body::text("hello"));
+        let body = Body::from_request(&req).unwrap();
+        assert_eq!(body.as_bytes(), b"hello");
+    }
+
+    #[test]
+    fn from_request_string_returns_text_body() {
+        let req = make_req(Method::POST, "/", Body::text("world"));
+        let s = String::from_request(&req).unwrap();
+        assert_eq!(s, "world");
+    }
+
+    #[test]
+    fn from_request_string_empty_body_returns_empty_string() {
+        let req = make_req(Method::GET, "/", Body::empty());
+        let s = String::from_request(&req).unwrap();
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn from_request_json_value_parses_json_body() {
+        let req = make_req(Method::POST, "/", Body::json(serde_json::json!({"k": 1})));
+        let val = serde_json::Value::from_request(&req).unwrap();
+        assert_eq!(val["k"], 1);
+    }
+
+    #[test]
+    fn from_request_json_value_returns_missing_body_for_empty() {
+        let req = make_req(Method::GET, "/", Body::empty());
+        let result = serde_json::Value::from_request(&req);
+        assert!(matches!(result, Err(RequestExtractError::MissingBody)));
+    }
+
+    #[test]
+    fn from_request_typed_json_succeeds() {
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Payload {
+            name: String,
+        }
+        let req = make_req(
+            Method::POST,
+            "/",
+            Body::json(serde_json::json!({"name": "alice"})),
+        );
+        let Json(payload) = Json::<Payload>::from_request(&req).unwrap();
+        assert_eq!(payload.name, "alice");
+    }
+
+    #[test]
+    fn from_request_typed_json_returns_missing_body_for_empty() {
+        #[derive(Debug, Deserialize)]
+        struct Payload {
+            name: String,
+        }
+        let req = make_req(Method::POST, "/", Body::empty());
+        let result = Json::<Payload>::from_request(&req);
+        assert!(matches!(result, Err(RequestExtractError::MissingBody)));
+    }
+
+    // ── query helpers ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn query_typed_returns_missing_when_absent() {
+        let req = make_req(Method::GET, "/users", Body::empty());
+        let result = req.query_typed::<u32>("page");
+        assert!(matches!(
+            result,
+            Err(RequestExtractError::MissingQueryParameter { .. })
+        ));
+    }
+
+    #[test]
+    fn query_typed_returns_value_when_present() {
+        let req = make_req(Method::GET, "/users?page=3", Body::empty());
+        let page: u32 = req.query_typed("page").unwrap();
+        assert_eq!(page, 3);
+    }
+
+    #[test]
+    fn query_typed_returns_invalid_when_wrong_type() {
+        let req = make_req(Method::GET, "/users?page=notanumber", Body::empty());
+        let result = req.query_typed::<u32>("page");
+        assert!(matches!(
+            result,
+            Err(RequestExtractError::InvalidQueryParameter { .. })
+        ));
+    }
+
+    // ── NivasaRequest basics ──────────────────────────────────────────────────
+
+    #[test]
+    fn new_request_path_and_method() {
+        let req = NivasaRequest::new(Method::DELETE, "/users/5", Body::empty());
+        assert_eq!(req.method(), &Method::DELETE);
+        assert_eq!(req.path(), "/users/5");
+    }
+
+    #[test]
+    fn set_and_clear_path_params() {
+        use nivasa_routing::RoutePattern;
+        let captures = RoutePattern::parse("/users/:id")
+            .unwrap()
+            .captures("/users/42")
+            .unwrap();
+
+        let mut req = NivasaRequest::new(Method::GET, "/", Body::empty());
+        req.set_path_params(captures);
+        assert!(req.path_params().is_some());
+        req.clear_path_params();
+        assert!(req.path_params().is_none());
+    }
+}

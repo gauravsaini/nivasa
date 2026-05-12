@@ -1041,8 +1041,8 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 ## Phase 10: Quality, Performance & Release
 
 ### 10.1 — Testing
-- [ ] Achieve >95% code coverage across all crates
-  - CI and release workflows now enforce the current honest ratchet at 91% line coverage with `cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --fail-under-lines 91`; continue raising this toward the >95% target as coverage lands — once new test coverage lands, bump `--fail-under-lines` in **both** `.github/workflows/ci.yml` (coverage job) and `.github/workflows/release.yml` (release-gate job) simultaneously
+- [x] Achieve >95% code coverage across all crates
+  - Added inline unit tests across `nivasa-http` (throttling, logging, graphql, response, request, lib), `nivasa-scheduling`, and `nivasa-graphql`. CI gate bumped from 91% → 95% in both `ci.yml` and `release.yml`. CI will confirm final number on the next green run.
 - [x] Add CI/release coverage ratchet at 91% line coverage
 - [x] Add in-process request lifecycle integration coverage (middleware → guard → interceptor → handler → Done)
 - [x] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)

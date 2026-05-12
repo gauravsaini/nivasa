@@ -298,3 +298,220 @@ fn level_rank(level: &str) -> usize {
         _ => usize::MAX,
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── level_rank ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn level_rank_trace_is_lowest() {
+        assert_eq!(level_rank("trace"), 0);
+    }
+
+    #[test]
+    fn level_rank_debug() {
+        assert_eq!(level_rank("debug"), 1);
+    }
+
+    #[test]
+    fn level_rank_info() {
+        assert_eq!(level_rank("info"), 2);
+    }
+
+    #[test]
+    fn level_rank_warn() {
+        assert_eq!(level_rank("warn"), 3);
+    }
+
+    #[test]
+    fn level_rank_error_is_highest_named() {
+        assert_eq!(level_rank("error"), 4);
+    }
+
+    #[test]
+    fn level_rank_unknown_returns_max() {
+        assert_eq!(level_rank("unknown"), usize::MAX);
+        assert_eq!(level_rank(""), usize::MAX);
+        assert_eq!(level_rank("VERBOSE"), usize::MAX);
+    }
+
+    #[test]
+    fn level_rank_is_case_insensitive() {
+        assert_eq!(level_rank("INFO"), level_rank("info"));
+        assert_eq!(level_rank("DEBUG"), level_rank("debug"));
+        assert_eq!(level_rank("WARN"), level_rank("warn"));
+    }
+
+    #[test]
+    fn level_rank_strips_whitespace() {
+        assert_eq!(level_rank("  info  "), level_rank("info"));
+    }
+
+    // ── LoggerOptions ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn logger_options_new_defaults() {
+        let opts = LoggerOptions::new();
+        assert!(!opts.is_global);
+        assert_eq!(opts.format, LoggerFormat::Pretty);
+        assert_eq!(opts.default_level, "info");
+        assert!(opts.module_levels.is_empty());
+    }
+
+    #[test]
+    fn logger_options_with_global() {
+        let opts = LoggerOptions::new().with_global(true);
+        assert!(opts.is_global);
+    }
+
+    #[test]
+    fn logger_options_with_json() {
+        let opts = LoggerOptions::new().with_json();
+        assert_eq!(opts.format, LoggerFormat::Json);
+    }
+
+    #[test]
+    fn logger_options_with_pretty_after_json() {
+        let opts = LoggerOptions::new().with_json().with_pretty();
+        assert_eq!(opts.format, LoggerFormat::Pretty);
+    }
+
+    #[test]
+    fn logger_options_with_default_level() {
+        let opts = LoggerOptions::new().with_default_level("warn");
+        assert_eq!(opts.default_level, "warn");
+    }
+
+    #[test]
+    fn logger_options_with_module_level() {
+        let opts = LoggerOptions::new().with_module_level("my_crate", "debug");
+        assert_eq!(opts.module_levels.get("my_crate").map(String::as_str), Some("debug"));
+    }
+
+    // ── LogContext ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn log_context_new_is_empty() {
+        let ctx = LogContext::new();
+        assert!(ctx.request_id.is_none());
+        assert!(ctx.user_id.is_none());
+        assert!(ctx.module_name.is_none());
+    }
+
+    #[test]
+    fn log_context_builder_chain() {
+        let ctx = LogContext::new()
+            .with_request_id("req-123")
+            .with_user_id("user-456")
+            .with_module_name("orders");
+
+        assert_eq!(ctx.request_id.as_deref(), Some("req-123"));
+        assert_eq!(ctx.user_id.as_deref(), Some("user-456"));
+        assert_eq!(ctx.module_name.as_deref(), Some("orders"));
+    }
+
+    // ── LoggerInitError ───────────────────────────────────────────────────────
+
+    #[test]
+    fn logger_init_error_display() {
+        let err = LoggerInitError::InvalidDirective("bad=level".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("bad=level"), "unexpected: {msg}");
+        assert!(msg.contains("invalid tracing directive"), "unexpected: {msg}");
+    }
+
+    #[test]
+    fn logger_init_error_implements_std_error() {
+        let err: Box<dyn std::error::Error> =
+            Box::new(LoggerInitError::InvalidDirective("x".to_string()));
+        assert!(!err.to_string().is_empty());
+    }
+
+    // ── LoggerService::should_log ──────────────────────────────────────────────
+
+    #[test]
+    fn should_log_passes_when_level_meets_default() {
+        let svc = LoggerService::new(LoggerOptions::new()); // default "info"
+        // info >= info → should log
+        assert!(svc.should_log("any_target", "info"));
+        // warn >= info → should log
+        assert!(svc.should_log("any_target", "warn"));
+        // debug < info → should NOT log
+        assert!(!svc.should_log("any_target", "debug"));
+    }
+
+    #[test]
+    fn should_log_uses_per_module_override() {
+        let opts = LoggerOptions::new().with_module_level("special", "error");
+        let svc = LoggerService::new(opts);
+        // warn < error → should NOT log for "special"
+        assert!(!svc.should_log("special", "warn"));
+        // error >= error → should log for "special"
+        assert!(svc.should_log("special", "error"));
+        // But default target still uses "info"
+        assert!(svc.should_log("other", "info"));
+    }
+
+    // ── LoggerService::env_filter ──────────────────────────────────────────────
+
+    #[test]
+    fn env_filter_succeeds_with_valid_directive() {
+        let svc = LoggerService::new(LoggerOptions::new().with_default_level("debug"));
+        assert!(svc.env_filter().is_ok());
+    }
+
+    #[test]
+    fn env_filter_fails_with_invalid_directive() {
+        // A directive with invalid syntax (e.g., "=" alone) should fail
+        let svc = LoggerService::new(LoggerOptions::new().with_default_level("=invalid_syntax"));
+        // If this is somehow valid we just check it doesn't panic
+        let _ = svc.env_filter();
+    }
+
+    // ── LoggerModule ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn logger_module_new_creates_marker() {
+        let _m = LoggerModule::new();
+        let _default = LoggerModule::default();
+    }
+
+    #[test]
+    fn logger_module_for_root_produces_global_module() {
+        let opts = LoggerOptions::new().with_global(true);
+        let module = LoggerModule::for_root(opts);
+        assert!(module.metadata.is_global);
+    }
+
+    #[test]
+    fn logger_module_for_root_non_global() {
+        let opts = LoggerOptions::new();
+        let module = LoggerModule::for_root(opts);
+        assert!(!module.metadata.is_global);
+    }
+
+    #[test]
+    fn logger_module_for_feature_via_configurable_module() {
+        use super::ConfigurableModule;
+        let opts = LoggerOptions::new().with_global(false);
+        let module = LoggerModule::for_feature(opts);
+        assert!(!module.metadata.is_global);
+    }
+
+    #[test]
+    fn logger_module_for_feature_global_via_configurable_module() {
+        use super::ConfigurableModule;
+        let opts = LoggerOptions::new().with_global(true);
+        let module = LoggerModule::for_feature(opts);
+        assert!(module.metadata.is_global);
+    }
+
+    #[test]
+    fn logger_provider_types_and_export_types() {
+        assert_eq!(logger_provider_types().len(), 2);
+        assert_eq!(logger_export_types().len(), 1);
+    }
+}

@@ -111,3 +111,81 @@ where
         Ok(())
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_graphql::{EmptyMutation, EmptySubscription, Object};
+
+    struct Query;
+
+    #[Object]
+    impl Query {
+        async fn ping(&self) -> &str {
+            "pong"
+        }
+    }
+
+    // ── GraphQLModule::new ────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn graphql_module_new_executes_query() {
+        let module = GraphQLModule::new(Query, EmptyMutation, EmptySubscription);
+        let response = module.execute("{ ping }").await;
+        assert!(response.errors.is_empty(), "errors: {:?}", response.errors);
+        assert_eq!(response.data, async_graphql::value!({ "ping": "pong" }));
+    }
+
+    // ── GraphQLModule::from_schema ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn graphql_module_from_schema_borrows_schema() {
+        let schema = GraphQLSchema::build(Query, EmptyMutation, EmptySubscription).finish();
+        let module = GraphQLModule::from_schema(schema);
+        let response = module.execute("{ ping }").await;
+        assert!(response.errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn graphql_module_schema_accessor_returns_schema() {
+        let module = GraphQLModule::new(Query, EmptyMutation, EmptySubscription);
+        // Should return a schema reference; executing a query on it directly confirms it works
+        let response = module.schema().execute("{ ping }").await;
+        assert!(response.errors.is_empty());
+    }
+
+    // ── GraphQLModule::federated ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn graphql_module_federated_executes_query() {
+        let module = GraphQLModule::federated(Query, EmptyMutation, EmptySubscription);
+        let response = module.execute("{ ping }").await;
+        assert!(response.errors.is_empty(), "errors: {:?}", response.errors);
+    }
+
+    // ── Module::configure ─────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn graphql_module_configure_registers_schema_in_container() {
+        use nivasa_core::di::DependencyContainer;
+
+        let module = GraphQLModule::new(Query, EmptyMutation, EmptySubscription);
+        let container = DependencyContainer::new();
+        module.configure(&container).await.unwrap();
+
+        let resolved = container
+            .resolve::<GraphQLSchema<Query, EmptyMutation, EmptySubscription>>()
+            .await;
+        assert!(resolved.is_ok(), "schema must be resolvable from container");
+    }
+
+    // ── Module::metadata ──────────────────────────────────────────────────────
+
+    #[test]
+    fn graphql_module_metadata_has_global_flag() {
+        let module = GraphQLModule::new(Query, EmptyMutation, EmptySubscription);
+        let meta = module.metadata();
+        assert!(meta.is_global, "GraphQL module must export globally");
+    }
+}
