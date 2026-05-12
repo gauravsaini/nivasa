@@ -1,6 +1,6 @@
 [package]
 name = "nivasa-http"
-description = "Nivasa framework — http"
+description = "HTTP server, request/response pipeline, middleware, multipart upload, and CORS support for Nivasa"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "nivasa-filters"
-description = "Nivasa framework — filters"
+description = "Exception filter trait, built-in HTTP exception filter, and global filter pipeline for Nivasa"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "nivasa-config"
-description = "Nivasa framework — config"
+description = "Environment and file-based configuration loading, ConfigService, and type-safe config schemas for Nivasa"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

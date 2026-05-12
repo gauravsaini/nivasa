@@ -281,6 +281,52 @@ impl MultipartLimits {
 }
 
 /// Errors raised while extracting uploaded files from a multipart payload.
+///
+/// # Examples
+///
+/// ```rust
+/// use nivasa_http::upload::{FileInterceptor, MultipartLimits, UploadInterceptError};
+///
+/// fn multipart_body(field: &str, filename: &str, ct: Option<&str>, data: &[u8]) -> (String, Vec<u8>) {
+///     let boundary = "B";
+///     let mut body = Vec::new();
+///     body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+///     body.extend_from_slice(
+///         format!("Content-Disposition: form-data; name=\"{field}\"; filename=\"{filename}\"\r\n").as_bytes(),
+///     );
+///     if let Some(ct) = ct {
+///         body.extend_from_slice(format!("Content-Type: {ct}\r\n").as_bytes());
+///     }
+///     body.extend_from_slice(b"\r\n");
+///     body.extend_from_slice(data);
+///     body.extend_from_slice(b"\r\n");
+///     body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+///     (format!("multipart/form-data; boundary={boundary}"), body)
+/// }
+///
+/// // MissingFile — field exists in the interceptor but not in the payload.
+/// let (ct, body) = multipart_body("other", "x.txt", None, b"data");
+/// let err = FileInterceptor::new("avatar")
+///     .extract_from_bytes(&ct, &body)
+///     .unwrap_err();
+/// assert!(matches!(err, UploadInterceptError::MissingFile { .. }));
+///
+/// // DisallowedMimeType — payload has a content-type not on the allow-list.
+/// let (ct, body) = multipart_body("avatar", "a.exe", Some("application/octet-stream"), b"bin");
+/// let err = FileInterceptor::new("avatar")
+///     .with_limits(MultipartLimits::new().allowed_mime_types(["image/png"]))
+///     .extract_from_bytes(&ct, &body)
+///     .unwrap_err();
+/// assert!(matches!(err, UploadInterceptError::DisallowedMimeType { .. }));
+///
+/// // FieldTooLarge — payload exceeds the per-field size limit.
+/// let (ct, body) = multipart_body("avatar", "big.png", Some("image/png"), b"1234567890");
+/// let err = FileInterceptor::new("avatar")
+///     .with_limits(MultipartLimits::new().per_field(4))
+///     .extract_from_bytes(&ct, &body)
+///     .unwrap_err();
+/// assert!(matches!(err, UploadInterceptError::FieldTooLarge { .. }));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UploadInterceptError {
     MissingMultipartBoundary,
