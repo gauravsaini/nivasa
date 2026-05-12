@@ -1,6 +1,6 @@
 [package]
 name = "nivasa-validation"
-description = "Nivasa framework — validation"
+description = "Validation decorators, engine, and DTO derive macros for the Nivasa framework"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

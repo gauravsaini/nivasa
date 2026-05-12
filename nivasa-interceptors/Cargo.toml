@@ -1,6 +1,6 @@
 [package]
 name = "nivasa-interceptors"
-description = "Nivasa framework — interceptors"
+description = "Interceptor trait, onion-chain execution, and built-in interceptors (logging, cache, timeout) for Nivasa"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

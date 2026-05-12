@@ -1,6 +1,6 @@
 [package]
 name = "nivasa-guards"
-description = "Nivasa framework — guards"
+description = "Guard trait, execution context, and built-in guards (auth, roles, throttler) for Nivasa"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

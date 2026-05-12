@@ -83,7 +83,14 @@ impl Default for DependencyContainer {
 }
 
 impl DependencyContainer {
-    /// Create empty container.
+    /// Create an empty container with no registered providers.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use nivasa_core::DependencyContainer;
+    /// let container = DependencyContainer::new();
+    /// ```
     pub fn new() -> Self {
         Self {
             inner: Arc::new(DependencyContainerInner {
@@ -95,9 +102,43 @@ impl DependencyContainer {
         }
     }
 
-    /// Create child scope.
+    /// Create a child scope from this container.
     ///
-    /// Child shares registrations and singleton cache, but keeps own scoped cache.
+    /// The child shares the same provider registrations and singleton cache as
+    /// the parent, but maintains its own isolated scoped-instance cache.  This
+    /// is the building block for per-request DI scopes.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use nivasa_core::{DependencyContainer, ProviderScope};
+    /// # use nivasa_core::di::provider::FactoryProvider;
+    /// # use std::sync::{Arc, atomic::{AtomicU32, Ordering}};
+    /// # let rt = tokio::runtime::Runtime::new().unwrap();
+    /// # rt.block_on(async {
+    /// let container = DependencyContainer::new();
+    /// let counter = Arc::new(AtomicU32::new(0));
+    /// let c = counter.clone();
+    ///
+    /// container
+    ///     .register::<u32>(Arc::new(FactoryProvider::new(
+    ///         ProviderScope::Scoped,
+    ///         vec![],
+    ///         move |_| {
+    ///             let n = c.fetch_add(1, Ordering::SeqCst);
+    ///             Box::pin(async move { Ok(n) })
+    ///         },
+    ///     )))
+    ///     .await;
+    ///
+    /// let scope_a = container.create_scope();
+    /// let scope_b = container.create_scope();
+    ///
+    /// let a = scope_a.resolve::<u32>().await.unwrap();
+    /// let b = scope_b.resolve::<u32>().await.unwrap();
+    /// assert_ne!(*a, *b, "each scope gets its own instance");
+    /// # });
+    /// ```
     pub fn create_scope(&self) -> Self {
         Self {
             inner: Arc::clone(&self.inner),
@@ -231,7 +272,31 @@ impl DependencyContainer {
         );
     }
 
-    /// Register provider.
+    /// Register a raw [`Provider`] implementation for type `T`.
+    ///
+    /// Use [`register_value`](Self::register_value) for plain instances,
+    /// [`register_factory`](Self::register_factory) for closure-based construction,
+    /// or [`register_injectable`](Self::register_injectable) for `#[injectable]` types.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use std::sync::Arc;
+    /// # use nivasa_core::{DependencyContainer, ProviderScope};
+    /// # use nivasa_core::di::provider::{FactoryProvider};
+    /// # let rt = tokio::runtime::Runtime::new().unwrap();
+    /// # rt.block_on(async {
+    /// let container = DependencyContainer::new();
+    ///
+    /// let factory = FactoryProvider::new(ProviderScope::Singleton, vec![], |_| {
+    ///     Box::pin(async { Ok(42_u32) })
+    /// });
+    /// container.register::<u32>(Arc::new(factory)).await;
+    ///
+    /// let value = container.resolve::<u32>().await.unwrap();
+    /// assert_eq!(*value, 42);
+    /// # });
+    /// ```
     pub async fn register<T: Send + Sync + 'static>(&self, provider: Arc<dyn Provider>) {
         self.register_provider::<T>(provider).await;
     }
@@ -273,7 +338,36 @@ impl DependencyContainer {
         }
     }
 
-    /// Register injectable type.
+    /// Register an [`Injectable`] type using its `build` implementation.
+    ///
+    /// The `scope` controls caching behaviour and `dependencies` is the list of
+    /// [`TypeId`]s the type needs resolved first (used for cycle detection and
+    /// topological initialization).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use std::sync::Arc;
+    /// # use async_trait::async_trait;
+    /// # use nivasa_core::{DependencyContainer, ProviderScope, di::error::DiError};
+    /// # use nivasa_core::di::provider::Injectable;
+    /// # let rt = tokio::runtime::Runtime::new().unwrap();
+    /// # rt.block_on(async {
+    /// struct MyService;
+    ///
+    /// #[async_trait]
+    /// impl Injectable for MyService {
+    ///     async fn build(_container: &DependencyContainer) -> Result<Self, DiError> {
+    ///         Ok(MyService)
+    ///     }
+    /// }
+    ///
+    /// let container = DependencyContainer::new();
+    /// container.register_injectable::<MyService>(ProviderScope::Singleton, vec![]).await;
+    ///
+    /// assert!(container.has::<MyService>().await);
+    /// # });
+    /// ```
     pub async fn register_injectable<T: crate::di::provider::Injectable>(
         &self,
         scope: ProviderScope,
@@ -301,9 +395,36 @@ impl DependencyContainer {
         }
     }
 
-    /// Register factory provider.
+    /// Register a factory closure as a provider for type `T`.
     ///
-    /// Factory gets container so it can resolve dependencies on demand.
+    /// The factory receives a reference to the container so it can resolve its
+    /// own dependencies. `scope` and `dependencies` control caching and cycle
+    /// detection respectively.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use nivasa_core::{DependencyContainer, ProviderScope};
+    /// # let rt = tokio::runtime::Runtime::new().unwrap();
+    /// # rt.block_on(async {
+    /// let container = DependencyContainer::new();
+    /// container.register_value::<u32>(7).await;
+    ///
+    /// container
+    ///     .register_factory::<String, _>(
+    ///         ProviderScope::Singleton,
+    ///         vec![std::any::TypeId::of::<u32>()],
+    ///         |c| Box::pin(async move {
+    ///             let n = c.resolve::<u32>().await?;
+    ///             Ok(format!("answer is {n}"))
+    ///         }),
+    ///     )
+    ///     .await;
+    ///
+    /// let s = container.resolve::<String>().await.unwrap();
+    /// assert_eq!(s.as_str(), "answer is 7");
+    /// # });
+    /// ```
     pub async fn register_factory<T, F>(
         &self,
         scope: ProviderScope,
@@ -324,13 +445,46 @@ impl DependencyContainer {
         self.register_provider::<T>(provider).await;
     }
 
-    /// Check if type registered.
+    /// Returns `true` if a provider for type `T` is registered in this container.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use nivasa_core::DependencyContainer;
+    /// # let rt = tokio::runtime::Runtime::new().unwrap();
+    /// # rt.block_on(async {
+    /// let container = DependencyContainer::new();
+    /// assert!(!container.has::<u64>().await);
+    ///
+    /// container.register_value::<u64>(99).await;
+    /// assert!(container.has::<u64>().await);
+    /// # });
+    /// ```
     pub async fn has<T: 'static>(&self) -> bool {
         let providers = self.inner.providers.read().await;
         providers.contains::<T>()
     }
 
-    /// Remove provider and invalidate cached instances.
+    /// Deregister a provider and invalidate any cached instances for type `T`.
+    ///
+    /// Returns `true` if a provider was found and removed, `false` if the type
+    /// was not registered.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use nivasa_core::DependencyContainer;
+    /// # let rt = tokio::runtime::Runtime::new().unwrap();
+    /// # rt.block_on(async {
+    /// let container = DependencyContainer::new();
+    /// container.register_value::<i32>(42).await;
+    /// assert!(container.has::<i32>().await);
+    ///
+    /// assert!(container.remove::<i32>().await);   // found and removed
+    /// assert!(!container.remove::<i32>().await);  // already gone
+    /// assert!(!container.has::<i32>().await);
+    /// # });
+    /// ```
     pub async fn remove<T: 'static>(&self) -> bool {
         let type_id = TypeId::of::<T>();
         let removed = {
@@ -351,9 +505,34 @@ impl DependencyContainer {
         removed
     }
 
-    /// Resolve instance by type.
+    /// Resolve and return an instance of type `T`.
     ///
-    /// Returns cached singleton or scoped instance when available.
+    /// - **Singleton** — returns the same `Arc<T>` on every call (built once).
+    /// - **Scoped** — returns the same `Arc<T>` within the current scope; a
+    ///   different instance is returned from a child scope created via
+    ///   [`create_scope`](Self::create_scope).
+    /// - **Transient** — builds and returns a fresh `Arc<T>` on every call.
+    ///
+    /// Returns [`DiError::ProviderNotFound`] if no provider for `T` is
+    /// registered.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use nivasa_core::DependencyContainer;
+    /// # let rt = tokio::runtime::Runtime::new().unwrap();
+    /// # rt.block_on(async {
+    /// let container = DependencyContainer::new();
+    /// container.register_value::<String>("hello".to_owned()).await;
+    ///
+    /// let s = container.resolve::<String>().await.unwrap();
+    /// assert_eq!(s.as_str(), "hello");
+    ///
+    /// // Resolving an unregistered type returns an error.
+    /// let err = container.resolve::<u8>().await.unwrap_err();
+    /// assert!(err.to_string().contains("Provider not found"));
+    /// # });
+    /// ```
     pub async fn resolve<T: Send + Sync + 'static>(&self) -> Result<Arc<T>, DiError> {
         let type_id = TypeId::of::<T>();
         let type_name = std::any::type_name::<T>();
@@ -476,9 +655,28 @@ impl DependencyContainer {
         })
     }
 
-    /// Resolve optional instance by type.
+    /// Resolve an optional instance of type `T`.
     ///
-    /// Returns `Ok(Some(_))` if registered, `Ok(None)` if not.
+    /// Returns `Ok(Some(arc))` when a provider is registered, or `Ok(None)`
+    /// when the type has not been registered — without returning an error.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use nivasa_core::DependencyContainer;
+    /// # let rt = tokio::runtime::Runtime::new().unwrap();
+    /// # rt.block_on(async {
+    /// let container = DependencyContainer::new();
+    ///
+    /// // Type not yet registered — returns None, not an error.
+    /// let result = container.resolve_optional::<u32>().await.unwrap();
+    /// assert!(result.is_none());
+    ///
+    /// container.register_value::<u32>(100).await;
+    /// let result = container.resolve_optional::<u32>().await.unwrap();
+    /// assert_eq!(*result.unwrap(), 100);
+    /// # });
+    /// ```
     pub async fn resolve_optional<T: Send + Sync + 'static>(
         &self,
     ) -> Result<Option<Arc<T>>, DiError> {
@@ -489,9 +687,32 @@ impl DependencyContainer {
         }
     }
 
-    /// Validate graph and prebuild singleton cache.
+    /// Validate the dependency graph and pre-build all singletons in topological order.
     ///
-    /// Freezes no API surface, but walks dependency graph to catch cycles early.
+    /// Call this once after all providers have been registered (typically during
+    /// application bootstrap). It will:
+    ///
+    /// 1. Walk the dependency graph and detect cycles — returning
+    ///    [`DiError::CircularDependency`] if any are found.
+    /// 2. Instantiate every [`ProviderScope::Singleton`] provider so that the
+    ///    first real request doesn't pay the construction cost.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use nivasa_core::{DependencyContainer, ProviderScope};
+    /// # let rt = tokio::runtime::Runtime::new().unwrap();
+    /// # rt.block_on(async {
+    /// let container = DependencyContainer::new();
+    /// container.register_value::<u32>(1).await;
+    ///
+    /// // initialize() validates and pre-warms singletons.
+    /// container.initialize().await.unwrap();
+    ///
+    /// let v = container.resolve::<u32>().await.unwrap();
+    /// assert_eq!(*v, 1);
+    /// # });
+    /// ```
     pub async fn initialize(&self) -> Result<(), DiError> {
         let mut graph = DependencyGraph::new();
 

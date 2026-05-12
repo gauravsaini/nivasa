@@ -1,6 +1,6 @@
 [package]
 name = "nivasa-websocket"
-description = "Nivasa framework — websocket"
+description = "WebSocket gateway, room/broadcast support, and tokio-tungstenite adapter for Nivasa"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

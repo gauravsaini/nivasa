@@ -1042,7 +1042,7 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 
 ### 10.1 — Testing
 - [ ] Achieve >95% code coverage across all crates
-  - CI and release workflows now enforce the current honest ratchet at 91% line coverage with `cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --fail-under-lines 91`; continue raising this toward the >95% target as coverage lands
+  - CI and release workflows now enforce the current honest ratchet at 91% line coverage with `cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --fail-under-lines 91`; continue raising this toward the >95% target as coverage lands — once new test coverage lands, bump `--fail-under-lines` in **both** `.github/workflows/ci.yml` (coverage job) and `.github/workflows/release.yml` (release-gate job) simultaneously
 - [x] Add CI/release coverage ratchet at 91% line coverage
 - [x] Add in-process request lifecycle integration coverage (middleware → guard → interceptor → handler → Done)
 - [x] Write integration tests: full request lifecycle (middleware → guard → interceptor → pipe → handler → filter)
@@ -1071,9 +1071,12 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
 - [x] Set up CI benchmark regression detection
 
 ### 10.3 — Release Preparation
-- [ ] Final API review: ensure public APIs are consistent and well-named
-- [ ] Fill remaining public types/functions with rustdoc examples
-  - recent docs wave covered the major public surfaces in `nivasa-core`, `nivasa-http`, `nivasa-macros`, `nivasa-statechart`, `nivasa-common`, `nivasa-routing`, `nivasa-validation`, `nivasa-websocket`, `nivasa-filters`, `nivasa-interceptors`, `nivasa-pipes`, and `nivasa-guards`; the remaining gaps are now mostly low-level internals such as `nivasa-http/src/upload.rs` and a few DI helper/error surfaces
+- [x] Final API review: ensure public APIs are consistent and well-named
+  - reviewed all public surfaces across umbrella crate, `NestApplication`, `NivasaServer`/`NivasaServerBuilder`, `AppBootstrapConfig`, `NivasaMiddleware`/`Middleware` alias, and `ExecutionContext`/`GuardExecutionContext` disambiguation; naming is intentional and consistent
+- [x] Fill remaining public types/functions with rustdoc examples
+  - `DependencyContainer` all public methods now have `# Examples` blocks (`new`, `create_scope`, `register`, `register_value`, `register_injectable`, `register_factory`, `has`, `remove`, `resolve`, `resolve_optional`, `initialize`)
+  - `UploadInterceptError` enum in `nivasa-http/src/upload.rs` now has a top-level `# Examples` block showing `MissingFile`, `DisallowedMimeType`, and `FieldTooLarge` variants
+  - all 9 thin crate `description` fields in `Cargo.toml` improved from placeholder strings to descriptive one-liners
 - [x] Write `CHANGELOG.md` following Keep a Changelog format
 - [x] Write `CONTRIBUTING.md` with contribution guidelines
 - [x] Add release workflow with release gate, dry-run, and crates.io publish jobs
@@ -1096,7 +1099,9 @@ Compile-time validation that user-annotated handlers correspond to real SCXML st
   15. [ ] Publish `nivasa-websocket`
   16. [ ] Publish `nivasa` (umbrella crate)
   17. [ ] Publish `nivasa-cli`
+  - infrastructure complete; publish items execute at release time via `scripts/publish-crates.sh --execute --wait 60` triggered by `release.yml` on a `v*` tag push; `CARGO_REGISTRY_TOKEN` secret must be set in the `crates-io-publish` GitHub environment first
 - [ ] Create GitHub release/tag `v0.1.0` using committed `CHANGELOG.md`
+  - all code-side blockers cleared; ops step: `git tag v0.1.0 && git push origin v0.1.0` (or create GitHub Release via UI)
 - [ ] Announce v0.1.0 release (Reddit r/rust, Hacker News, Twitter/X)
 
 ---

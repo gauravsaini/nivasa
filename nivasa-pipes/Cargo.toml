@@ -1,6 +1,6 @@
 [package]
 name = "nivasa-pipes"
-description = "Nivasa framework — pipes"
+description = "Pipe trait and built-in data-transformation pipes (parse, validate, default, trim) for Nivasa"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

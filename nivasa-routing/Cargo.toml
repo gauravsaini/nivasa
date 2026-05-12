@@ -1,6 +1,6 @@
 [package]
 name = "nivasa-routing"
-description = "Nivasa framework — routing"
+description = "Route registry, path matching (static, parameterized, wildcard), and request dispatch for Nivasa"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
