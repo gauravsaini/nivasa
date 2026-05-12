@@ -1278,6 +1278,7 @@ pub mod debug {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use super::{resolve_controller_guard_execution, ControllerGuardExecutionContract};
 
     #[test]
@@ -1316,5 +1317,165 @@ mod tests {
         let contract = resolve_controller_guard_execution("show", &[], &[]);
 
         assert_eq!(contract, None);
+    }
+
+    // ── controller_client_ip / header helpers ─────────────────────────────────
+
+    #[test]
+    fn client_ip_from_x_forwarded_for_header() {
+        let mut req = NivasaRequest::new(http::Method::GET, "/", Body::empty());
+        req.set_header("x-forwarded-for", "203.0.113.1, 10.0.0.1");
+        let ip = controller_client_ip(&req);
+        assert_eq!(ip.as_deref(), Some("203.0.113.1"));
+    }
+
+    #[test]
+    fn client_ip_from_x_real_ip_header() {
+        let mut req = NivasaRequest::new(http::Method::GET, "/", Body::empty());
+        req.set_header("x-real-ip", "198.51.100.5 ");
+        let ip = controller_client_ip(&req);
+        assert_eq!(ip.as_deref(), Some("198.51.100.5"));
+    }
+
+    #[test]
+    fn client_ip_from_forwarded_header() {
+        let mut req = NivasaRequest::new(http::Method::GET, "/", Body::empty());
+        req.set_header("forwarded", "for=192.0.2.7; proto=https");
+        let ip = controller_client_ip(&req);
+        assert_eq!(ip.as_deref(), Some("192.0.2.7"));
+    }
+
+    #[test]
+    fn client_ip_returns_none_when_no_ip_headers() {
+        let req = NivasaRequest::new(http::Method::GET, "/", Body::empty());
+        let ip = controller_client_ip(&req);
+        assert!(ip.is_none());
+    }
+
+    #[test]
+    fn header_first_csv_value_strips_whitespace() {
+        let mut req = NivasaRequest::new(http::Method::GET, "/", Body::empty());
+        req.set_header("x-forwarded-for", " a , b , c ");
+        let val = header_first_csv_value(&req, "x-forwarded-for");
+        assert_eq!(val.as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn header_first_csv_value_returns_none_for_missing_header() {
+        let req = NivasaRequest::new(http::Method::GET, "/", Body::empty());
+        let val = header_first_csv_value(&req, "x-forwarded-for");
+        assert!(val.is_none());
+    }
+
+    #[test]
+    fn forwarded_for_value_parses_for_directive() {
+        let mut req = NivasaRequest::new(http::Method::GET, "/", Body::empty());
+        req.set_header("forwarded", "for=203.0.113.9;proto=http");
+        let val = forwarded_for_value(&req);
+        assert_eq!(val.as_deref(), Some("203.0.113.9"));
+    }
+
+    #[test]
+    fn forwarded_for_value_returns_none_when_no_for_directive() {
+        let mut req = NivasaRequest::new(http::Method::GET, "/", Body::empty());
+        req.set_header("forwarded", "proto=https;by=proxy.example.com");
+        let val = forwarded_for_value(&req);
+        assert!(val.is_none());
+    }
+
+    // ── run_controller_action_with_ip ─────────────────────────────────────────
+
+    #[test]
+    fn run_controller_action_with_ip_returns_400_when_no_ip() {
+        let req = NivasaRequest::new(http::Method::GET, "/", Body::empty());
+        let response = run_controller_action_with_ip(&req, |ip| ip);
+        assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn run_controller_action_with_ip_invokes_action_with_ip() {
+        let mut req = NivasaRequest::new(http::Method::GET, "/", Body::empty());
+        req.set_header("x-forwarded-for", "10.0.0.1");
+        let response = run_controller_action_with_ip(&req, |ip| ip);
+        assert_eq!(response.status(), http::StatusCode::OK);
+    }
+
+    // ── apply_controller_response_metadata ────────────────────────────────────
+
+    #[test]
+    fn apply_metadata_overrides_status_code() {
+        let response = NivasaResponse::new(http::StatusCode::OK, Body::empty());
+        let metadata: &[ControllerResponseMetadata<'_>] = &[("create", Some(201), vec![])];
+        let response = apply_controller_response_metadata(response, "create", metadata);
+        assert_eq!(response.status(), http::StatusCode::CREATED);
+    }
+
+    #[test]
+    fn apply_metadata_adds_header() {
+        let response = NivasaResponse::new(http::StatusCode::OK, Body::empty());
+        let metadata: &[ControllerResponseMetadata<'_>] =
+            &[("handler", None, vec![("x-custom", "value")])];
+        let response = apply_controller_response_metadata(response, "handler", metadata);
+        let header = response.headers().get("x-custom").unwrap().to_str().unwrap();
+        assert_eq!(header, "value");
+    }
+
+    #[test]
+    fn apply_metadata_no_match_returns_unchanged_response() {
+        let response = NivasaResponse::new(http::StatusCode::OK, Body::empty());
+        let metadata: &[ControllerResponseMetadata<'_>] = &[("other_handler", Some(201), vec![])];
+        let response = apply_controller_response_metadata(response, "my_handler", metadata);
+        assert_eq!(response.status(), http::StatusCode::OK);
+    }
+
+    // ── register/resolve_controller_route_handler ──────────────────────────────
+
+    #[test]
+    fn register_and_resolve_controller_route_handler() {
+        let handler: AppRouteHandler = std::sync::Arc::new(|req| {
+            NivasaResponse::text(req.path().to_string())
+        });
+        register_controller_route_handler("/test/handler", "my_fn", handler);
+        let resolved = resolve_controller_route_handler("/test/handler", "my_fn");
+        assert!(resolved.is_some());
+    }
+
+    #[test]
+    fn resolve_returns_none_for_unknown_handler() {
+        let resolved = resolve_controller_route_handler("/unknown/path", "nonexistent_fn");
+        assert!(resolved.is_none());
+    }
+
+    // ── NivasaMiddlewareLayer Tower integration ───────────────────────────────
+
+    #[tokio::test]
+    async fn tower_middleware_layer_wraps_service() {
+        use tower::Service;
+
+        struct PassThroughMiddleware;
+
+        #[async_trait::async_trait]
+        impl NivasaMiddleware for PassThroughMiddleware {
+            async fn use_(
+                &self,
+                req: NivasaRequest,
+                next: NextMiddleware,
+            ) -> NivasaResponse {
+                next.run(req).await
+            }
+        }
+
+        let inner_service = tower::service_fn(|_req: NivasaRequest| async {
+            Ok::<_, std::convert::Infallible>(
+                NivasaResponse::text("inner")
+            )
+        });
+
+        let layer = NivasaMiddlewareLayer::new(PassThroughMiddleware);
+        let mut svc = layer.layer(inner_service);
+
+        let req = NivasaRequest::new(http::Method::GET, "/", Body::empty());
+        let response = svc.call(req).await.unwrap();
+        assert_eq!(response.body().as_bytes(), b"inner");
     }
 }

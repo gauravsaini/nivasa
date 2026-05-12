@@ -826,3 +826,266 @@ where
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── SseEvent builders ─────────────────────────────────────────────────────
+
+    #[test]
+    fn sse_event_data_creates_event() {
+        let event = SseEvent::data("hello");
+        assert_eq!(event.data, vec!["hello"]);
+        assert!(event.event.is_none());
+        assert!(event.id.is_none());
+        assert!(event.retry.is_none());
+        assert!(event.comment.is_empty());
+    }
+
+    #[test]
+    fn sse_event_comment_creates_comment_only() {
+        let event = SseEvent::comment("ping");
+        assert!(event.data.is_empty());
+        assert_eq!(event.comment, vec!["ping"]);
+    }
+
+    #[test]
+    fn sse_event_builder_chain() {
+        let event = SseEvent::data("msg")
+            .event("update")
+            .id("evt-1")
+            .retry(3000)
+            .data_line("second line");
+
+        assert_eq!(event.event.as_deref(), Some("update"));
+        assert_eq!(event.id.as_deref(), Some("evt-1"));
+        assert_eq!(event.retry, Some(3000));
+        assert_eq!(event.data.len(), 2);
+    }
+
+    #[test]
+    fn sse_event_renders_event_type() {
+        let event = SseEvent::data("x").event("ping");
+        let mut body = String::new();
+        event.render(&mut body);
+        assert!(body.contains("event: ping\n"), "rendered: {body}");
+        assert!(body.contains("data: x\n"), "rendered: {body}");
+    }
+
+    #[test]
+    fn sse_event_renders_id_and_retry() {
+        let event = SseEvent::data("x").id("42").retry(1000);
+        let mut body = String::new();
+        event.render(&mut body);
+        assert!(body.contains("id: 42\n"), "rendered: {body}");
+        assert!(body.contains("retry: 1000\n"), "rendered: {body}");
+    }
+
+    #[test]
+    fn sse_event_render_sanitizes_newlines_in_event_name() {
+        let event = SseEvent::data("x").event("name\nwith\nnewlines");
+        let mut body = String::new();
+        event.render(&mut body);
+        // The rendered event: field must have spaces instead of newlines
+        assert!(!body.contains("event: name\nwith"), "raw newline must not appear in event field");
+    }
+
+    #[test]
+    fn sse_event_multiline_data() {
+        let event = SseEvent::data("line1\nline2");
+        let mut body = String::new();
+        event.render(&mut body);
+        // multiline splits into separate data: lines
+        assert!(body.contains("data: line1\n"), "rendered: {body}");
+        assert!(body.contains("data: line2\n"), "rendered: {body}");
+    }
+
+    #[test]
+    fn sse_response_has_correct_content_type() {
+        let response = NivasaResponse::sse([SseEvent::data("ok")]);
+        assert_eq!(response.status(), StatusCode::OK);
+        let ct = response.headers().get(http::header::CONTENT_TYPE);
+        assert!(ct.is_some(), "content-type header must be set");
+        let ct = ct.unwrap().to_str().unwrap();
+        assert!(ct.contains("text/event-stream"), "unexpected: {ct}");
+    }
+
+    // ── Redirect ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn redirect_permanent_returns_301() {
+        let response = Redirect::permanent("/new-path").into_response();
+        assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
+        assert!(response.headers().get("location").is_some());
+    }
+
+    #[test]
+    fn redirect_temporary_returns_302() {
+        let response = Redirect::temporary("/login").into_response();
+        assert_eq!(response.status(), StatusCode::FOUND);
+    }
+
+    #[test]
+    fn redirect_temporary_preserve_method_returns_307() {
+        let response = Redirect::temporary_preserve_method("/other").into_response();
+        assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+    }
+
+    #[test]
+    fn redirect_permanent_preserve_method_returns_308() {
+        let response = Redirect::permanent_preserve_method("/new").into_response();
+        assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
+    }
+
+    #[test]
+    fn redirect_to_sets_custom_status() {
+        let response = Redirect::to("/target", StatusCode::SEE_OTHER).into_response();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        let location = response.headers().get("location").unwrap().to_str().unwrap();
+        assert_eq!(location, "/target");
+    }
+
+    // ── Download ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn download_attachment_sets_content_disposition() {
+        let response = Download::attachment("report.csv", b"data,here\n".to_vec()).into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        let cd = response
+            .headers()
+            .get(CONTENT_DISPOSITION)
+            .expect("Content-Disposition must be set");
+        let cd_str = cd.to_str().unwrap();
+        assert!(cd_str.contains("attachment"), "unexpected: {cd_str}");
+        assert!(cd_str.contains("report.csv"), "unexpected: {cd_str}");
+    }
+
+    #[test]
+    fn download_escapes_special_chars_in_filename() {
+        let response = Download::attachment(r#"file"with"quotes.txt"#, b"x".to_vec()).into_response();
+        let cd = response.headers().get(CONTENT_DISPOSITION).unwrap().to_str().unwrap();
+        // backslash-escaped quotes
+        assert!(cd.contains(r#"\""#), "quotes should be escaped: {cd}");
+    }
+
+    // ── StreamBody ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn stream_body_new_collects_chunks() {
+        let sb = StreamBody::new(["hello", " world"]);
+        assert_eq!(sb.chunks.len(), 2);
+    }
+
+    #[test]
+    fn stream_body_push_appends_chunk() {
+        let sb = StreamBody::new(["a"]).push("b");
+        assert_eq!(sb.chunks.len(), 2);
+    }
+
+    #[test]
+    fn stream_body_with_content_type_overrides_inference() {
+        let sb = StreamBody::new(["data"]).with_content_type("application/octet-stream");
+        assert_eq!(sb.content_type.as_deref(), Some("application/octet-stream"));
+    }
+
+    #[test]
+    fn stream_body_into_response_concatenates_chunks() {
+        let response = StreamBody::new(["hello", " world"]).into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(!response.body().is_empty());
+    }
+
+    #[test]
+    fn stream_body_empty_chunks_produce_empty_body() {
+        let response = StreamBody::new(Vec::<&str>::new()).into_response();
+        assert!(response.body().is_empty());
+    }
+
+    #[test]
+    fn stream_body_mixed_content_types_does_not_infer_content_type() {
+        // When chunk content types differ, infer_stream_content_type returns None
+        // so the explicit Content-Type header override is not set.
+        let text = Body::text("hello");
+        let json_body = Body::json(serde_json::json!({}));
+        let result = infer_stream_content_type(&[text, json_body]);
+        assert!(result.is_none(), "mixed types must not infer a content type");
+    }
+
+    // ── NivasaResponseBuilder ─────────────────────────────────────────────────
+
+    #[test]
+    fn response_builder_chain_sets_status_header_and_body() {
+        let response = NivasaResponse::builder()
+            .status(StatusCode::ACCEPTED)
+            .header("x-trace", "abc")
+            .body("queued");
+
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(response.body().as_bytes(), b"queued");
+        let header = response.headers().get("x-trace").unwrap().to_str().unwrap();
+        assert_eq!(header, "abc");
+    }
+
+    // ── infer_stream_content_type ─────────────────────────────────────────────
+
+    #[test]
+    fn infer_stream_content_type_all_text_returns_text() {
+        let chunks = vec![Body::text("a"), Body::text("b")];
+        let ct = infer_stream_content_type(&chunks);
+        assert_eq!(ct, Some("text/plain; charset=utf-8"));
+    }
+
+    #[test]
+    fn infer_stream_content_type_empty_chunks_returns_none() {
+        let chunks: Vec<Body> = vec![];
+        let ct = infer_stream_content_type(&chunks);
+        assert!(ct.is_none());
+    }
+
+    #[test]
+    fn infer_stream_content_type_mixed_returns_none() {
+        let chunks = vec![Body::text("x"), Body::json(serde_json::json!({}))];
+        let ct = infer_stream_content_type(&chunks);
+        assert!(ct.is_none());
+    }
+
+    // ── escape_content_disposition_filename ───────────────────────────────────
+
+    #[test]
+    fn escape_filename_with_backslash_and_quote() {
+        let escaped = escape_content_disposition_filename(r#"path\to"file.txt"#);
+        assert!(escaped.contains(r#"\\"#), "backslash must be escaped: {escaped}");
+        assert!(escaped.contains(r#"\""#), "quote must be escaped: {escaped}");
+    }
+
+    #[test]
+    fn escape_filename_plain_name_unchanged() {
+        let escaped = escape_content_disposition_filename("report.csv");
+        assert_eq!(escaped, "report.csv");
+    }
+
+    // ── sanitize_sse helpers ──────────────────────────────────────────────────
+
+    #[test]
+    fn sanitize_sse_replaces_cr_lf_with_space() {
+        assert_eq!(sanitize_sse_single_line("a\nb"), "a b");
+        assert_eq!(sanitize_sse_single_line("a\rb"), "a b");
+    }
+
+    #[test]
+    fn push_sse_field_appends_name_value_newline() {
+        let mut body = String::new();
+        push_sse_field(&mut body, "data: ", "hello");
+        assert_eq!(body, "data: hello\n");
+    }
+
+    #[test]
+    fn push_sse_multiline_field_splits_on_newline() {
+        let mut body = String::new();
+        push_sse_multiline_field(&mut body, "data: ", "line1\nline2");
+        assert!(body.contains("data: line1\n"), "actual: {body}");
+        assert!(body.contains("data: line2\n"), "actual: {body}");
+    }
+}

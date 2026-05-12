@@ -98,11 +98,13 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Coverage ratchet (line >= 91%)
+      - name: Coverage ratchet (line >= 95%)
         run: |
-          # Ratchet gate: current honest workspace line coverage is 91.14%.
-          # Raise this floor toward the 95% target as coverage lands; do not lower it.
-          cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --fail-under-lines 91
+          # Ratchet gate: bumped from 91% → 95% after adding inline unit tests
+          # across nivasa-http (throttling, logging, graphql, response, request, lib),
+          # nivasa-scheduling, and nivasa-graphql.
+          # Do not lower this floor; raise it further as coverage improves.
+          cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --fail-under-lines 95
 
   mutants:
     runs-on: ubuntu-latest
