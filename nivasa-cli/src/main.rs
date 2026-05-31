@@ -321,13 +321,9 @@ fn validate_command(all: bool, file: Option<String>) -> Result<(), String> {
         return Err("use either `--all` or a single file path, not both".to_string());
     }
 
-    let files = if all || file.is_none() {
-        collect_statechart_files(&statecharts_dir())?
-    } else {
-        vec![resolve_statechart_path(
-            &statecharts_dir(),
-            file.as_ref().unwrap(),
-        )?]
+    let files = match file {
+        Some(path) if !all => vec![resolve_statechart_path(&statecharts_dir(), &path)?],
+        _ => collect_statechart_files(&statecharts_dir())?,
     };
 
     for path in files {

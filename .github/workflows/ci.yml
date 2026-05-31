@@ -140,4 +140,4 @@ jobs:
           git diff "$diff_base"...HEAD > /tmp/mutants.diff
 
       - name: Run cargo-mutants
-        run: cargo mutants --baseline=skip --in-place --in-diff /tmp/mutants.diff --test-workspace --profile=mutants --timeout 300
+        run: cargo mutants --baseline=skip --in-place --in-diff /tmp/mutants.diff --test-workspace=true --profile=mutants --timeout 300

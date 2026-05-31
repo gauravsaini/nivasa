@@ -8,17 +8,12 @@ use syn::{
     Result, Token, Type,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum InjectableScope {
+    #[default]
     Singleton,
     Scoped,
     Transient,
-}
-
-impl Default for InjectableScope {
-    fn default() -> Self {
-        Self::Singleton
-    }
 }
 
 impl InjectableScope {

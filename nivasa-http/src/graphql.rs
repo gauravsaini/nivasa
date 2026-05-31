@@ -398,7 +398,6 @@ fn escape_html(value: &str) -> String {
         .collect()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,8 +510,14 @@ mod tests {
     #[test]
     fn playground_html_contains_title_and_endpoint() {
         let html = graphql_playground_html("My API", "/api/graphql");
-        assert!(html.contains("My API"), "title missing from playground HTML");
-        assert!(html.contains("/api/graphql"), "endpoint missing from playground HTML");
+        assert!(
+            html.contains("My API"),
+            "title missing from playground HTML"
+        );
+        assert!(
+            html.contains("/api/graphql"),
+            "endpoint missing from playground HTML"
+        );
     }
 
     #[test]
@@ -526,15 +531,18 @@ mod tests {
     #[test]
     fn playground_html_is_valid_doctype() {
         let html = graphql_playground_html("T", "/g");
-        assert!(html.starts_with("<!doctype html>"), "must start with doctype");
+        assert!(
+            html.starts_with("<!doctype html>"),
+            "must start with doctype"
+        );
     }
 
     // ── GraphQLModule builders ─────────────────────────────────────────────────
 
     #[test]
     fn graphql_module_endpoint_path_builder() {
-        let module = GraphQLModule::new(|_req| GraphQLResponse::error("stub"))
-            .endpoint_path("/api/graphql");
+        let module =
+            GraphQLModule::new(|_req| GraphQLResponse::error("stub")).endpoint_path("/api/graphql");
         assert_eq!(module.endpoint_path, "/api/graphql");
     }
 
@@ -547,8 +555,7 @@ mod tests {
 
     #[test]
     fn graphql_module_title_builder() {
-        let module =
-            GraphQLModule::new(|_req| GraphQLResponse::error("stub")).title("My GraphQL");
+        let module = GraphQLModule::new(|_req| GraphQLResponse::error("stub")).title("My GraphQL");
         assert_eq!(module.title, "My GraphQL");
     }
 

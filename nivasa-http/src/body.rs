@@ -8,8 +8,9 @@ use bytes::Bytes;
 /// let body = Body::text("hello");
 /// assert_eq!(body.as_bytes(), b"hello");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Body {
+    #[default]
     Empty,
     Text(String),
     Html(String),
@@ -101,12 +102,6 @@ impl Body {
             Body::Json(value) => Bytes::from(serde_json::to_vec(&value).unwrap_or_default()),
             Body::Bytes(bytes) => Bytes::from(bytes),
         }
-    }
-}
-
-impl Default for Body {
-    fn default() -> Self {
-        Self::Empty
     }
 }
 

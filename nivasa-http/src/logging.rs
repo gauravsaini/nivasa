@@ -299,7 +299,6 @@ fn level_rank(level: &str) -> usize {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,7 +387,10 @@ mod tests {
     #[test]
     fn logger_options_with_module_level() {
         let opts = LoggerOptions::new().with_module_level("my_crate", "debug");
-        assert_eq!(opts.module_levels.get("my_crate").map(String::as_str), Some("debug"));
+        assert_eq!(
+            opts.module_levels.get("my_crate").map(String::as_str),
+            Some("debug")
+        );
     }
 
     // ── LogContext ────────────────────────────────────────────────────────────
@@ -420,7 +422,10 @@ mod tests {
         let err = LoggerInitError::InvalidDirective("bad=level".to_string());
         let msg = err.to_string();
         assert!(msg.contains("bad=level"), "unexpected: {msg}");
-        assert!(msg.contains("invalid tracing directive"), "unexpected: {msg}");
+        assert!(
+            msg.contains("invalid tracing directive"),
+            "unexpected: {msg}"
+        );
     }
 
     #[test]
@@ -435,7 +440,7 @@ mod tests {
     #[test]
     fn should_log_passes_when_level_meets_default() {
         let svc = LoggerService::new(LoggerOptions::new()); // default "info"
-        // info >= info → should log
+                                                            // info >= info → should log
         assert!(svc.should_log("any_target", "info"));
         // warn >= info → should log
         assert!(svc.should_log("any_target", "warn"));
@@ -476,7 +481,7 @@ mod tests {
     #[test]
     fn logger_module_new_creates_marker() {
         let _m = LoggerModule::new();
-        let _default = LoggerModule::default();
+        let _default = <LoggerModule as Default>::default();
     }
 
     #[test]

@@ -1416,7 +1416,12 @@ mod tests {
         let metadata: &[ControllerResponseMetadata<'_>] =
             &[("handler", None, vec![("x-custom", "value")])];
         let response = apply_controller_response_metadata(response, "handler", metadata);
-        let header = response.headers().get("x-custom").unwrap().to_str().unwrap();
+        let header = response
+            .headers()
+            .get("x-custom")
+            .unwrap()
+            .to_str()
+            .unwrap();
         assert_eq!(header, "value");
     }
 
@@ -1432,9 +1437,8 @@ mod tests {
 
     #[test]
     fn register_and_resolve_controller_route_handler() {
-        let handler: AppRouteHandler = std::sync::Arc::new(|req| {
-            NivasaResponse::text(req.path().to_string())
-        });
+        let handler: AppRouteHandler =
+            std::sync::Arc::new(|req| NivasaResponse::text(req.path().to_string()));
         register_controller_route_handler("/test/handler", "my_fn", handler);
         let resolved = resolve_controller_route_handler("/test/handler", "my_fn");
         assert!(resolved.is_some());
@@ -1456,19 +1460,13 @@ mod tests {
 
         #[async_trait::async_trait]
         impl NivasaMiddleware for PassThroughMiddleware {
-            async fn use_(
-                &self,
-                req: NivasaRequest,
-                next: NextMiddleware,
-            ) -> NivasaResponse {
+            async fn use_(&self, req: NivasaRequest, next: NextMiddleware) -> NivasaResponse {
                 next.run(req).await
             }
         }
 
         let inner_service = tower::service_fn(|_req: NivasaRequest| async {
-            Ok::<_, std::convert::Infallible>(
-                NivasaResponse::text("inner")
-            )
+            Ok::<_, std::convert::Infallible>(NivasaResponse::text("inner"))
         });
 
         let layer = NivasaMiddlewareLayer::new(PassThroughMiddleware);

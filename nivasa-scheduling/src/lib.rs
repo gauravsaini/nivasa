@@ -531,7 +531,6 @@ fn duration_to_chrono(duration: std::time::Duration) -> Option<ChronoDuration> {
     ChronoDuration::from_std(duration).ok()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -653,18 +652,13 @@ mod tests {
         let fired_clone = fired.clone();
 
         let _id = scheduler
-            .register_interval_at(
-                "test-job",
-                StdDuration::from_secs(1),
-                now,
-                move || {
-                    let f = fired_clone.clone();
-                    async move {
-                        f.store(true, std::sync::atomic::Ordering::SeqCst);
-                        Ok(())
-                    }
-                },
-            )
+            .register_interval_at("test-job", StdDuration::from_secs(1), now, move || {
+                let f = fired_clone.clone();
+                async move {
+                    f.store(true, std::sync::atomic::Ordering::SeqCst);
+                    Ok(())
+                }
+            })
             .await
             .unwrap();
 
@@ -682,18 +676,13 @@ mod tests {
         let counter_clone = counter.clone();
 
         let _id = scheduler
-            .register_timeout_at(
-                "once-job",
-                StdDuration::from_secs(1),
-                now,
-                move || {
-                    let c = counter_clone.clone();
-                    async move {
-                        c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        Ok(())
-                    }
-                },
-            )
+            .register_timeout_at("once-job", StdDuration::from_secs(1), now, move || {
+                let c = counter_clone.clone();
+                async move {
+                    c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Ok(())
+                }
+            })
             .await
             .unwrap();
 
@@ -710,12 +699,9 @@ mod tests {
         let now = Utc::now();
 
         let id = scheduler
-            .register_interval_at(
-                "removable",
-                StdDuration::from_secs(1),
-                now,
-                || async { Ok(()) },
-            )
+            .register_interval_at("removable", StdDuration::from_secs(1), now, || async {
+                Ok(())
+            })
             .await
             .unwrap();
 
@@ -731,12 +717,9 @@ mod tests {
         let now = Utc::now();
 
         let id = scheduler
-            .register_interval_at(
-                "info-job",
-                StdDuration::from_secs(60),
-                now,
-                || async { Ok(()) },
-            )
+            .register_interval_at("info-job", StdDuration::from_secs(60), now, || async {
+                Ok(())
+            })
             .await
             .unwrap();
 
@@ -751,12 +734,9 @@ mod tests {
         let now = Utc::now();
 
         let id = scheduler
-            .register_interval_at(
-                "fire-at-job",
-                StdDuration::from_secs(30),
-                now,
-                || async { Ok(()) },
-            )
+            .register_interval_at("fire-at-job", StdDuration::from_secs(30), now, || async {
+                Ok(())
+            })
             .await
             .unwrap();
 
@@ -770,12 +750,7 @@ mod tests {
         let scheduler = ScheduleModule::new();
         let now = Utc::now();
         let result = scheduler
-            .register_interval_at(
-                "zero-interval",
-                StdDuration::ZERO,
-                now,
-                || async { Ok(()) },
-            )
+            .register_interval_at("zero-interval", StdDuration::ZERO, now, || async { Ok(()) })
             .await;
         assert!(result.is_err());
         assert!(matches!(
@@ -790,11 +765,15 @@ mod tests {
         let now = Utc::now();
 
         scheduler
-            .register_interval_at("job-a", StdDuration::from_secs(10), now, || async { Ok(()) })
+            .register_interval_at("job-a", StdDuration::from_secs(10), now, || async {
+                Ok(())
+            })
             .await
             .unwrap();
         scheduler
-            .register_interval_at("job-b", StdDuration::from_secs(20), now, || async { Ok(()) })
+            .register_interval_at("job-b", StdDuration::from_secs(20), now, || async {
+                Ok(())
+            })
             .await
             .unwrap();
 

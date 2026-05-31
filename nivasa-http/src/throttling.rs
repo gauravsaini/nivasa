@@ -85,7 +85,6 @@ fn throttler_export_types() -> Vec<TypeId> {
     ]
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,7 +117,7 @@ mod tests {
 
     #[test]
     fn throttler_options_provider_default_is_debug_and_clone() {
-        let provider = ThrottlerOptionsProvider::default();
+        let provider = <ThrottlerOptionsProvider as Default>::default();
         let _ = format!("{provider:?}");
         let _cloned = provider;
     }
@@ -126,7 +125,7 @@ mod tests {
     #[test]
     fn throttler_module_new_creates_marker() {
         let _m = ThrottlerModule::new();
-        let _default = ThrottlerModule::default();
+        let _default = <ThrottlerModule as Default>::default();
         let _ = format!("{:?}", ThrottlerModule);
     }
 
@@ -154,7 +153,6 @@ mod tests {
 
     #[test]
     fn throttler_module_for_root_via_configurable_module() {
-        use super::ConfigurableModule;
         let opts = ThrottlerOptions::new(3, Duration::from_secs(5)).with_global(true);
         let module = ThrottlerModule::for_root(opts);
         assert!(module.metadata.is_global);

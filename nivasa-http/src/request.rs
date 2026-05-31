@@ -465,7 +465,6 @@ where
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -661,7 +660,10 @@ mod tests {
     fn from_request_route_path_captures_missing_returns_error() {
         let req = make_req(Method::GET, "/", Body::empty());
         let result = RoutePathCaptures::from_request(&req);
-        assert!(matches!(result, Err(RequestExtractError::MissingPathParameters)));
+        assert!(matches!(
+            result,
+            Err(RequestExtractError::MissingPathParameters)
+        ));
     }
     #[test]
     fn from_request_body_clones_body() {
@@ -717,6 +719,7 @@ mod tests {
     fn from_request_typed_json_returns_missing_body_for_empty() {
         #[derive(Debug, Deserialize)]
         struct Payload {
+            #[allow(dead_code)]
             name: String,
         }
         let req = make_req(Method::POST, "/", Body::empty());
