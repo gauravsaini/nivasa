@@ -10,4 +10,4 @@ warning: unused import: `skip_throttle`
 1 | use nivasa_macros::{controller, skip_throttle};
   |                                 ^^^^^^^^^^^^^
   |
-  = note: `#[warn(unused_imports)]` on by default
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

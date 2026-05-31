@@ -4,12 +4,6 @@ error: `#[api_tags]` tag cannot be empty
 4 | #[nivasa_macros::api_tags("")]
   |                           ^^
 
-error[E0412]: cannot find type `UsersController` in this scope
- --> tests/trybuild/controller_api_tags_invalid.rs:8:6
-  |
-8 | impl UsersController {
-  |      ^^^^^^^^^^^^^^^ not found in this scope
-
 error: the `Self` constructor can only be used with tuple or unit structs
  --> tests/trybuild/controller_api_tags_invalid.rs:7:1
   |

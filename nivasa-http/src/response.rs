@@ -827,7 +827,6 @@ where
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -889,7 +888,10 @@ mod tests {
         let mut body = String::new();
         event.render(&mut body);
         // The rendered event: field must have spaces instead of newlines
-        assert!(!body.contains("event: name\nwith"), "raw newline must not appear in event field");
+        assert!(
+            !body.contains("event: name\nwith"),
+            "raw newline must not appear in event field"
+        );
     }
 
     #[test]
@@ -943,7 +945,12 @@ mod tests {
     fn redirect_to_sets_custom_status() {
         let response = Redirect::to("/target", StatusCode::SEE_OTHER).into_response();
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        let location = response.headers().get("location").unwrap().to_str().unwrap();
+        let location = response
+            .headers()
+            .get("location")
+            .unwrap()
+            .to_str()
+            .unwrap();
         assert_eq!(location, "/target");
     }
 
@@ -964,8 +971,14 @@ mod tests {
 
     #[test]
     fn download_escapes_special_chars_in_filename() {
-        let response = Download::attachment(r#"file"with"quotes.txt"#, b"x".to_vec()).into_response();
-        let cd = response.headers().get(CONTENT_DISPOSITION).unwrap().to_str().unwrap();
+        let response =
+            Download::attachment(r#"file"with"quotes.txt"#, b"x".to_vec()).into_response();
+        let cd = response
+            .headers()
+            .get(CONTENT_DISPOSITION)
+            .unwrap()
+            .to_str()
+            .unwrap();
         // backslash-escaped quotes
         assert!(cd.contains(r#"\""#), "quotes should be escaped: {cd}");
     }
@@ -1010,7 +1023,10 @@ mod tests {
         let text = Body::text("hello");
         let json_body = Body::json(serde_json::json!({}));
         let result = infer_stream_content_type(&[text, json_body]);
-        assert!(result.is_none(), "mixed types must not infer a content type");
+        assert!(
+            result.is_none(),
+            "mixed types must not infer a content type"
+        );
     }
 
     // ── NivasaResponseBuilder ─────────────────────────────────────────────────
@@ -1056,8 +1072,14 @@ mod tests {
     #[test]
     fn escape_filename_with_backslash_and_quote() {
         let escaped = escape_content_disposition_filename(r#"path\to"file.txt"#);
-        assert!(escaped.contains(r#"\\"#), "backslash must be escaped: {escaped}");
-        assert!(escaped.contains(r#"\""#), "quote must be escaped: {escaped}");
+        assert!(
+            escaped.contains(r#"\\"#),
+            "backslash must be escaped: {escaped}"
+        );
+        assert!(
+            escaped.contains(r#"\""#),
+            "quote must be escaped: {escaped}"
+        );
     }
 
     #[test]
