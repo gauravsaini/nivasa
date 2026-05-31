@@ -1785,6 +1785,7 @@ name = "nivasa"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "http 1.4.0",
  "http-body-util",
  "hyper-util",
  "nivasa-common",

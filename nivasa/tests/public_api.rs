@@ -756,6 +756,51 @@ impl ListenController {
     }
 }
 
+#[controller("/echo")]
+struct BodyListenController;
+
+#[impl_controller]
+impl BodyListenController {
+    #[post("/create")]
+    fn create(&self, #[body] payload: Json<serde_json::Value>) -> serde_json::Value {
+        let payload = payload.into_inner();
+        serde_json::json!({ "echoed": payload })
+    }
+}
+
+struct BodyListenModule;
+
+impl Module for BodyListenModule {
+    fn metadata(&self) -> ModuleMetadata {
+        ModuleMetadata::default().with_controllers(vec![TypeId::of::<BodyListenController>()])
+    }
+
+    fn configure<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        _container: &'life1 DependencyContainer,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DiError>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn controller_registrations(&self) -> Vec<ModuleControllerRegistration> {
+        vec![ModuleControllerRegistration::new(
+            TypeId::of::<BodyListenController>(),
+            BodyListenController::__nivasa_controller_routes()
+                .into_iter()
+                .map(|(method, path, handler)| {
+                    ControllerRouteRegistration::new(method, path, handler)
+                })
+                .collect(),
+            Vec::new(),
+        )]
+    }
+}
+
 struct ListenModule;
 
 impl Module for ListenModule {
@@ -1118,6 +1163,42 @@ async fn nest_application_listen_starts_http_server_from_registered_controller_h
     assert_eq!(response.status().as_u16(), 200);
     let body = response.into_body().collect().await?.to_bytes();
     assert_eq!(body, Bytes::from_static(b"listen-ready"));
+
+    server_task.abort();
+    let _ = server_task.await;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn nest_application_listen_serves_body_bound_controller_handlers(
+) -> Result<(), Box<dyn Error>> {
+    let port = free_port();
+    let app = nivasa::NestApplication::create(BodyListenModule);
+    let server_options = ServerOptions::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .build();
+
+    let server_task = tokio::spawn(async move { app.listen(server_options).await });
+    wait_for_server(port).await;
+
+    let client: Client<HttpConnector, http_body_util::Full<Bytes>> =
+        Client::builder(TokioExecutor::new()).build_http();
+    let request = http::Request::builder()
+        .method(http::Method::POST)
+        .uri(format!("http://127.0.0.1:{port}/echo/create"))
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .body(http_body_util::Full::new(Bytes::from_static(
+            br#"{"name":"Ada"}"#,
+        )))?;
+
+    let response = client.request(request).await?;
+
+    assert_eq!(response.status().as_u16(), 200);
+    let body = response.into_body().collect().await?.to_bytes();
+    let value: serde_json::Value = serde_json::from_slice(&body)?;
+    assert_eq!(value, serde_json::json!({ "echoed": { "name": "Ada" } }));
 
     server_task.abort();
     let _ = server_task.await;

@@ -29,6 +29,7 @@ nivasa-websocket = { version = "0.1.0", path = "../nivasa-websocket", optional =
 [dev-dependencies]
 openapiv3 = "2.2"
 bytes = { workspace = true }
+http = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util = { workspace = true }
 

@@ -69,10 +69,15 @@ struct ControllerMethodBinding {
     dispatch: ControllerDispatchKind,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 enum ControllerDispatchKind {
     NoArgs,
     Request,
+    /// A single `#[body]` parameter whose declared type implements
+    /// `nivasa_http::FromRequest` (for example `Json<T>`, `String`, or
+    /// `serde_json::Value`). Carries the declared argument type so codegen can
+    /// drive `run_controller_action_with_body`.
+    Body(Box<Type>),
     Unsupported,
 }
 
@@ -242,7 +247,26 @@ fn controller_dispatch_kind(
         return ControllerDispatchKind::Request;
     }
 
+    // A single `#[body]` parameter maps to the body-extraction runtime slice.
+    // The declared argument type must implement `FromRequest`, which the
+    // generated handler relies on through `run_controller_action_with_body`.
+    if params.len() == 1
+        && parameters.len() == 1
+        && parameters[0].kind == ParameterExtractorKind::Body.as_str()
+    {
+        if let Some(ty) = typed_arg_type(params[0]) {
+            return ControllerDispatchKind::Body(Box::new(ty));
+        }
+    }
+
     ControllerDispatchKind::Unsupported
+}
+
+fn typed_arg_type(input: &FnArg) -> Option<Type> {
+    match input {
+        FnArg::Typed(pat_type) => Some(pat_type.ty.as_ref().clone()),
+        FnArg::Receiver(_) => None,
+    }
 }
 
 fn is_nivasa_request_arg(input: &FnArg) -> bool {
@@ -2041,7 +2065,7 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
             Self::__nivasa_controller_join_route(Self::__NIVASA_CONTROLLER_PATH, #route_path)
         };
 
-        match method.dispatch {
+        match &method.dispatch {
             ControllerDispatchKind::NoArgs => Some(quote! {
                 ::nivasa_http::register_controller_route_handler(
                     #full_path,
@@ -2059,6 +2083,21 @@ fn expand_impl_controller(mut input: ItemImpl) -> Result<proc_macro2::TokenStrea
                     ::std::sync::Arc::new(move |request: &::nivasa_http::NivasaRequest| {
                         let controller = Self;
                         ::nivasa_http::IntoResponse::into_response(controller.#handler(request))
+                    }),
+                );
+            }),
+            ControllerDispatchKind::Body(body_ty) => Some(quote! {
+                ::nivasa_http::register_controller_route_handler(
+                    #full_path,
+                    stringify!(#handler),
+                    ::std::sync::Arc::new(move |request: &::nivasa_http::NivasaRequest| {
+                        ::nivasa_http::run_controller_action_with_body::<#body_ty, _, _>(
+                            request,
+                            move |body| {
+                                let controller = Self;
+                                controller.#handler(body)
+                            },
+                        )
                     }),
                 );
             }),
